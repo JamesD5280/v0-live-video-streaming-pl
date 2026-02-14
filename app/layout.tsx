@@ -7,7 +7,7 @@ const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
 const jetbrainsMono = JetBrains_Mono({ subsets: ['latin'], variable: '--font-jetbrains-mono' })
 
 export const metadata: Metadata = {
-  title: 'StreamForge - Cloud Video Streaming Platform',
+  title: '2MStream - Cloud Video Streaming Platform',
   description: 'Upload pre-recorded videos and stream them as live to Facebook, YouTube, Twitch, and custom RTMP destinations simultaneously from the cloud.',
 }
 

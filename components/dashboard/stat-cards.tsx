@@ -1,44 +1,49 @@
-"use client"
-
 import { Radio, Upload, Eye, Clock } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 
-const stats = [
-  {
-    label: "Active Streams",
-    value: "1",
-    change: "+1 from yesterday",
-    icon: Radio,
-    accent: "text-live",
-    bgAccent: "bg-live/10",
-  },
-  {
-    label: "Videos Uploaded",
-    value: "4",
-    change: "+2 this week",
-    icon: Upload,
-    accent: "text-primary",
-    bgAccent: "bg-primary/10",
-  },
-  {
-    label: "Total Viewers",
-    value: "5,139",
-    change: "+23% vs last week",
-    icon: Eye,
-    accent: "text-chart-2",
-    bgAccent: "bg-chart-2/10",
-  },
-  {
-    label: "Stream Hours",
-    value: "18.4h",
-    change: "This month",
-    icon: Clock,
-    accent: "text-warning",
-    bgAccent: "bg-warning/10",
-  },
-]
+interface StatCardsProps {
+  liveCount: number
+  videoCount: number
+  totalViewers: number
+  totalHours: number
+}
 
-export function StatCards() {
+export function StatCards({ liveCount, videoCount, totalViewers, totalHours }: StatCardsProps) {
+  const stats = [
+    {
+      label: "Active Streams",
+      value: liveCount.toString(),
+      description: liveCount > 0 ? "Currently streaming" : "No active streams",
+      icon: Radio,
+      accent: "text-live",
+      bgAccent: "bg-live/10",
+    },
+    {
+      label: "Videos Uploaded",
+      value: videoCount.toString(),
+      description: "In your library",
+      icon: Upload,
+      accent: "text-primary",
+      bgAccent: "bg-primary/10",
+    },
+    {
+      label: "Total Viewers",
+      value: totalViewers.toLocaleString(),
+      description: "Across all streams",
+      icon: Eye,
+      accent: "text-chart-2",
+      bgAccent: "bg-chart-2/10",
+    },
+    {
+      label: "Stream Hours",
+      value: `${totalHours}h`,
+      description: "Total streaming time",
+      icon: Clock,
+      accent: "text-warning",
+      bgAccent: "bg-warning/10",
+    },
+  ]
+
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       {stats.map((stat) => (
@@ -51,7 +56,7 @@ export function StatCards() {
               </div>
             </div>
             <p className="mt-2 text-2xl font-bold text-foreground">{stat.value}</p>
-            <p className="mt-1 text-xs text-muted-foreground">{stat.change}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{stat.description}</p>
           </CardContent>
         </Card>
       ))}

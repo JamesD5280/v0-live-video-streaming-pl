@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import useSWR from "swr"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -14,26 +15,30 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
-import { demoVideos, demoDestinations, demoStreams, type Stream } from "@/lib/store"
-import { Radio, Play, Calendar, CheckCircle2, Clock, AlertCircle } from "lucide-react"
+import { fetcher } from "@/lib/fetcher"
+import type { Video, Destination, Stream } from "@/lib/store"
+import { Radio, Play, Calendar, CheckCircle2, Clock, AlertCircle, StopCircle, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const statusConfig: Record<string, { label: string; className: string; icon: typeof Radio }> = {
   live: { label: "LIVE", className: "bg-live/10 text-live border-live/20", icon: Radio },
-  scheduled: { label: "Scheduled", className: "bg-warning/10 text-warning border-warning/20", icon: Calendar },
+  pending: { label: "Pending", className: "bg-warning/10 text-warning border-warning/20", icon: Calendar },
   completed: { label: "Completed", className: "bg-primary/10 text-primary border-primary/20", icon: CheckCircle2 },
-  idle: { label: "Idle", className: "bg-muted text-muted-foreground border-border", icon: Clock },
+  stopped: { label: "Stopped", className: "bg-muted text-muted-foreground border-border", icon: Clock },
   error: { label: "Error", className: "bg-destructive/10 text-destructive border-destructive/20", icon: AlertCircle },
 }
 
 export function StreamCreator() {
+  const { data: videos } = useSWR<Video[]>("/api/videos", fetcher)
+  const { data: destinations } = useSWR<Destination[]>("/api/destinations", fetcher)
+  const { data: streams, mutate: mutateStreams } = useSWR<Stream[]>("/api/streams", fetcher)
   const [selectedVideo, setSelectedVideo] = useState("")
   const [streamTitle, setStreamTitle] = useState("")
   const [selectedDestinations, setSelectedDestinations] = useState<string[]>([])
-  const [streams] = useState<Stream[]>(demoStreams)
+  const [creating, setCreating] = useState(false)
 
-  const readyVideos = demoVideos.filter((v) => v.status === "ready")
-  const enabledDestinations = demoDestinations.filter((d) => d.connected)
+  const readyVideos = (videos || []).filter((v) => v.status === "ready")
+  const enabledDestinations = (destinations || []).filter((d) => d.enabled)
 
   const toggleDestination = (id: string) => {
     setSelectedDestinations((prev) =>
@@ -43,15 +48,41 @@ export function StreamCreator() {
 
   const canStart = selectedVideo && streamTitle && selectedDestinations.length > 0
 
+  const handleGoLive = async () => {
+    setCreating(true)
+    await fetch("/api/streams", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        video_id: selectedVideo,
+        title: streamTitle,
+        destination_ids: selectedDestinations,
+        go_live: true,
+      }),
+    })
+    setStreamTitle("")
+    setSelectedVideo("")
+    setSelectedDestinations([])
+    setCreating(false)
+    mutateStreams()
+  }
+
+  const handleStopStream = async (streamId: string) => {
+    await fetch("/api/streams", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: streamId, status: "stopped" }),
+    })
+    mutateStreams()
+  }
+
   return (
     <div className="space-y-6">
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-6">
           <Card className="border-border bg-card">
             <CardHeader>
-              <CardTitle className="text-base font-semibold text-foreground">
-                Create New Stream
-              </CardTitle>
+              <CardTitle className="text-base font-semibold text-foreground">Create New Stream</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
@@ -63,7 +94,6 @@ export function StreamCreator() {
                   className="bg-secondary border-border text-foreground"
                 />
               </div>
-
               <div className="space-y-2">
                 <Label className="text-foreground">Select Video</Label>
                 <Select value={selectedVideo} onValueChange={setSelectedVideo}>
@@ -73,13 +103,12 @@ export function StreamCreator() {
                   <SelectContent className="bg-card border-border">
                     {readyVideos.map((video) => (
                       <SelectItem key={video.id} value={video.id}>
-                        {video.name} ({video.duration})
+                        {video.title}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-
               <div className="space-y-3">
                 <Label className="text-foreground">Destinations</Label>
                 <div className="space-y-2">
@@ -100,43 +129,36 @@ export function StreamCreator() {
                       />
                       <div className="flex-1">
                         <p className="text-sm font-medium text-foreground">{dest.name}</p>
-                        <p className="text-xs text-muted-foreground">{dest.serverUrl}</p>
+                        <p className="text-xs text-muted-foreground">{dest.rtmp_url}</p>
                       </div>
                       <Badge variant="outline" className="text-xs text-muted-foreground border-border">
                         {dest.platform}
                       </Badge>
                     </div>
                   ))}
+                  {enabledDestinations.length === 0 && (
+                    <p className="text-sm text-muted-foreground">No enabled destinations. Add one from the Destinations page.</p>
+                  )}
                 </div>
               </div>
-
               <div className="flex gap-3 pt-2">
                 <Button
-                  disabled={!canStart}
+                  disabled={!canStart || creating}
+                  onClick={handleGoLive}
                   className="gap-2 bg-live text-foreground hover:bg-live/90"
                 >
-                  <Play className="h-4 w-4" />
+                  {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
                   Go Live Now
-                </Button>
-                <Button
-                  disabled={!canStart}
-                  variant="outline"
-                  className="gap-2 border-border text-foreground hover:bg-secondary"
-                >
-                  <Calendar className="h-4 w-4" />
-                  Schedule
                 </Button>
               </div>
             </CardContent>
           </Card>
         </div>
 
-        <div className="space-y-6">
+        <div>
           <Card className="border-border bg-card">
             <CardHeader>
-              <CardTitle className="text-base font-semibold text-foreground">
-                How It Works
-              </CardTitle>
+              <CardTitle className="text-base font-semibold text-foreground">How It Works</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
@@ -163,66 +185,58 @@ export function StreamCreator() {
 
       <Card className="border-border bg-card">
         <CardHeader>
-          <CardTitle className="text-base font-semibold text-foreground">
-            All Streams
-          </CardTitle>
+          <CardTitle className="text-base font-semibold text-foreground">All Streams</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-3">
-            {streams.map((stream) => {
-              const config = statusConfig[stream.status] || statusConfig.idle
-              const Icon = config.icon
-              const destNames = stream.destinations
-                .map((dId) => demoDestinations.find((d) => d.id === dId)?.name)
-                .filter(Boolean)
-              return (
-                <div
-                  key={stream.id}
-                  className="flex items-center justify-between rounded-lg border border-border bg-secondary/50 p-4"
-                >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className={cn(
-                        "flex h-10 w-10 items-center justify-center rounded-lg",
-                        stream.status === "live" ? "bg-live/10" : "bg-secondary"
-                      )}
-                    >
-                      <Icon
-                        className={cn(
-                          "h-4 w-4",
-                          stream.status === "live"
-                            ? "text-live animate-pulse"
-                            : "text-muted-foreground"
-                        )}
-                      />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-foreground">{stream.title}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {stream.videoName} | {destNames.join(", ")}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    {stream.status === "live" && (
-                      <div className="text-right">
-                        <p className="text-xs font-mono text-foreground">{stream.viewers.toLocaleString()} viewers</p>
-                        <p className="text-xs text-muted-foreground">{stream.uptime}</p>
+          {!streams ? (
+            <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+          ) : streams.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-border p-8 text-center">
+              <Radio className="mx-auto h-8 w-8 text-muted-foreground" />
+              <p className="mt-2 text-sm text-muted-foreground">No streams yet. Create one above.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {streams.map((stream) => {
+                const config = statusConfig[stream.status] || statusConfig.stopped
+                const Icon = config.icon
+                const destNames = (stream.stream_destinations || [])
+                  .map((sd) => sd.destination?.name)
+                  .filter(Boolean)
+                return (
+                  <div key={stream.id} className="flex items-center justify-between rounded-lg border border-border bg-secondary/50 p-4">
+                    <div className="flex items-center gap-3">
+                      <div className={cn("flex h-10 w-10 items-center justify-center rounded-lg", stream.status === "live" ? "bg-live/10" : "bg-secondary")}>
+                        <Icon className={cn("h-4 w-4", stream.status === "live" ? "text-live animate-pulse" : "text-muted-foreground")} />
                       </div>
-                    )}
-                    {stream.status === "scheduled" && stream.scheduledAt && (
-                      <p className="text-xs text-muted-foreground">
-                        {new Date(stream.scheduledAt).toLocaleString()}
-                      </p>
-                    )}
-                    <Badge variant="outline" className={cn("text-xs", config.className)}>
-                      {config.label}
-                    </Badge>
+                      <div>
+                        <p className="text-sm font-medium text-foreground">{stream.title}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {stream.video?.title || "Unknown"} | {destNames.join(", ") || "No destinations"}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {stream.status === "live" && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1 border-destructive text-destructive hover:bg-destructive/10"
+                          onClick={() => handleStopStream(stream.id)}
+                        >
+                          <StopCircle className="h-3.5 w-3.5" />
+                          Stop
+                        </Button>
+                      )}
+                      <Badge variant="outline" className={cn("text-xs", config.className)}>
+                        {config.label}
+                      </Badge>
+                    </div>
                   </div>
-                </div>
-              )
-            })}
-          </div>
+                )
+              })}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

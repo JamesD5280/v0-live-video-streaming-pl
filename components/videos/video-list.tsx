@@ -1,5 +1,6 @@
 "use client"
 
+import useSWR from "swr"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -9,19 +10,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { demoVideos } from "@/lib/store"
-import {
-  Film,
-  MoreVertical,
-  Play,
-  Trash2,
-  Radio,
-  Download,
-  Loader2,
-  CheckCircle2,
-  AlertCircle,
-} from "lucide-react"
+import { Film, MoreVertical, Radio, Trash2, Loader2, CheckCircle2, AlertCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { fetcher } from "@/lib/fetcher"
+import { formatFileSize, formatDuration, type Video } from "@/lib/store"
 
 const statusConfig: Record<string, { label: string; className: string; icon: typeof CheckCircle2 }> = {
   ready: { label: "Ready", className: "bg-primary/10 text-primary border-primary/20", icon: CheckCircle2 },
@@ -31,9 +23,34 @@ const statusConfig: Record<string, { label: string; className: string; icon: typ
 }
 
 export function VideoList() {
+  const { data: videos, mutate } = useSWR<Video[]>("/api/videos", fetcher)
+
+  const handleDelete = async (id: string) => {
+    await fetch(`/api/videos?id=${id}`, { method: "DELETE" })
+    mutate()
+  }
+
+  if (!videos) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
+  if (videos.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-border p-12 text-center">
+        <Film className="mx-auto h-10 w-10 text-muted-foreground" />
+        <p className="mt-3 text-sm font-medium text-foreground">No videos yet</p>
+        <p className="mt-1 text-xs text-muted-foreground">Upload your first video to get started</p>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-3">
-      {demoVideos.map((video) => {
+      {videos.map((video) => {
         const config = statusConfig[video.status] || statusConfig.ready
         return (
           <Card key={video.id} className="border-border bg-card transition-colors hover:bg-card/80">
@@ -44,15 +61,23 @@ export function VideoList() {
               <div className="flex-1">
                 <div className="flex items-start justify-between">
                   <div>
-                    <p className="text-sm font-medium text-foreground">{video.name}</p>
+                    <p className="text-sm font-medium text-foreground">{video.title}</p>
                     <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
-                      <span>{video.duration}</span>
+                      <span>{formatDuration(video.duration_seconds)}</span>
                       <span className="text-border">|</span>
-                      <span>{video.size}</span>
-                      <span className="text-border">|</span>
-                      <span>{video.resolution}</span>
-                      <span className="text-border">|</span>
-                      <span>{video.format}</span>
+                      <span>{formatFileSize(video.file_size)}</span>
+                      {video.resolution && (
+                        <>
+                          <span className="text-border">|</span>
+                          <span>{video.resolution}</span>
+                        </>
+                      )}
+                      {video.format && (
+                        <>
+                          <span className="text-border">|</span>
+                          <span>{video.format}</span>
+                        </>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -68,18 +93,10 @@ export function VideoList() {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="bg-card border-border">
                         <DropdownMenuItem className="gap-2 text-foreground">
-                          <Play className="h-4 w-4" />
-                          Preview
-                        </DropdownMenuItem>
-                        <DropdownMenuItem className="gap-2 text-foreground">
                           <Radio className="h-4 w-4" />
                           Stream Now
                         </DropdownMenuItem>
-                        <DropdownMenuItem className="gap-2 text-foreground">
-                          <Download className="h-4 w-4" />
-                          Download
-                        </DropdownMenuItem>
-                        <DropdownMenuItem className="gap-2 text-destructive">
+                        <DropdownMenuItem className="gap-2 text-destructive" onClick={() => handleDelete(video.id)}>
                           <Trash2 className="h-4 w-4" />
                           Delete
                         </DropdownMenuItem>
@@ -88,7 +105,7 @@ export function VideoList() {
                   </div>
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Uploaded {video.uploadedAt}
+                  Uploaded {new Date(video.created_at).toLocaleDateString()}
                 </p>
               </div>
             </CardContent>

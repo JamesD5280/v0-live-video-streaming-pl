@@ -1,8 +1,13 @@
+"use client"
+
 import { TopHeader } from "@/components/top-header"
 import { VideoUpload } from "@/components/videos/video-upload"
 import { VideoList } from "@/components/videos/video-list"
+import { useSWRConfig } from "swr"
 
 export default function VideosPage() {
+  const { mutate } = useSWRConfig()
+
   return (
     <div className="flex flex-col">
       <TopHeader title="Video Library" />
@@ -13,7 +18,7 @@ export default function VideosPage() {
             Upload pre-recorded videos to stream as live content across your destinations.
           </p>
         </div>
-        <VideoUpload />
+        <VideoUpload onUploadComplete={() => mutate("/api/videos")} />
         <div>
           <h2 className="text-base font-semibold text-foreground">Your Videos</h2>
           <p className="mt-1 text-sm text-muted-foreground">
