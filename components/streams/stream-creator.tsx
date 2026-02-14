@@ -29,16 +29,16 @@ const statusConfig: Record<string, { label: string; className: string; icon: typ
 }
 
 export function StreamCreator() {
-  const { data: videos } = useSWR<Video[]>("/api/videos", fetcher)
-  const { data: destinations } = useSWR<Destination[]>("/api/destinations", fetcher)
-  const { data: streams, mutate: mutateStreams } = useSWR<Stream[]>("/api/streams", fetcher)
+  const { data: videos, error: videosError } = useSWR<Video[]>("/api/videos", fetcher)
+  const { data: destinations, error: destsError } = useSWR<Destination[]>("/api/destinations", fetcher)
+  const { data: streams, error: streamsError, mutate: mutateStreams } = useSWR<Stream[]>("/api/streams", fetcher)
   const [selectedVideo, setSelectedVideo] = useState("")
   const [streamTitle, setStreamTitle] = useState("")
   const [selectedDestinations, setSelectedDestinations] = useState<string[]>([])
   const [creating, setCreating] = useState(false)
 
-  const readyVideos = (videos || []).filter((v) => v.status === "ready")
-  const enabledDestinations = (destinations || []).filter((d) => d.enabled)
+  const readyVideos = Array.isArray(videos) ? videos.filter((v) => v.status === "ready") : []
+  const enabledDestinations = Array.isArray(destinations) ? destinations.filter((d) => d.enabled) : []
 
   const toggleDestination = (id: string) => {
     setSelectedDestinations((prev) =>

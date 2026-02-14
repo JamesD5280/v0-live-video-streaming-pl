@@ -21,9 +21,9 @@ import { Calendar, Clock, Plus, Trash2, Video as VideoIcon, Radio, Repeat, Loade
 import { cn } from "@/lib/utils"
 
 export function StreamScheduler() {
-  const { data: videos } = useSWR<Video[]>("/api/videos", fetcher)
-  const { data: destinations } = useSWR<Destination[]>("/api/destinations", fetcher)
-  const { data: events, mutate } = useSWR<ScheduledEvent[]>("/api/schedule", fetcher)
+  const { data: videos, error: videosError } = useSWR<Video[]>("/api/videos", fetcher)
+  const { data: destinations, error: destsError } = useSWR<Destination[]>("/api/destinations", fetcher)
+  const { data: events, error: eventsError, mutate } = useSWR<ScheduledEvent[]>("/api/schedule", fetcher)
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
   const [newEvent, setNewEvent] = useState({
@@ -35,8 +35,8 @@ export function StreamScheduler() {
     repeat: "none",
   })
 
-  const readyVideos = (videos || []).filter((v) => v.status === "ready")
-  const enabledDests = (destinations || []).filter((d) => d.enabled)
+  const readyVideos = Array.isArray(videos) ? videos.filter((v) => v.status === "ready") : []
+  const enabledDests = Array.isArray(destinations) ? destinations.filter((d) => d.enabled) : []
 
   const toggleDest = (id: string) => {
     setNewEvent((prev) => ({
@@ -179,7 +179,13 @@ export function StreamScheduler() {
         </Card>
       )}
 
-      {!events ? (
+      {eventsError ? (
+        <div className="rounded-lg border border-dashed border-border p-12 text-center">
+          <Calendar className="mx-auto h-10 w-10 text-destructive" />
+          <p className="mt-3 text-sm font-medium text-foreground">Failed to load schedule</p>
+          <p className="mt-1 text-xs text-muted-foreground">Please try refreshing the page</p>
+        </div>
+      ) : !events ? (
         <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
       ) : events.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border p-12 text-center">

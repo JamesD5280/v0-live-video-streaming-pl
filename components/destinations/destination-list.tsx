@@ -35,7 +35,7 @@ const platformConfig: Record<Platform, { label: string; abbr: string; color: str
 }
 
 export function DestinationList() {
-  const { data: destinations, mutate } = useSWR<Destination[]>("/api/destinations", fetcher)
+  const { data: destinations, error: fetchError, mutate } = useSWR<Destination[]>("/api/destinations", fetcher)
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({})
   const [dialogOpen, setDialogOpen] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -75,6 +75,16 @@ export function DestinationList() {
     setDialogOpen(false)
     setSaving(false)
     mutate()
+  }
+
+  if (fetchError) {
+    return (
+      <div className="rounded-lg border border-dashed border-border p-12 text-center">
+        <Globe className="mx-auto h-10 w-10 text-destructive" />
+        <p className="mt-3 text-sm font-medium text-foreground">Failed to load destinations</p>
+        <p className="mt-1 text-xs text-muted-foreground">Please try refreshing the page</p>
+      </div>
+    )
   }
 
   if (!destinations) {

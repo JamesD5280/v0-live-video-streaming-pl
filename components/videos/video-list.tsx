@@ -23,11 +23,21 @@ const statusConfig: Record<string, { label: string; className: string; icon: typ
 }
 
 export function VideoList() {
-  const { data: videos, mutate } = useSWR<Video[]>("/api/videos", fetcher)
+  const { data: videos, error, mutate } = useSWR<Video[]>("/api/videos", fetcher)
 
   const handleDelete = async (id: string) => {
     await fetch(`/api/videos?id=${id}`, { method: "DELETE" })
     mutate()
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-lg border border-dashed border-border p-12 text-center">
+        <AlertCircle className="mx-auto h-10 w-10 text-destructive" />
+        <p className="mt-3 text-sm font-medium text-foreground">Failed to load videos</p>
+        <p className="mt-1 text-xs text-muted-foreground">Please try refreshing the page</p>
+      </div>
+    )
   }
 
   if (!videos) {

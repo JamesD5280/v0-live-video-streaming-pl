@@ -11,8 +11,8 @@ import type { Stream } from "@/lib/store"
 import { Radio, Users, Gauge, Clock, StopCircle, Activity, Server, Wifi, Loader2 } from "lucide-react"
 
 export function StreamMonitor() {
-  const { data: streams, mutate } = useSWR<Stream[]>("/api/streams", fetcher, { refreshInterval: 5000 })
-  const liveStreams = (streams || []).filter((s) => s.status === "live")
+  const { data: streams, error: streamsError, mutate } = useSWR<Stream[]>("/api/streams", fetcher, { refreshInterval: 5000 })
+  const liveStreams = Array.isArray(streams) ? streams.filter((s) => s.status === "live") : []
   const liveStream = liveStreams[0]
 
   const [uptimeSeconds, setUptimeSeconds] = useState(0)
@@ -51,6 +51,20 @@ export function StreamMonitor() {
       body: JSON.stringify({ id: streamId, status: "stopped" }),
     })
     mutate()
+  }
+
+  if (streamsError) {
+    return (
+      <Card className="border-border bg-card">
+        <CardContent className="flex flex-col items-center justify-center py-16">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-destructive/10">
+            <Radio className="h-8 w-8 text-destructive" />
+          </div>
+          <p className="mt-4 text-lg font-medium text-foreground">Failed to load streams</p>
+          <p className="mt-1 text-sm text-muted-foreground">Please try refreshing the page</p>
+        </CardContent>
+      </Card>
+    )
   }
 
   if (!streams) {
