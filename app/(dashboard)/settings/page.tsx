@@ -18,10 +18,18 @@ import {
 import { Separator } from "@/components/ui/separator"
 import { fetcher } from "@/lib/fetcher"
 import type { UserSettings } from "@/lib/store"
-import { Loader2, CheckCircle2 } from "lucide-react"
+import { Loader2, CheckCircle2, Server, Wifi, WifiOff } from "lucide-react"
 
 export default function SettingsPage() {
   const { data: settings, error: settingsError, mutate } = useSWR<UserSettings>("/api/settings", fetcher)
+  const { data: engineStatus } = useSWR("/api/streams/engine", (url) =>
+    fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "status" }),
+    }).then((r) => r.json()),
+    { refreshInterval: 10000 }
+  )
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [localSettings, setLocalSettings] = useState<Partial<UserSettings>>({})
@@ -74,6 +82,52 @@ export default function SettingsPage() {
     <div className="flex flex-col">
       <TopHeader title="Settings" />
       <div className="flex-1 space-y-6 p-6">
+        <Card className="border-border bg-card">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base font-semibold text-foreground">
+              <Server className="h-4 w-4" />
+              Streaming Engine
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-3">
+              {engineStatus?.status === "ok" ? (
+                <>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
+                    <Wifi className="h-4 w-4 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Connected</p>
+                    <p className="text-xs text-muted-foreground">
+                      {engineStatus.activeStreams || 0} active stream(s) -- Uptime: {Math.floor((engineStatus.uptime || 0) / 60)}m
+                    </p>
+                  </div>
+                </>
+              ) : engineStatus?.configured === false ? (
+                <>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
+                    <WifiOff className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Not Configured</p>
+                    <p className="text-xs text-muted-foreground">Set STREAMING_SERVER_URL in environment variables</p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-destructive/10">
+                    <WifiOff className="h-4 w-4 text-destructive" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Offline</p>
+                    <p className="text-xs text-muted-foreground">The streaming engine is not responding. Make sure it is running on your server.</p>
+                  </div>
+                </>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
         <Card className="border-border bg-card">
           <CardHeader>
             <CardTitle className="text-base font-semibold text-foreground">Stream Defaults</CardTitle>

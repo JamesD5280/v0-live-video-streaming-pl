@@ -1,0 +1,12 @@
+services:
+  streaming-engine:
+    build: .
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - API_SECRET=${API_SECRET}
+      - VIDEO_DIR=/videos
+    volumes:
+      - ./videos:/videos
+    restart: unless-stopped
