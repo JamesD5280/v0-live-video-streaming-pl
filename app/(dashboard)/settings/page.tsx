@@ -21,7 +21,7 @@ import type { UserSettings } from "@/lib/store"
 import { Loader2, CheckCircle2 } from "lucide-react"
 
 export default function SettingsPage() {
-  const { data: settings, mutate } = useSWR<UserSettings>("/api/settings", fetcher)
+  const { data: settings, error: settingsError, mutate } = useSWR<UserSettings>("/api/settings", fetcher)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [localSettings, setLocalSettings] = useState<Partial<UserSettings>>({})
@@ -45,6 +45,18 @@ export default function SettingsPage() {
     setSaved(true)
     mutate()
     setTimeout(() => setSaved(false), 2000)
+  }
+
+  if (settingsError) {
+    return (
+      <div className="flex flex-col">
+        <TopHeader title="Settings" />
+        <div className="flex flex-col items-center justify-center py-16">
+          <p className="text-sm font-medium text-foreground">Failed to load settings</p>
+          <p className="mt-1 text-xs text-muted-foreground">Please try refreshing the page</p>
+        </div>
+      </div>
+    )
   }
 
   if (!settings) {
