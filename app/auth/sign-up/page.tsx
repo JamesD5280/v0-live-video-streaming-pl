@@ -8,12 +8,13 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Radio, Loader2 } from "lucide-react"
+import { Radio, Loader2, ShieldCheck } from "lucide-react"
 
 export default function SignUpPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [displayName, setDisplayName] = useState("")
+  const [inviteCode, setInviteCode] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const router = useRouter()
@@ -22,6 +23,20 @@ export default function SignUpPage() {
     e.preventDefault()
     setLoading(true)
     setError(null)
+
+    // Validate invite code first
+    const verifyRes = await fetch("/api/verify-invite", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: inviteCode }),
+    })
+
+    if (!verifyRes.ok) {
+      const { error: inviteError } = await verifyRes.json()
+      setError(inviteError || "Invalid invite code")
+      setLoading(false)
+      return
+    }
 
     const supabase = createClient()
     const { error } = await supabase.auth.signUp({
@@ -68,6 +83,21 @@ export default function SignUpPage() {
                 {error}
               </div>
             )}
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="inviteCode" className="flex items-center gap-1.5 text-foreground">
+                <ShieldCheck className="h-3.5 w-3.5 text-primary" />
+                Invite Code
+              </Label>
+              <Input
+                id="inviteCode"
+                type="text"
+                placeholder="Enter your invite code"
+                value={inviteCode}
+                onChange={(e) => setInviteCode(e.target.value)}
+                required
+                className="border-border bg-secondary text-foreground placeholder:text-muted-foreground"
+              />
+            </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="displayName" className="text-foreground">Display Name</Label>
               <Input
