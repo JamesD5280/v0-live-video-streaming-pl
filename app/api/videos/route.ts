@@ -4,9 +4,7 @@ import { NextRequest, NextResponse } from "next/server"
 export async function GET() {
   try {
     const supabase = await createClient()
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-
-    console.log("[v0] Videos GET - user:", user?.id, "authError:", authError?.message)
+    const { data: { user } } = await supabase.auth.getUser()
 
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
@@ -14,8 +12,6 @@ export async function GET() {
       .from("videos")
       .select("*")
       .order("created_at", { ascending: false })
-
-    console.log("[v0] Videos GET - data count:", data?.length, "error:", error?.message)
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json(data)
@@ -47,8 +43,6 @@ export async function POST(req: NextRequest) {
       })
       .select()
       .single()
-
-    console.log("[v0] Videos POST - data:", data?.id, "error:", error?.message)
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json(data)

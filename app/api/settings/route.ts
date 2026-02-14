@@ -4,9 +4,7 @@ import { NextRequest, NextResponse } from "next/server"
 export async function GET() {
   try {
     const supabase = await createClient()
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-
-    console.log("[v0] Settings GET - user:", user?.id, "authError:", authError?.message)
+    const { data: { user } } = await supabase.auth.getUser()
 
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
@@ -24,12 +22,9 @@ export async function GET() {
         .select()
         .single()
 
-      console.log("[v0] Settings GET - auto-created:", newData?.id, "insertError:", insertError?.message)
-
       if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 })
       return NextResponse.json(newData)
     } else if (error) {
-      console.log("[v0] Settings GET - error:", error.message)
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
