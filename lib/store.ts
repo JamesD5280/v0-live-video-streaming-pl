@@ -4,6 +4,8 @@ export type StreamStatus = "pending" | "live" | "completed" | "error" | "stopped
 export type Platform = "youtube" | "facebook" | "twitch" | "custom"
 export type RepeatMode = "none" | "daily" | "weekly" | "monthly"
 export type EventStatus = "scheduled" | "running" | "completed" | "cancelled"
+export type OverlayType = "logo" | "bug" | "lower_third" | "text" | "image"
+export type OverlayPosition = "top-left" | "top-right" | "top-center" | "bottom-left" | "bottom-right" | "bottom-center" | "center"
 
 export interface Video {
   id: string
@@ -36,7 +38,8 @@ export interface Destination {
 export interface Stream {
   id: string
   user_id: string
-  video_id: string
+  video_id: string | null
+  playlist_id: string | null
   title: string
   status: StreamStatus
   started_at: string | null
@@ -46,7 +49,9 @@ export interface Stream {
   updated_at: string
   // Joined fields
   video?: Video
+  playlist?: Playlist
   stream_destinations?: StreamDestination[]
+  stream_overlays?: StreamOverlay[]
 }
 
 export interface StreamDestination {
@@ -78,6 +83,52 @@ export interface EventDestination {
   destination_id: string
   created_at: string
   destination?: Destination
+}
+
+export interface Playlist {
+  id: string
+  user_id: string
+  name: string
+  description: string | null
+  loop: boolean
+  created_at: string
+  updated_at: string
+  playlist_items?: PlaylistItem[]
+}
+
+export interface PlaylistItem {
+  id: string
+  playlist_id: string
+  video_id: string
+  position: number
+  created_at: string
+  video?: Video
+}
+
+export interface Overlay {
+  id: string
+  user_id: string
+  name: string
+  type: OverlayType
+  image_path: string | null
+  text_content: string | null
+  font_size: number
+  font_color: string
+  bg_color: string
+  position: OverlayPosition
+  size_percent: number
+  opacity: number
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface StreamOverlay {
+  id: string
+  stream_id: string
+  overlay_id: string
+  created_at: string
+  overlay?: Overlay
 }
 
 export interface UserSettings {

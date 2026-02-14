@@ -33,10 +33,10 @@ export async function POST(req: NextRequest) {
     const { action, streamId } = body
 
     if (action === "start") {
-      // Fetch stream with video and destination details
+      // Fetch stream with video, playlist, destinations, and overlays
       const { data: stream, error: streamError } = await supabase
         .from("streams")
-        .select("*, video:videos(*), stream_destinations(*, destination:destinations(*))")
+        .select("*, video:videos(*), playlist:playlists(*, playlist_items(*, video:videos(*))), stream_destinations(*, destination:destinations(*)), stream_overlays(*, overlay:overlays(*))")
         .eq("id", streamId)
         .single()
 
@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Stream not found" }, { status: 404 })
       }
 
-      // Build destination list for the streaming server
+      // Build destination list
       const destinations = (stream.stream_destinations || [])
         .map((sd: { destination: { id: string; rtmp_url: string; stream_key: string; name: string } | null }) => {
           if (!sd.destination) return null
@@ -61,17 +61,79 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "No destinations configured" }, { status: 400 })
       }
 
-      // Determine video source - use storage_path if available, or construct from Supabase storage
-      const videoSource = stream.video?.storage_path
-        ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/videos/${stream.video.storage_path}`
-        : null
+      // Determine video source(s)
+      const supabaseStorageBase = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public`
+      let videoSources: { url?: string; path?: string; title?: string }[] = []
+      let loop = true
+
+      if (stream.playlist) {
+        // Playlist mode: multiple videos in order
+        const items = (stream.playlist.playlist_items || [])
+          .sort((a: { position: number }, b: { position: number }) => a.position - b.position)
+
+        videoSources = items
+          .filter((item: { video: unknown }) => item.video)
+          .map((item: { video: { storage_path?: string; filename?: string; title?: string } }) => ({
+            url: item.video.storage_path
+              ? `${supabaseStorageBase}/videos/${item.video.storage_path}`
+              : undefined,
+            path: item.video.filename,
+            title: item.video.title,
+          }))
+
+        loop = stream.playlist.loop !== false
+      } else if (stream.video) {
+        // Single video mode
+        videoSources = [{
+          url: stream.video.storage_path
+            ? `${supabaseStorageBase}/videos/${stream.video.storage_path}`
+            : undefined,
+          path: stream.video.filename,
+          title: stream.video.title,
+        }]
+      }
+
+      if (videoSources.length === 0) {
+        return NextResponse.json({ error: "No video sources found" }, { status: 400 })
+      }
+
+      // Build overlay list
+      const overlays = (stream.stream_overlays || [])
+        .filter((so: { overlay: unknown }) => so.overlay)
+        .map((so: { overlay: {
+          id: string;
+          type: string;
+          image_path?: string;
+          text_content?: string;
+          font_size: number;
+          font_color: string;
+          bg_color: string;
+          position: string;
+          size_percent: number;
+          opacity: number;
+        }}) => ({
+          id: so.overlay.id,
+          type: so.overlay.type,
+          imagePath: so.overlay.image_path || null,
+          textContent: so.overlay.text_content || null,
+          fontSize: so.overlay.font_size,
+          fontColor: so.overlay.font_color,
+          bgColor: so.overlay.bg_color,
+          position: so.overlay.position,
+          sizePercent: so.overlay.size_percent,
+          opacity: so.overlay.opacity,
+        }))
 
       const result = await callStreamingServer("/start", {
         streamId: stream.id,
-        videoUrl: videoSource,
-        videoPath: stream.video?.filename, // Fallback to local file on server
+        videoSources,
+        // Backward compat: also send single video fields
+        videoUrl: videoSources[0]?.url,
+        videoPath: videoSources[0]?.path,
         destinations,
-        loop: true,
+        overlays,
+        loop,
+        isPlaylist: !!stream.playlist,
       })
 
       // Update stream status to live
@@ -124,7 +186,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ error: "Invalid action" }, { status: 400 })
   } catch (e) {
-    console.error("[v0] Engine route error:", e)
+    console.error("Engine route error:", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

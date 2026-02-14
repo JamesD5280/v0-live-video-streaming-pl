@@ -11,6 +11,8 @@ import {
   Calendar,
   Globe,
   LogOut,
+  ListMusic,
+  Layers,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
@@ -20,6 +22,8 @@ import type { Stream } from "@/lib/store"
 const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
   { name: "Video Library", href: "/videos", icon: Upload },
+  { name: "Playlists", href: "/playlists", icon: ListMusic },
+  { name: "Overlays", href: "/overlays", icon: Layers },
   { name: "Destinations", href: "/destinations", icon: Globe },
   { name: "Streams", href: "/streams", icon: Radio },
   { name: "Schedule", href: "/schedule", icon: Calendar },
