@@ -45,10 +45,10 @@ export function StreamMonitor() {
   }
 
   const handleStop = async (streamId: string) => {
-    await fetch("/api/streams", {
-      method: "PATCH",
+    await fetch("/api/streams/engine", {
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: streamId, status: "stopped" }),
+      body: JSON.stringify({ action: "stop", streamId }),
     })
     mutate()
   }

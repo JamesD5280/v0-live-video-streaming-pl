@@ -50,28 +50,45 @@ export function StreamCreator() {
 
   const handleGoLive = async () => {
     setCreating(true)
-    await fetch("/api/streams", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        video_id: selectedVideo,
-        title: streamTitle,
-        destination_ids: selectedDestinations,
-        go_live: true,
-      }),
-    })
-    setStreamTitle("")
-    setSelectedVideo("")
-    setSelectedDestinations([])
+    try {
+      // 1. Create the stream record in DB
+      const createRes = await fetch("/api/streams", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          video_id: selectedVideo,
+          title: streamTitle,
+          destination_ids: selectedDestinations,
+          go_live: true,
+        }),
+      })
+      const stream = await createRes.json()
+
+      if (stream?.id) {
+        // 2. Tell the streaming engine to start pushing RTMP
+        await fetch("/api/streams/engine", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "start", streamId: stream.id }),
+        })
+      }
+
+      setStreamTitle("")
+      setSelectedVideo("")
+      setSelectedDestinations([])
+    } catch (e) {
+      console.error("Failed to start stream:", e)
+    }
     setCreating(false)
     mutateStreams()
   }
 
   const handleStopStream = async (streamId: string) => {
-    await fetch("/api/streams", {
-      method: "PATCH",
+    // Tell the engine to stop FFmpeg processes
+    await fetch("/api/streams/engine", {
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: streamId, status: "stopped" }),
+      body: JSON.stringify({ action: "stop", streamId }),
     })
     mutateStreams()
   }
