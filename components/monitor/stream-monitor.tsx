@@ -10,6 +10,7 @@ import { Switch } from "@/components/ui/switch"
 import { fetcher } from "@/lib/fetcher"
 import type { Stream, Overlay } from "@/lib/store"
 import { Radio, Users, Gauge, Clock, StopCircle, Activity, Server, Wifi, Loader2, Layers, Image as ImageIcon, Type, Video, RefreshCw } from "lucide-react"
+import { OverlayPreview } from "@/components/overlays/overlay-preview"
 
 export function StreamMonitor() {
   const { data: streams, error: streamsError, mutate } = useSWR<Stream[]>("/api/streams", fetcher, { refreshInterval: 5000 })
@@ -234,6 +235,15 @@ export function StreamMonitor() {
             </p>
           </CardHeader>
           <CardContent>
+            {/* Visual preview of active overlays */}
+            {allOverlays.filter(o => o.enabled).length > 0 && (
+              <div className="mb-4">
+                <OverlayPreview
+                  overlays={allOverlays.filter(o => activeOverlayIds.has(o.id))}
+                />
+              </div>
+            )}
+
             {overlayError && (
               <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 p-2.5">
                 <p className="text-xs text-destructive">{overlayError}</p>
