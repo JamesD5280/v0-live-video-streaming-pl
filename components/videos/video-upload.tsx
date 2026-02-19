@@ -50,50 +50,48 @@ export function VideoUpload({ onUploadComplete }: { onUploadComplete?: () => voi
     setUploads((prev) => [...prev, newFile])
 
     try {
-      // Step 1: Get the upload URL and auth token from our API
-      const urlRes = await fetch(`/api/videos/upload?filename=${encodeURIComponent(file.name)}`)
-      const urlData = await urlRes.json()
+      // Upload via our own API proxy (avoids CORS and mixed-content issues)
+      // Uses chunked upload to work within Vercel's limits
+      const CHUNK_SIZE = 4 * 1024 * 1024 // 4 MB chunks
+      const totalChunks = Math.ceil(file.size / CHUNK_SIZE)
+      const uploadId = id
 
-      if (urlData.error) {
-        throw new Error(urlData.error)
+      for (let i = 0; i < totalChunks; i++) {
+        if (abortController.signal.aborted) {
+          throw new Error("Upload cancelled")
+        }
+
+        const start = i * CHUNK_SIZE
+        const end = Math.min(start + CHUNK_SIZE, file.size)
+        const chunk = file.slice(start, end)
+
+        const formData = new FormData()
+        formData.append("chunk", chunk)
+        formData.append("filename", file.name)
+        formData.append("uploadId", uploadId)
+        formData.append("chunkIndex", String(i))
+        formData.append("totalChunks", String(totalChunks))
+
+        const chunkRes = await fetch("/api/videos/upload/chunk", {
+          method: "POST",
+          body: formData,
+          signal: abortController.signal,
+        })
+
+        if (!chunkRes.ok) {
+          let errMsg = "Upload failed"
+          try {
+            const resp = await chunkRes.json()
+            errMsg = resp.error || errMsg
+          } catch {}
+          throw new Error(errMsg)
+        }
+
+        const overallProgress = Math.round(((i + 1) / totalChunks) * 100)
+        setUploads((prev) =>
+          prev.map((f) => (f.id === id ? { ...f, progress: overallProgress } : f))
+        )
       }
-
-      // Step 2: Upload the file directly to the streaming server using XMLHttpRequest for progress
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest()
-
-        xhr.upload.addEventListener("progress", (e) => {
-          if (e.lengthComputable) {
-            const percent = Math.round((e.loaded / e.total) * 100)
-            setUploads((prev) =>
-              prev.map((f) => (f.id === id ? { ...f, progress: percent } : f))
-            )
-          }
-        })
-
-        xhr.addEventListener("load", () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            resolve()
-          } else {
-            let errMsg = "Upload failed"
-            try {
-              const resp = JSON.parse(xhr.responseText)
-              errMsg = resp.error || errMsg
-            } catch {}
-            reject(new Error(errMsg))
-          }
-        })
-
-        xhr.addEventListener("error", () => reject(new Error("Network error during upload")))
-        xhr.addEventListener("abort", () => reject(new Error("Upload cancelled")))
-
-        abortController.signal.addEventListener("abort", () => xhr.abort())
-
-        xhr.open("POST", urlData.uploadUrl)
-        xhr.setRequestHeader("Authorization", `Bearer ${urlData.authToken}`)
-        xhr.setRequestHeader("x-filename", file.name)
-        xhr.send(file)
-      })
 
       // Step 3: Save metadata to database
       setUploads((prev) =>

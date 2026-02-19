@@ -30,7 +30,7 @@ const app = express()
 app.use(cors())
 // JSON body parser for command endpoints (not upload -- that streams raw)
 app.use((req, res, next) => {
-  if (req.path === '/upload') return next() // skip JSON parsing for uploads
+  if (req.path === '/upload' || req.path === '/upload/chunk') return next() // skip JSON parsing for uploads
   express.json({ limit: '1mb' })(req, res, next)
 })
 
@@ -203,6 +203,101 @@ app.post('/upload', async (req, res) => {
     // Clean up partial file
     try { unlinkSync(destPath) } catch {}
     res.status(500).json({ error: `Upload failed: ${err.message}` })
+  }
+})
+
+// Track ongoing chunked uploads: uploadId -> { filename, receivedChunks, totalChunks, tempDir }
+const chunkedUploads = new Map()
+
+/**
+ * POST /upload/chunk
+ * Receives a chunk of a file upload for reassembly.
+ * Headers:
+ *   x-filename: "original-filename.mp4"
+ *   x-upload-id: unique upload identifier
+ *   x-chunk-index: 0-based index of this chunk
+ *   x-total-chunks: total number of chunks
+ *   content-type: application/octet-stream
+ */
+app.post('/upload/chunk', async (req, res) => {
+  const filename = req.headers['x-filename'] || `upload-${Date.now()}.mp4`
+  const uploadId = req.headers['x-upload-id'] || `default-${Date.now()}`
+  const chunkIndex = parseInt(req.headers['x-chunk-index'] || '0', 10)
+  const totalChunks = parseInt(req.headers['x-total-chunks'] || '1', 10)
+  const safeFilename = basename(String(filename))
+
+  try {
+    // Create temp directory for chunks if needed
+    if (!chunkedUploads.has(uploadId)) {
+      const tempDir = join(tmpdir(), `2mstream-upload-${uploadId}`)
+      mkdirSync(tempDir, { recursive: true })
+      chunkedUploads.set(uploadId, {
+        filename: safeFilename,
+        receivedChunks: new Set(),
+        totalChunks,
+        tempDir,
+      })
+    }
+
+    const upload = chunkedUploads.get(uploadId)
+    const chunkPath = join(upload.tempDir, `chunk-${String(chunkIndex).padStart(6, '0')}`)
+
+    // Write chunk to temp file
+    const writeStream = createWriteStream(chunkPath)
+    await pipeline(req, writeStream)
+    upload.receivedChunks.add(chunkIndex)
+
+    console.log(`[2MStream] Chunk ${chunkIndex + 1}/${totalChunks} received for ${safeFilename}`)
+
+    // If all chunks received, assemble the file
+    if (upload.receivedChunks.size === totalChunks) {
+      const destPath = join(VIDEO_DIR, safeFilename)
+      const finalStream = createWriteStream(destPath)
+      
+      for (let i = 0; i < totalChunks; i++) {
+        const cp = join(upload.tempDir, `chunk-${String(i).padStart(6, '0')}`)
+        const { readFileSync } = await import('fs')
+        const data = readFileSync(cp)
+        finalStream.write(data)
+        try { unlinkSync(cp) } catch {}
+      }
+      finalStream.end()
+
+      // Wait for write to finish
+      await new Promise((resolve, reject) => {
+        finalStream.on('finish', resolve)
+        finalStream.on('error', reject)
+      })
+
+      // Clean up temp dir
+      try { 
+        const { rmdirSync } = await import('fs')
+        rmdirSync(upload.tempDir) 
+      } catch {}
+      chunkedUploads.delete(uploadId)
+
+      const stats = statSync(destPath)
+      const sizeMB = (stats.size / (1024 * 1024)).toFixed(1)
+      console.log(`[2MStream] Upload assembled: ${safeFilename} (${sizeMB} MB)`)
+
+      return res.json({
+        success: true,
+        complete: true,
+        filename: safeFilename,
+        path: destPath,
+        size: stats.size,
+      })
+    }
+
+    res.json({
+      success: true,
+      complete: false,
+      received: upload.receivedChunks.size,
+      total: totalChunks,
+    })
+  } catch (err) {
+    console.error(`[2MStream] Chunk upload failed:`, err.message)
+    res.status(500).json({ error: `Chunk upload failed: ${err.message}` })
   }
 })
 
