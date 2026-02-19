@@ -124,25 +124,56 @@ export async function POST(req: NextRequest) {
           opacity: so.overlay.opacity,
         }))
 
-      const result = await callStreamingServer("/start", {
-        streamId: stream.id,
-        videoSources,
-        // Backward compat: also send single video fields
-        videoUrl: videoSources[0]?.url,
-        videoPath: videoSources[0]?.path,
-        destinations,
-        overlays,
-        loop,
-        isPlaylist: !!stream.playlist,
-      })
+      let result
+      try {
+        result = await callStreamingServer("/start", {
+          streamId: stream.id,
+          videoSources,
+          // Backward compat: also send single video fields
+          videoUrl: videoSources[0]?.url,
+          videoPath: videoSources[0]?.path,
+          destinations,
+          overlays,
+          loop,
+          isPlaylist: !!stream.playlist,
+        })
+      } catch (engineErr) {
+        console.log("[v0] Engine start failed:", engineErr instanceof Error ? engineErr.message : String(engineErr))
+        // Mark stream as error since engine couldn't start
+        await supabase
+          .from("streams")
+          .update({ status: "error", updated_at: new Date().toISOString() })
+          .eq("id", streamId)
+        await supabase
+          .from("stream_destinations")
+          .update({ status: "error" })
+          .eq("stream_id", streamId)
+        return NextResponse.json({
+          success: false,
+          error: "Failed to reach streaming engine",
+          detail: engineErr instanceof Error ? engineErr.message : String(engineErr),
+        }, { status: 502 })
+      }
 
-      // Update stream status to live
+      if (result?.error) {
+        console.log("[v0] Engine start returned error:", result.error)
+        await supabase
+          .from("streams")
+          .update({ status: "error", updated_at: new Date().toISOString() })
+          .eq("id", streamId)
+        await supabase
+          .from("stream_destinations")
+          .update({ status: "error" })
+          .eq("stream_id", streamId)
+        return NextResponse.json({ success: false, error: result.error }, { status: 400 })
+      }
+
+      // Only mark as live if engine accepted the start command
       await supabase
         .from("streams")
         .update({ status: "live", started_at: new Date().toISOString() })
         .eq("id", streamId)
 
-      // Update destination statuses
       await supabase
         .from("stream_destinations")
         .update({ status: "connected" })

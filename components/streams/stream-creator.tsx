@@ -47,6 +47,7 @@ export function StreamCreator() {
   const [selectedDestinations, setSelectedDestinations] = useState<string[]>([])
   const [selectedOverlays, setSelectedOverlays] = useState<string[]>([])
   const [creating, setCreating] = useState(false)
+  const [startError, setStartError] = useState<string | null>(null)
 
   const readyVideos = Array.isArray(videos) ? videos.filter((v) => v.status === "ready") : []
   const enabledDestinations = Array.isArray(destinations) ? destinations.filter((d) => d.enabled) : []
@@ -70,6 +71,7 @@ export function StreamCreator() {
 
   const handleGoLive = async () => {
     setCreating(true)
+    setStartError(null)
     try {
       const payload: Record<string, unknown> = {
         title: streamTitle,
@@ -84,6 +86,7 @@ export function StreamCreator() {
         payload.playlist_id = selectedPlaylist
       }
 
+      // 1. Create the stream record (will be "pending")
       const createRes = await fetch("/api/streams", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -92,20 +95,29 @@ export function StreamCreator() {
       const stream = await createRes.json()
 
       if (stream?.id) {
-        await fetch("/api/streams/engine", {
+        // 2. Tell the engine to start -- this sets "live" only if successful
+        const engineRes = await fetch("/api/streams/engine", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "start", streamId: stream.id }),
         })
-      }
+        const engineData = await engineRes.json()
 
-      setStreamTitle("")
-      setSelectedVideo("")
-      setSelectedPlaylist("")
-      setSelectedDestinations([])
-      setSelectedOverlays([])
+        if (!engineData.success) {
+          setStartError(engineData.error || "Streaming engine failed to start the stream")
+        } else {
+          // Only clear form on success
+          setStreamTitle("")
+          setSelectedVideo("")
+          setSelectedPlaylist("")
+          setSelectedDestinations([])
+          setSelectedOverlays([])
+        }
+      } else {
+        setStartError(stream?.error || "Failed to create stream record")
+      }
     } catch (e) {
-      console.error("Failed to start stream:", e)
+      setStartError(e instanceof Error ? e.message : "Failed to start stream")
     }
     setCreating(false)
     mutateStreams()
