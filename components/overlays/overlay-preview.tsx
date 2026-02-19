@@ -50,26 +50,15 @@ export function OverlayPreview({ overlays }: OverlayPreviewProps) {
   const [highlightedId, setHighlightedId] = useState<string | null>(null)
   const [selectedVideo, setSelectedVideo] = useState<Video | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
-  const [directVideoUrl, setDirectVideoUrl] = useState("")
-
   // Update visible IDs when overlays change
   useEffect(() => {
     setVisibleIds(new Set(overlays.filter((o) => o.enabled).map((o) => o.id)))
   }, [overlays])
 
-  // Fetch signed direct URL when video is selected
-  useEffect(() => {
-    if (!selectedVideo) {
-      setDirectVideoUrl("")
-      return
-    }
-    fetch(`/api/videos/preview?filename=${encodeURIComponent(selectedVideo.filename)}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.url) setDirectVideoUrl(data.url)
-      })
-      .catch(() => {})
-  }, [selectedVideo])
+  // Build proxy URL directly -- Edge Runtime handles HTTPS -> HTTP
+  const proxyVideoUrl = selectedVideo
+    ? `/api/videos/preview?filename=${encodeURIComponent(selectedVideo.filename)}`
+    : ""
 
   const toggleVisibility = (id: string) => {
     setVisibleIds((prev) => {
@@ -142,7 +131,7 @@ export function OverlayPreview({ overlays }: OverlayPreviewProps) {
             <>
               <video
                 ref={videoRef}
-                src={directVideoUrl || undefined}
+                src={proxyVideoUrl || undefined}
                 className="absolute inset-0 h-full w-full object-cover"
                 loop
                 muted
