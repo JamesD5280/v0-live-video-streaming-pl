@@ -171,7 +171,6 @@ export function VideoPreviewDialog({ video, open, onOpenChange }: VideoPreviewDi
             preload="metadata"
             playsInline
             onLoadedMetadata={(e) => {
-              console.log("[v0] Video loaded metadata, duration:", e.currentTarget.duration)
               setDuration(e.currentTarget.duration)
               setLoading(false)
             }}
@@ -180,21 +179,16 @@ export function VideoPreviewDialog({ video, open, onOpenChange }: VideoPreviewDi
             onPause={() => setPlaying(false)}
             onEnded={() => setPlaying(false)}
             onWaiting={() => setLoading(true)}
-            onCanPlay={() => {
-              console.log("[v0] Video can play")
-              setLoading(false)
-            }}
+            onCanPlay={() => setLoading(false)}
             onError={(e) => {
-              const el = e.currentTarget
-              const mediaError = el.error
-              console.log("[v0] Video error code:", mediaError?.code, "message:", mediaError?.message, "src:", el.src)
+              const mediaError = e.currentTarget.error
               setLoading(false)
               setError(
                 mediaError?.code === 4
                   ? "Unable to play this video. The format may not be supported by your browser (try MP4/H.264)."
                   : `Video playback error (code ${mediaError?.code || "unknown"}). Check that the streaming server is running.`
               )
-            }}
+            }
           />
 
           {/* Loading overlay */}

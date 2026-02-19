@@ -44,6 +44,8 @@ const activeStreams = new Map()
 
 // Auth middleware
 function authenticate(req, res, next) {
+  // Skip auth for /stream-video (it has its own auth: Bearer token or signed URL)
+  if (req.path.startsWith('/stream-video')) return next()
   const token = req.headers.authorization?.replace('Bearer ', '')
   if (token !== API_SECRET) {
     return res.status(401).json({ error: 'Unauthorized' })
