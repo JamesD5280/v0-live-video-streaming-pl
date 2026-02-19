@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import useSWR from "swr"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -10,10 +11,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Film, MoreVertical, Radio, Trash2, Loader2, CheckCircle2, AlertCircle } from "lucide-react"
+import { Film, MoreVertical, Radio, Trash2, Loader2, CheckCircle2, AlertCircle, Play } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { fetcher } from "@/lib/fetcher"
 import { formatFileSize, formatDuration, type Video } from "@/lib/store"
+import { VideoPreviewDialog } from "./video-preview-dialog"
 
 const statusConfig: Record<string, { label: string; className: string; icon: typeof CheckCircle2 }> = {
   ready: { label: "Ready", className: "bg-primary/10 text-primary border-primary/20", icon: CheckCircle2 },
@@ -24,6 +26,7 @@ const statusConfig: Record<string, { label: string; className: string; icon: typ
 
 export function VideoList() {
   const { data: videos, error, mutate } = useSWR<Video[]>("/api/videos", fetcher)
+  const [previewVideo, setPreviewVideo] = useState<Video | null>(null)
 
   const handleDelete = async (id: string) => {
     await fetch(`/api/videos?id=${id}`, { method: "DELETE" })
@@ -59,15 +62,25 @@ export function VideoList() {
   }
 
   return (
+    <>
     <div className="space-y-3">
       {videos.map((video) => {
         const config = statusConfig[video.status] || statusConfig.ready
         return (
           <Card key={video.id} className="border-border bg-card transition-colors hover:bg-card/80">
             <CardContent className="flex items-center gap-4 p-4">
-              <div className="flex h-16 w-28 items-center justify-center rounded-lg bg-secondary">
-                <Film className="h-6 w-6 text-muted-foreground" />
-              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewVideo(video)}
+                className="group relative flex h-16 w-28 shrink-0 items-center justify-center rounded-lg bg-secondary transition-colors hover:bg-secondary/80"
+              >
+                <Film className="h-6 w-6 text-muted-foreground transition-opacity group-hover:opacity-0" />
+                <div className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/90">
+                    <Play className="h-4 w-4 text-primary-foreground ml-0.5" />
+                  </div>
+                </div>
+              </button>
               <div className="flex-1">
                 <div className="flex items-start justify-between">
                   <div>
@@ -102,6 +115,10 @@ export function VideoList() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="bg-card border-border">
+                        <DropdownMenuItem className="gap-2 text-foreground" onClick={() => setPreviewVideo(video)}>
+                          <Play className="h-4 w-4" />
+                          Preview
+                        </DropdownMenuItem>
                         <DropdownMenuItem className="gap-2 text-foreground">
                           <Radio className="h-4 w-4" />
                           Stream Now
@@ -123,5 +140,11 @@ export function VideoList() {
         )
       })}
     </div>
+    <VideoPreviewDialog
+      video={previewVideo}
+      open={!!previewVideo}
+      onOpenChange={(open) => { if (!open) setPreviewVideo(null) }}
+    />
+    </>
   )
 }
