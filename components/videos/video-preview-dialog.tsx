@@ -188,7 +188,7 @@ export function VideoPreviewDialog({ video, open, onOpenChange }: VideoPreviewDi
                   ? "Unable to play this video. The format may not be supported by your browser (try MP4/H.264)."
                   : `Video playback error (code ${mediaError?.code || "unknown"}). Check that the streaming server is running.`
               )
-            }
+            }}
           />
 
           {/* Loading overlay */}
