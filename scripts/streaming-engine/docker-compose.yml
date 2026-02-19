@@ -1,3 +1,7 @@
+# NOTE: If running alongside Nimble Streamer, make sure:
+# 1. Nimble doesn't use port 3001 (default for 2MStream engine)
+# 2. Set memory/CPU limits to prevent resource competition
+# 3. 2MStream pushes to YouTube/external RTMP, not to Nimble's local RTMP
 services:
   streaming-engine:
     build: .
@@ -10,3 +14,9 @@ services:
     volumes:
       - ./videos:/videos
     restart: unless-stopped
+    # Limit resources so it doesn't starve Nimble Streamer
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "2.0"

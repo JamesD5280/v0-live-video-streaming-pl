@@ -25,6 +25,7 @@ import { join, basename } from 'path'
 import { tmpdir } from 'os'
 import { pipeline } from 'stream/promises'
 import { Readable } from 'stream'
+import { createHmac } from 'crypto'
 
 const app = express()
 app.use(cors())
@@ -347,8 +348,25 @@ app.get('/videos', (req, res) => {
  * GET /stream-video/:filename
  * Streams a video file for preview playback.
  * Supports HTTP Range requests for seeking.
+ * Accepts either Bearer token auth or signed URL token (?token=...&expires=...)
  */
 app.get('/stream-video/:filename', (req, res) => {
+  // Allow signed token auth for direct browser access
+  const { token, expires } = req.query
+  const bearerAuth = req.headers.authorization
+  
+  if (token && expires) {
+    // Verify signed URL token
+    const filename = basename(req.params.filename)
+    const payload = `${filename}:${expires}`
+    const expected = createHmac('sha256', API_SECRET).update(payload).digest('hex')
+    if (token !== expected || Date.now() > parseInt(expires, 10)) {
+      return res.status(403).json({ error: 'Invalid or expired token' })
+    }
+  } else if (!bearerAuth || bearerAuth !== `Bearer ${API_SECRET}`) {
+    return res.status(401).json({ error: 'Unauthorized' })
+  }
+
   const safeFilename = basename(req.params.filename)
   const filePath = join(VIDEO_DIR, safeFilename)
 
