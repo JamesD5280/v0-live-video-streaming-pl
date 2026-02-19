@@ -4,7 +4,7 @@ export type StreamStatus = "pending" | "live" | "completed" | "error" | "stopped
 export type Platform = "youtube" | "facebook" | "twitch" | "custom"
 export type RepeatMode = "none" | "daily" | "weekly" | "monthly"
 export type EventStatus = "scheduled" | "running" | "completed" | "cancelled"
-export type OverlayType = "logo" | "bug" | "lower_third" | "text" | "image"
+export type OverlayType = "logo" | "bug" | "lower_third" | "text" | "image" | "video"
 export type OverlayPosition = "top-left" | "top-right" | "top-center" | "bottom-left" | "bottom-right" | "bottom-center" | "center"
 
 export interface Video {
@@ -40,6 +40,7 @@ export interface Stream {
   user_id: string
   video_id: string | null
   playlist_id: string | null
+  rtmp_pull_url: string | null
   title: string
   status: StreamStatus
   started_at: string | null
@@ -111,6 +112,8 @@ export interface Overlay {
   name: string
   type: OverlayType
   image_path: string | null
+  video_path: string | null
+  loop_overlay: boolean
   text_content: string | null
   font_size: number
   font_color: string
