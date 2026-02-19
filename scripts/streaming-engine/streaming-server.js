@@ -344,6 +344,69 @@ app.get('/videos', (req, res) => {
 })
 
 /**
+ * GET /stream-video/:filename
+ * Streams a video file for preview playback.
+ * Supports HTTP Range requests for seeking.
+ */
+app.get('/stream-video/:filename', (req, res) => {
+  const safeFilename = basename(req.params.filename)
+  const filePath = join(VIDEO_DIR, safeFilename)
+
+  if (!existsSync(filePath)) {
+    return res.status(404).json({ error: 'File not found' })
+  }
+
+  const stat = statSync(filePath)
+  const fileSize = stat.size
+
+  // Determine content type
+  const ext = safeFilename.split('.').pop()?.toLowerCase() || 'mp4'
+  const mimeTypes = {
+    mp4: 'video/mp4',
+    mov: 'video/quicktime',
+    mkv: 'video/x-matroska',
+    avi: 'video/x-msvideo',
+    webm: 'video/webm',
+    flv: 'video/x-flv',
+    ts: 'video/mp2t',
+  }
+  const contentType = mimeTypes[ext] || 'video/mp4'
+
+  const range = req.headers.range
+  if (range) {
+    // Partial content for seeking
+    const parts = range.replace(/bytes=/, '').split('-')
+    const start = parseInt(parts[0], 10)
+    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1
+    const chunkSize = end - start + 1
+
+    const { createReadStream } = require('fs')
+    const stream = createReadStream(filePath, { start, end })
+
+    res.writeHead(206, {
+      'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+      'Accept-Ranges': 'bytes',
+      'Content-Length': chunkSize,
+      'Content-Type': contentType,
+      'Access-Control-Allow-Origin': '*',
+    })
+    stream.pipe(res)
+  } else {
+    // Full file
+    const { createReadStream } = require('fs')
+    const stream = createReadStream(filePath)
+
+    res.writeHead(200, {
+      'Content-Length': fileSize,
+      'Content-Type': contentType,
+      'Accept-Ranges': 'bytes',
+      'Access-Control-Allow-Origin': '*',
+    })
+    stream.pipe(res)
+  }
+})
+
+/**
  * POST /delete-video
  * Body: { filename: "video-name.mp4" }
  * Deletes a video file from the VIDEO_DIR
