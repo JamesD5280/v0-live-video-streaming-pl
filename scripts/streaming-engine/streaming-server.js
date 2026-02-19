@@ -588,6 +588,19 @@ app.post('/start', (req, res) => {
     isPlaylist,
     isRtmpPull,
     overlayCount: overlays?.length || 0,
+    // Store full config for restart/overlay updates
+    config: {
+      streamId,
+      videoSources,
+      videoUrl,
+      videoPath,
+      destinations,
+      overlays,
+      loop,
+      isPlaylist,
+      isRtmpPull,
+      rtmpPullUrl,
+    },
   })
 
   // Give FFmpeg a moment to start, then check status
@@ -648,6 +661,103 @@ app.get('/status/:streamId', (req, res) => {
     isPlaylist: stream.isPlaylist || false,
     overlayCount: stream.overlayCount || 0,
     destinations: destStatuses,
+  })
+})
+
+/**
+ * POST /restart
+ * Body: { streamId: "uuid", overlays: [...] }
+ * Restarts a running stream with updated overlays.
+ * Reuses the same video source and destinations.
+ */
+app.post('/restart', async (req, res) => {
+  const { streamId, overlays } = req.body
+
+  if (!streamId) {
+    return res.status(400).json({ error: 'Missing streamId' })
+  }
+
+  const existing = activeStreams.get(streamId)
+  if (!existing || !existing.config) {
+    return res.status(404).json({ error: 'Stream not found or not running' })
+  }
+
+  console.log(`[2MStream] Restarting stream ${streamId} with ${overlays?.length || 0} overlay(s)`)
+
+  // Build updated config with new overlays
+  const updatedConfig = { ...existing.config, overlays: overlays || [] }
+
+  // Stop existing FFmpeg processes
+  stopStream(streamId)
+
+  // Brief delay to let FFmpeg fully stop
+  await new Promise(r => setTimeout(r, 500))
+
+  // Re-build using the same logic as /start -- simulate a POST to /start
+  // We do this by building the request internally
+  const tempFiles = []
+  let inputArgs = []
+
+  if (updatedConfig.isRtmpPull && updatedConfig.rtmpPullUrl) {
+    inputArgs = ['-rw_timeout', '10000000', '-i', updatedConfig.rtmpPullUrl]
+  } else if (updatedConfig.isPlaylist && updatedConfig.videoSources?.length > 1) {
+    const concatFile = createConcatFile(updatedConfig.videoSources, updatedConfig.loop)
+    tempFiles.push(concatFile)
+    inputArgs = ['-re', '-f', 'concat', '-safe', '0', ...(updatedConfig.loop ? ['-stream_loop', '-1'] : []), '-i', concatFile]
+  } else {
+    const source = updatedConfig.videoSources?.[0]
+    const inputSource = source?.url || updatedConfig.videoUrl || join(VIDEO_DIR, source?.path || updatedConfig.videoPath || '')
+    inputArgs = ['-re', ...(updatedConfig.loop ? ['-stream_loop', '-1'] : []), '-i', inputSource]
+  }
+
+  const overlayResult = buildOverlayFilters(updatedConfig.overlays)
+  const processes = []
+
+  for (const dest of updatedConfig.destinations) {
+    const rtmpTarget = `${dest.rtmpUrl}/${dest.streamKey}`
+    let ffmpegArgs = [...inputArgs]
+
+    if (overlayResult) {
+      ffmpegArgs.push(...overlayResult.inputArgs)
+      ffmpegArgs.push('-filter_complex', overlayResult.filterComplex)
+      ffmpegArgs.push('-map', `[${overlayResult.outputLabel}]`)
+      ffmpegArgs.push('-map', '0:a?')
+    }
+
+    ffmpegArgs.push(
+      '-c:v', 'libx264', '-preset', 'veryfast', '-maxrate', '4500k', '-bufsize', '9000k',
+      '-pix_fmt', 'yuv420p', '-g', '60', '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-f', 'flv',
+      rtmpTarget,
+    )
+
+    const proc = spawn('ffmpeg', ffmpegArgs, { stdio: ['pipe', 'pipe', 'pipe'] })
+    proc.stderr.on('data', (data) => {
+      const msg = data.toString()
+      if (msg.includes('Error') || msg.includes('error') || msg.includes('Opening')) {
+        console.log(`[FFmpeg ${streamId}/${dest.id}] ${msg.trim()}`)
+      }
+    })
+    proc.on('close', (code) => {
+      console.log(`[2MStream] FFmpeg process for ${streamId}/${dest.id} exited with code ${code}`)
+    })
+    processes.push({ proc, destId: dest.id, killed: false })
+  }
+
+  activeStreams.set(streamId, {
+    processes,
+    destinations: updatedConfig.destinations,
+    tempFiles,
+    isPlaylist: updatedConfig.isPlaylist,
+    isRtmpPull: updatedConfig.isRtmpPull,
+    overlayCount: updatedConfig.overlays?.length || 0,
+    config: updatedConfig,
+  })
+
+  res.json({
+    success: true,
+    streamId,
+    overlayCount: updatedConfig.overlays?.length || 0,
+    restarted: true,
   })
 })
 

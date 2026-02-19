@@ -39,6 +39,7 @@ import {
 } from "lucide-react"
 import type { Overlay, OverlayType, OverlayPosition } from "@/lib/store"
 import { createClient } from "@/lib/supabase/client"
+import { OverlayPreview } from "./overlay-preview"
 
 const fetcher = (url: string) => fetch(url).then((r) => { if (!r.ok) throw new Error(); return r.json() })
 
@@ -571,6 +572,15 @@ export function OverlayManager() {
           </DialogContent>
         </Dialog>
       </div>
+
+      {/* Live Preview Canvas */}
+      {overlays.length > 0 && (
+        <Card className="border-border bg-card">
+          <CardContent className="p-4">
+            <OverlayPreview overlays={overlays} />
+          </CardContent>
+        </Card>
+      )}
 
       {overlays.length === 0 ? (
         <Card className="border-dashed border-border bg-card">

@@ -229,6 +229,88 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, engine: result })
     }
 
+    if (action === "update_overlays") {
+      // Live overlay update: restart FFmpeg with new overlay config
+      const { overlayIds } = body
+      if (!streamId) return NextResponse.json({ error: "Missing streamId" }, { status: 400 })
+
+      // Fetch the selected overlays
+      let overlays: {
+        id: string;
+        type: string;
+        imagePath: string | null;
+        videoPath: string | null;
+        loopOverlay: boolean;
+        textContent: string | null;
+        fontSize: number;
+        fontColor: string;
+        bgColor: string;
+        position: string;
+        sizePercent: number;
+        opacity: number;
+      }[] = []
+
+      if (overlayIds && overlayIds.length > 0) {
+        const { data: overlayRows } = await supabase
+          .from("overlays")
+          .select("*")
+          .in("id", overlayIds)
+
+        overlays = (overlayRows || []).map((o: {
+          id: string;
+          type: string;
+          image_path?: string;
+          video_path?: string;
+          loop_overlay?: boolean;
+          text_content?: string;
+          font_size: number;
+          font_color: string;
+          bg_color: string;
+          position: string;
+          size_percent: number;
+          opacity: number;
+        }) => ({
+          id: o.id,
+          type: o.type,
+          imagePath: o.image_path || null,
+          videoPath: o.video_path || null,
+          loopOverlay: o.loop_overlay !== false,
+          textContent: o.text_content || null,
+          fontSize: o.font_size,
+          fontColor: o.font_color,
+          bgColor: o.bg_color,
+          position: o.position,
+          sizePercent: o.size_percent,
+          opacity: o.opacity,
+        }))
+      }
+
+      // Call the streaming server's /restart endpoint
+      try {
+        const result = await callStreamingServer("/restart", { streamId, overlays })
+        if (result?.error) {
+          return NextResponse.json({ success: false, error: result.error }, { status: 400 })
+        }
+
+        // Update the stream_overlays join table in DB
+        // Remove old overlay associations
+        await supabase.from("stream_overlays").delete().eq("stream_id", streamId)
+        // Insert new ones
+        if (overlayIds && overlayIds.length > 0) {
+          const rows = overlayIds.map((oid: string) => ({ stream_id: streamId, overlay_id: oid }))
+          await supabase.from("stream_overlays").insert(rows)
+        }
+
+        return NextResponse.json({ success: true, overlayCount: overlays.length, restarted: true })
+      } catch (err) {
+        return NextResponse.json({
+          success: false,
+          error: "Failed to reach streaming engine for overlay update",
+          detail: err instanceof Error ? err.message : String(err),
+        }, { status: 502 })
+      }
+    }
+
     if (action === "stop") {
       const result = await callStreamingServer("/stop", { streamId })
 
