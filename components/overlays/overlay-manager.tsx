@@ -40,6 +40,7 @@ import {
 import type { Overlay, OverlayType, OverlayPosition } from "@/lib/store"
 import { createClient } from "@/lib/supabase/client"
 import { OverlayPreview } from "./overlay-preview"
+import { OverlayPositionEditor } from "./overlay-position-editor"
 
 const fetcher = (url: string) => fetch(url).then((r) => { if (!r.ok) throw new Error(); return r.json() })
 
@@ -83,6 +84,8 @@ export function OverlayManager() {
   const [name, setName] = useState("")
   const [type, setType] = useState<OverlayType>("logo")
   const [position, setPosition] = useState<OverlayPosition>("top-left")
+  const [positionX, setPositionX] = useState(5)
+  const [positionY, setPositionY] = useState(5)
   const [sizePercent, setSizePercent] = useState(15)
   const [opacity, setOpacity] = useState(100)
   const [imagePath, setImagePath] = useState("")
@@ -102,6 +105,8 @@ export function OverlayManager() {
     setName("")
     setType("logo")
     setPosition("top-left")
+    setPositionX(5)
+    setPositionY(5)
     setSizePercent(15)
     setOpacity(100)
     setImagePath("")
@@ -126,6 +131,8 @@ export function OverlayManager() {
     setName(overlay.name)
     setType(overlay.type)
     setPosition(overlay.position)
+    setPositionX(overlay.position_x ?? 5)
+    setPositionY(overlay.position_y ?? 5)
     setSizePercent(overlay.size_percent)
     setOpacity(overlay.opacity)
     setImagePath(overlay.image_path || "")
@@ -222,6 +229,8 @@ export function OverlayManager() {
         name,
         type,
         position,
+        position_x: positionX,
+        position_y: positionY,
         size_percent: sizePercent,
         opacity,
         image_path: isVideoType ? null : (imagePath || null),
@@ -490,47 +499,27 @@ export function OverlayManager() {
                 </>
               )}
 
-              <div className="space-y-2">
-                <Label>Position on Screen</Label>
-                <div className="grid grid-cols-3 gap-1.5 rounded-lg border border-border bg-secondary p-3">
-                  {(["top-left", "top-center", "top-right", "center", "center", "center", "bottom-left", "bottom-center", "bottom-right"] as OverlayPosition[]).map((pos, i) => {
-                    // Skip the center duplicates at position 3,4 (use only index 5 for center)
-                    if ((i === 3 || i === 4) && pos === "center") {
-                      return <div key={`empty-${i}`} className="h-8" />
-                    }
-                    if (i === 5) {
-                      return (
-                        <button
-                          key="center"
-                          type="button"
-                          onClick={() => setPosition("center")}
-                          className={`flex h-8 items-center justify-center rounded text-xs font-medium transition-colors ${
-                            position === "center"
-                              ? "bg-primary text-primary-foreground"
-                              : "bg-muted text-muted-foreground hover:bg-muted/80"
-                          }`}
-                        >
-                          Center
-                        </button>
-                      )
-                    }
-                    return (
-                      <button
-                        key={pos + i}
-                        type="button"
-                        onClick={() => setPosition(pos)}
-                        className={`flex h-8 items-center justify-center rounded text-xs font-medium transition-colors ${
-                          position === pos
-                            ? "bg-primary text-primary-foreground"
-                            : "bg-muted text-muted-foreground hover:bg-muted/80"
-                        }`}
-                      >
-                        {positionLabels[pos]}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
+              <OverlayPositionEditor
+                positionX={positionX}
+                positionY={positionY}
+                onPositionChange={(x, y) => {
+                  setPositionX(x)
+                  setPositionY(y)
+                  // Auto-set the legacy position field based on nearest preset
+                  if (x < 20 && y < 20) setPosition("top-left")
+                  else if (x > 80 && y < 20) setPosition("top-right")
+                  else if (x >= 20 && x <= 80 && y < 20) setPosition("top-center")
+                  else if (x < 20 && y > 80) setPosition("bottom-left")
+                  else if (x > 80 && y > 80) setPosition("bottom-right")
+                  else if (x >= 20 && x <= 80 && y > 80) setPosition("bottom-center")
+                  else setPosition("center")
+                }}
+                overlayType={type}
+                overlayName={name}
+                imagePath={imagePath || null}
+                textContent={textContent || null}
+                sizePercent={sizePercent}
+              />
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between">

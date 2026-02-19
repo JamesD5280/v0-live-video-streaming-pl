@@ -19,7 +19,16 @@ interface OverlayPreviewProps {
   overlays: Overlay[]
 }
 
-function getPositionStyle(position: OverlayPosition): React.CSSProperties {
+function getPositionStyle(overlay: Overlay): React.CSSProperties {
+  // Use X/Y percentage positioning if available
+  if (overlay.position_x !== undefined && overlay.position_y !== undefined) {
+    return {
+      left: `${overlay.position_x}%`,
+      top: `${overlay.position_y}%`,
+      transform: "translate(-50%, -50%)",
+    }
+  }
+  // Legacy fallback
   const styles: Record<OverlayPosition, React.CSSProperties> = {
     "top-left": { top: "4%", left: "3%" },
     "top-center": { top: "4%", left: "50%", transform: "translateX(-50%)" },
@@ -29,7 +38,7 @@ function getPositionStyle(position: OverlayPosition): React.CSSProperties {
     "bottom-center": { bottom: "4%", left: "50%", transform: "translateX(-50%)" },
     "bottom-right": { bottom: "4%", right: "3%" },
   }
-  return styles[position] || styles["top-left"]
+  return styles[overlay.position] || styles["top-left"]
 }
 
 export function OverlayPreview({ overlays }: OverlayPreviewProps) {
@@ -186,7 +195,7 @@ export function OverlayPreview({ overlays }: OverlayPreviewProps) {
           const isHighlighted = highlightedId === overlay.id
           if (!isVisible) return null
 
-          const positionStyle = getPositionStyle(overlay.position)
+          const positionStyle = getPositionStyle(overlay)
           const opacityValue = overlay.opacity / 100
           const sizePercent = overlay.size_percent
 

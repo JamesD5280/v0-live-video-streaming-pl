@@ -119,6 +119,8 @@ export interface Overlay {
   font_color: string
   bg_color: string
   position: OverlayPosition
+  position_x: number
+  position_y: number
   size_percent: number
   opacity: number
   enabled: boolean
