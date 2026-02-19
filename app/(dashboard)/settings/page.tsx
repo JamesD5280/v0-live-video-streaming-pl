@@ -18,11 +18,11 @@ import {
 import { Separator } from "@/components/ui/separator"
 import { fetcher } from "@/lib/fetcher"
 import type { UserSettings } from "@/lib/store"
-import { Loader2, CheckCircle2, Server, Wifi, WifiOff } from "lucide-react"
+import { Loader2, CheckCircle2, Server, Wifi, WifiOff, RefreshCw } from "lucide-react"
 
 export default function SettingsPage() {
   const { data: settings, error: settingsError, mutate } = useSWR<UserSettings>("/api/settings", fetcher)
-  const { data: engineStatus } = useSWR("/api/streams/engine", (url) =>
+  const { data: engineStatus, mutate: mutateEngine } = useSWR("/api/streams/engine", (url) =>
     fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -31,12 +31,40 @@ export default function SettingsPage() {
     { refreshInterval: 10000 }
   )
   const [saving, setSaving] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [testError, setTestError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [localSettings, setLocalSettings] = useState<Partial<UserSettings>>({})
 
   useEffect(() => {
     if (settings) setLocalSettings(settings)
   }, [settings])
+
+  const testConnection = async () => {
+    setTesting(true)
+    setTestError(null)
+    try {
+      const res = await fetch("/api/streams/engine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "status" }),
+      })
+      const data = await res.json()
+      if (data.status === "ok") {
+        setTestError(null)
+      } else if (data.configured === false) {
+        setTestError("STREAMING_SERVER_URL is not set in environment variables")
+      } else if (data.errorDetail) {
+        setTestError(data.errorDetail)
+      } else {
+        setTestError(`Server responded with status: ${data.status || "offline"}`)
+      }
+      mutateEngine()
+    } catch (err) {
+      setTestError(err instanceof Error ? err.message : "Failed to test connection")
+    }
+    setTesting(false)
+  }
 
   const updateSetting = (key: string, value: unknown) => {
     setLocalSettings((prev) => ({ ...prev, [key]: value }))
@@ -125,6 +153,21 @@ export default function SettingsPage() {
                 </>
               )}
             </div>
+            <div className="mt-4 flex items-center gap-3">
+              <Button variant="outline" size="sm" onClick={testConnection} disabled={testing}>
+                {testing ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <RefreshCw className="mr-2 h-3 w-3" />}
+                Test Connection
+              </Button>
+              {engineStatus?.configured && engineStatus?.status !== "ok" && (
+                <span className="text-xs text-muted-foreground">URL: {engineStatus?.serverUrl || "set"}</span>
+              )}
+            </div>
+            {testError && (
+              <div className="mt-3 rounded-md bg-destructive/10 p-3">
+                <p className="text-xs font-medium text-destructive">Connection Error:</p>
+                <p className="mt-1 font-mono text-xs text-destructive/80">{testError}</p>
+              </div>
+            )}
           </CardContent>
         </Card>
 

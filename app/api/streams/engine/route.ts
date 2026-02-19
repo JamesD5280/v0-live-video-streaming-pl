@@ -185,8 +185,14 @@ export async function POST(req: NextRequest) {
         console.log("[v0] Engine status: health response", JSON.stringify(health))
         return NextResponse.json({ configured: true, ...health })
       } catch (err) {
-        console.log("[v0] Engine status: failed to reach server", err instanceof Error ? err.message : String(err))
-        return NextResponse.json({ configured: true, status: "offline" })
+        const errorMsg = err instanceof Error ? err.message : String(err)
+        console.log("[v0] Engine status: failed to reach server", errorMsg)
+        return NextResponse.json({ 
+          configured: true, 
+          status: "offline", 
+          errorDetail: errorMsg,
+          serverUrl: STREAMING_SERVER_URL?.replace(/\/\/(.+?)@/, '//**@') // mask credentials if any
+        })
       }
     }
 
