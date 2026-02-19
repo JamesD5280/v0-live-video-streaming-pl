@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/select"
 import { fetcher } from "@/lib/fetcher"
 import type { Video, Destination, ScheduledEvent } from "@/lib/store"
-import { Calendar, Clock, Plus, Trash2, Video as VideoIcon, Radio, Repeat, Loader2 } from "lucide-react"
+import { Calendar, Clock, Plus, Trash2, Video as VideoIcon, Radio, Repeat, Loader2, Rss, Film } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export function StreamScheduler() {
@@ -29,6 +29,8 @@ export function StreamScheduler() {
   const [newEvent, setNewEvent] = useState({
     title: "",
     videoId: "",
+    sourceType: "video" as "video" | "rtmp_pull",
+    rtmpPullUrl: "",
     destinations: [] as string[],
     date: "",
     time: "",
@@ -55,13 +57,15 @@ export function StreamScheduler() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: newEvent.title,
-        video_id: newEvent.videoId,
+        source_type: newEvent.sourceType,
+        video_id: newEvent.sourceType === "video" ? newEvent.videoId : undefined,
+        rtmp_pull_url: newEvent.sourceType === "rtmp_pull" ? newEvent.rtmpPullUrl : undefined,
         scheduled_at: scheduledAt,
         repeat_mode: newEvent.repeat,
         destination_ids: newEvent.destinations,
       }),
     })
-    setNewEvent({ title: "", videoId: "", destinations: [], date: "", time: "", repeat: "none" })
+    setNewEvent({ title: "", videoId: "", sourceType: "video", rtmpPullUrl: "", destinations: [], date: "", time: "", repeat: "none" })
     setShowForm(false)
     setSaving(false)
     mutate()
@@ -117,6 +121,33 @@ export function StreamScheduler() {
                 />
               </div>
               <div className="space-y-2">
+                <Label className="text-foreground">Source Type</Label>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant={newEvent.sourceType === "video" ? "default" : "outline"}
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => setNewEvent({ ...newEvent, sourceType: "video" })}
+                  >
+                    <Film className="h-3.5 w-3.5" />
+                    Video File
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={newEvent.sourceType === "rtmp_pull" ? "default" : "outline"}
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => setNewEvent({ ...newEvent, sourceType: "rtmp_pull" })}
+                  >
+                    <Rss className="h-3.5 w-3.5" />
+                    RTMP Pull
+                  </Button>
+                </div>
+              </div>
+            </div>
+            {newEvent.sourceType === "video" ? (
+              <div className="space-y-2">
                 <Label className="text-foreground">Video</Label>
                 <Select value={newEvent.videoId} onValueChange={(val) => setNewEvent({ ...newEvent, videoId: val })}>
                   <SelectTrigger className="bg-secondary border-border text-foreground"><SelectValue placeholder="Select video" /></SelectTrigger>
@@ -127,7 +158,21 @@ export function StreamScheduler() {
                   </SelectContent>
                 </Select>
               </div>
-            </div>
+            ) : (
+              <div className="space-y-2">
+                <Label className="text-foreground">RTMP Source URL</Label>
+                <Input
+                  value={newEvent.rtmpPullUrl}
+                  onChange={(e) => setNewEvent({ ...newEvent, rtmpPullUrl: e.target.value })}
+                  placeholder="rtmp://source-server.com/live/stream-key"
+                  className="bg-secondary border-border text-foreground font-mono text-sm"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Enter the RTMP URL of the stream to pull and restream at the scheduled time.
+                </p>
+              </div>
+            )}
+
             <div className="grid gap-4 sm:grid-cols-3">
               <div className="space-y-2">
                 <Label className="text-foreground">Date</Label>
@@ -169,7 +214,7 @@ export function StreamScheduler() {
               </div>
             </div>
             <div className="flex gap-2">
-              <Button onClick={addEvent} disabled={!newEvent.title || !newEvent.videoId || !newEvent.date || !newEvent.time || saving} className="bg-primary text-primary-foreground hover:bg-primary/90">
+              <Button onClick={addEvent} disabled={!newEvent.title || (newEvent.sourceType === "video" ? !newEvent.videoId : !newEvent.rtmpPullUrl.trim()) || !newEvent.date || !newEvent.time || saving} className="bg-primary text-primary-foreground hover:bg-primary/90">
                 {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Schedule
               </Button>
@@ -215,7 +260,10 @@ export function StreamScheduler() {
                         )}
                       </div>
                       <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
-                        <span className="flex items-center gap-1"><VideoIcon className="h-3 w-3" />{event.video?.title || "Unknown"}</span>
+                        <span className="flex items-center gap-1">
+                          {event.source_type === "rtmp_pull" ? <Rss className="h-3 w-3" /> : <VideoIcon className="h-3 w-3" />}
+                          {event.source_type === "rtmp_pull" ? `RTMP: ${event.rtmp_pull_url}` : (event.video?.title || "Unknown")}
+                        </span>
                         <span className="flex items-center gap-1"><Radio className="h-3 w-3" />{destNames.join(", ") || "No destinations"}</span>
                       </div>
                     </div>
