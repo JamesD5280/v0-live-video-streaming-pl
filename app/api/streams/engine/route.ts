@@ -61,12 +61,20 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "No destinations configured" }, { status: 400 })
       }
 
-      // Determine video source(s)
+      // Determine video source(s) or RTMP pull URL
       const supabaseStorageBase = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public`
       let videoSources: { url?: string; path?: string; title?: string }[] = []
       let loop = true
+      const isRtmpPull = !!stream.rtmp_pull_url
 
-      if (stream.playlist) {
+      if (isRtmpPull) {
+        // RTMP Pull mode: no video files needed, stream from RTMP URL
+        videoSources = [{
+          url: stream.rtmp_pull_url,
+          title: "RTMP Pull Source",
+        }]
+        loop = false // RTMP pull is live, no looping
+      } else if (stream.playlist) {
         // Playlist mode: multiple videos in order
         const items = (stream.playlist.playlist_items || [])
           .sort((a: { position: number }, b: { position: number }) => a.position - b.position)
@@ -104,6 +112,8 @@ export async function POST(req: NextRequest) {
           id: string;
           type: string;
           image_path?: string;
+          video_path?: string;
+          loop_overlay?: boolean;
           text_content?: string;
           font_size: number;
           font_color: string;
@@ -115,6 +125,8 @@ export async function POST(req: NextRequest) {
           id: so.overlay.id,
           type: so.overlay.type,
           imagePath: so.overlay.image_path || null,
+          videoPath: so.overlay.video_path || null,
+          loopOverlay: so.overlay.loop_overlay !== false,
           textContent: so.overlay.text_content || null,
           fontSize: so.overlay.font_size,
           fontColor: so.overlay.font_color,
@@ -136,6 +148,8 @@ export async function POST(req: NextRequest) {
           overlays,
           loop,
           isPlaylist: !!stream.playlist,
+          isRtmpPull,
+          rtmpPullUrl: stream.rtmp_pull_url || null,
         })
       } catch (engineErr) {
         // Mark stream as error since engine couldn't start

@@ -62,8 +62,37 @@ export async function DELETE(req: NextRequest) {
     const id = searchParams.get("id")
     if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 })
 
+    // Get the video record first so we know the filename
+    const { data: video } = await supabase
+      .from("videos")
+      .select("filename")
+      .eq("id", id)
+      .single()
+
+    // Delete from database
     const { error } = await supabase.from("videos").delete().eq("id", id)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    // Delete from streaming server
+    if (video?.filename) {
+      const STREAMING_SERVER_URL = process.env.STREAMING_SERVER_URL
+      const STREAMING_API_SECRET = process.env.STREAMING_API_SECRET || "change-this-secret"
+      if (STREAMING_SERVER_URL) {
+        try {
+          await fetch(`${STREAMING_SERVER_URL}/delete-video`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${STREAMING_API_SECRET}`,
+            },
+            body: JSON.stringify({ filename: video.filename }),
+          })
+        } catch {
+          // Server delete failed but DB record is already removed -- not critical
+        }
+      }
+    }
+
     return NextResponse.json({ success: true })
   } catch (e) {
     console.error("[v0] Videos DELETE crash:", e)

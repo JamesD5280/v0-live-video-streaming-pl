@@ -19,7 +19,7 @@ import { fetcher } from "@/lib/fetcher"
 import type { Video, Destination, Stream, Playlist, Overlay } from "@/lib/store"
 import {
   Radio, Play, Calendar, CheckCircle2, Clock, AlertCircle, StopCircle, Loader2,
-  Film, ListMusic, Layers, Eye, EyeOff,
+  Film, ListMusic, Layers, Eye, EyeOff, Rss,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -31,7 +31,7 @@ const statusConfig: Record<string, { label: string; className: string; icon: typ
   error: { label: "Error", className: "bg-destructive/10 text-destructive border-destructive/20", icon: AlertCircle },
 }
 
-type SourceType = "video" | "playlist"
+type SourceType = "video" | "playlist" | "rtmp_pull"
 
 export function StreamCreator() {
   const { data: videos, error: videosError } = useSWR<Video[]>("/api/videos", fetcher)
@@ -43,6 +43,7 @@ export function StreamCreator() {
   const [sourceType, setSourceType] = useState<SourceType>("video")
   const [selectedVideo, setSelectedVideo] = useState("")
   const [selectedPlaylist, setSelectedPlaylist] = useState("")
+  const [rtmpPullUrl, setRtmpPullUrl] = useState("")
   const [streamTitle, setStreamTitle] = useState("")
   const [selectedDestinations, setSelectedDestinations] = useState<string[]>([])
   const [selectedOverlays, setSelectedOverlays] = useState<string[]>([])
@@ -66,7 +67,7 @@ export function StreamCreator() {
     )
   }
 
-  const hasSource = sourceType === "video" ? !!selectedVideo : !!selectedPlaylist
+  const hasSource = sourceType === "video" ? !!selectedVideo : sourceType === "playlist" ? !!selectedPlaylist : !!rtmpPullUrl.trim()
   const canStart = hasSource && streamTitle && selectedDestinations.length > 0
 
   const handleGoLive = async () => {
@@ -82,8 +83,10 @@ export function StreamCreator() {
 
       if (sourceType === "video") {
         payload.video_id = selectedVideo
-      } else {
+      } else if (sourceType === "playlist") {
         payload.playlist_id = selectedPlaylist
+      } else if (sourceType === "rtmp_pull") {
+        payload.rtmp_pull_url = rtmpPullUrl.trim()
       }
 
       // 1. Create the stream record (will be "pending")
@@ -110,6 +113,7 @@ export function StreamCreator() {
           setStreamTitle("")
           setSelectedVideo("")
           setSelectedPlaylist("")
+          setRtmpPullUrl("")
           setSelectedDestinations([])
           setSelectedOverlays([])
         }
@@ -175,6 +179,16 @@ export function StreamCreator() {
                     <ListMusic className="h-3.5 w-3.5" />
                     Playlist
                   </Button>
+                  <Button
+                    type="button"
+                    variant={sourceType === "rtmp_pull" ? "default" : "outline"}
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => setSourceType("rtmp_pull")}
+                  >
+                    <Rss className="h-3.5 w-3.5" />
+                    RTMP Pull
+                  </Button>
                 </div>
               </div>
 
@@ -220,6 +234,21 @@ export function StreamCreator() {
                   {availablePlaylists.length === 0 && (
                     <p className="text-xs text-muted-foreground">No playlists yet. Create one from the Playlists page.</p>
                   )}
+                </div>
+              )}
+
+              {sourceType === "rtmp_pull" && (
+                <div className="space-y-2">
+                  <Label className="text-foreground">RTMP Source URL</Label>
+                  <Input
+                    value={rtmpPullUrl}
+                    onChange={(e) => setRtmpPullUrl(e.target.value)}
+                    placeholder="rtmp://source-server.com/live/stream-key"
+                    className="bg-secondary border-border text-foreground font-mono text-sm"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Enter the RTMP URL of the stream you want to pull and restream with your overlays. Supports rtmp:// and rtmps:// URLs.
+                  </p>
                 </div>
               )}
 
@@ -343,10 +372,10 @@ export function StreamCreator() {
             <CardContent>
               <div className="space-y-4">
                 {[
-                  { step: "1", title: "Upload Videos", desc: "Upload pre-recorded videos or create playlists" },
-                  { step: "2", title: "Add Overlays", desc: "Set up logos, bugs, and lower thirds" },
+                  { step: "1", title: "Choose Source", desc: "Upload videos, create playlists, or pull an RTMP stream" },
+                  { step: "2", title: "Add Overlays", desc: "Add logos, video overlays (.MOV), bugs, and text" },
                   { step: "3", title: "Configure Destinations", desc: "Select which platforms to stream to" },
-                  { step: "4", title: "Go Live", desc: "Your video streams as live with overlays applied" },
+                  { step: "4", title: "Go Live", desc: "Your content streams live with overlays applied" },
                 ].map((item) => (
                   <div key={item.step} className="flex gap-3">
                     <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
@@ -384,7 +413,9 @@ export function StreamCreator() {
                 const destNames = (stream.stream_destinations || [])
                   .map((sd) => sd.destination?.name)
                   .filter(Boolean)
-                const sourceName = stream.playlist
+                const sourceName = stream.rtmp_pull_url
+                  ? `RTMP Pull: ${stream.rtmp_pull_url}`
+                  : stream.playlist
                   ? `Playlist: ${stream.playlist.name}`
                   : stream.video?.title || "Unknown"
                 const overlayCount = stream.stream_overlays?.length || 0

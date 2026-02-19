@@ -119,6 +119,24 @@ function buildOverlayFilters(overlays) {
         )
       }
       currentLabel = outputLabel
+    } else if (overlay.type === 'video' && overlay.videoPath) {
+      // Video overlay (rotating logo, animation .MOV/.MP4)
+      // Use -stream_loop -1 for looping, applied per-input via input options
+      if (overlay.loopOverlay !== false) {
+        inputArgs.push('-stream_loop', '-1')
+      }
+      inputArgs.push('-i', overlay.videoPath)
+      
+      const scalePercent = overlay.sizePercent || 15
+      const opacityValue = (overlay.opacity || 100) / 100
+
+      // Scale the video overlay, apply alpha channel (for .MOV with transparency), and set opacity
+      const scaleFilter = `[${inputIndex}:v]scale=iw*${scalePercent}/100:-1,format=rgba,colorchannelmixer=aa=${opacityValue}[vid${i}]`
+      filters.push(scaleFilter)
+      filters.push(`[${currentLabel}][vid${i}]overlay=${posCoords}:shortest=0[${outputLabel}]`)
+      
+      currentLabel = outputLabel
+      inputIndex++
     } else if (overlay.imagePath) {
       // Image overlay (logo, bug, image)
       inputArgs.push('-i', overlay.imagePath)
@@ -326,6 +344,32 @@ app.get('/videos', (req, res) => {
 })
 
 /**
+ * POST /delete-video
+ * Body: { filename: "video-name.mp4" }
+ * Deletes a video file from the VIDEO_DIR
+ */
+app.post('/delete-video', (req, res) => {
+  const { filename } = req.body
+  if (!filename) return res.status(400).json({ error: 'Missing filename' })
+
+  const safeFilename = basename(String(filename))
+  const filePath = join(VIDEO_DIR, safeFilename)
+
+  if (!existsSync(filePath)) {
+    return res.json({ success: true, message: 'File not found (already deleted)' })
+  }
+
+  try {
+    unlinkSync(filePath)
+    console.log(`[2MStream] Deleted video: ${safeFilename}`)
+    res.json({ success: true, filename: safeFilename })
+  } catch (err) {
+    console.error(`[2MStream] Failed to delete ${safeFilename}:`, err.message)
+    res.status(500).json({ error: `Failed to delete: ${err.message}` })
+  }
+})
+
+/**
  * POST /start
  * Body: {
  *   streamId: "uuid",
@@ -333,9 +377,11 @@ app.get('/videos', (req, res) => {
  *   videoUrl: "https://...",       // backward compat
  *   videoPath: "local-file.mp4",   // backward compat
  *   destinations: [{ id, name, rtmpUrl, streamKey }],
- *   overlays: [{ id, type, imagePath?, textContent?, fontSize, fontColor, bgColor, position, sizePercent, opacity }],
+ *   overlays: [{ id, type, imagePath?, videoPath?, loopOverlay?, textContent?, fontSize, fontColor, bgColor, position, sizePercent, opacity }],
  *   loop: true/false,
- *   isPlaylist: true/false
+ *   isPlaylist: true/false,
+ *   isRtmpPull: true/false,
+ *   rtmpPullUrl: "rtmp://..."
  * }
  */
 app.post('/start', (req, res) => {
@@ -347,7 +393,9 @@ app.post('/start', (req, res) => {
     destinations, 
     overlays, 
     loop = true, 
-    isPlaylist = false 
+    isPlaylist = false,
+    isRtmpPull = false,
+    rtmpPullUrl = null,
   } = req.body
 
   if (!streamId || !destinations || destinations.length === 0) {
@@ -364,7 +412,14 @@ app.post('/start', (req, res) => {
   // Determine input arguments
   let inputArgs = []
 
-  if (isPlaylist && videoSources && videoSources.length > 1) {
+  if (isRtmpPull && rtmpPullUrl) {
+    // RTMP pull mode: pull from external RTMP stream
+    console.log(`[2MStream] RTMP Pull mode from: ${rtmpPullUrl}`)
+    inputArgs = [
+      '-rw_timeout', '10000000', // 10s timeout for RTMP connection
+      '-i', rtmpPullUrl,
+    ]
+  } else if (isPlaylist && videoSources && videoSources.length > 1) {
     // Playlist mode: use concat demuxer
     const concatFile = createConcatFile(videoSources, loop)
     tempFiles.push(concatFile)
@@ -438,6 +493,9 @@ app.post('/start', (req, res) => {
     if (isPlaylist && videoSources?.length > 1) {
       console.log(`[2MStream]   playlist mode: ${videoSources.length} videos, loop=${loop}`)
     }
+    if (isRtmpPull) {
+      console.log(`[2MStream]   RTMP pull mode from: ${rtmpPullUrl}`)
+    }
     
     const proc = spawn('ffmpeg', ffmpegArgs, { stdio: ['pipe', 'pipe', 'pipe'] })
 
@@ -465,6 +523,7 @@ app.post('/start', (req, res) => {
     destinations, 
     tempFiles,
     isPlaylist,
+    isRtmpPull,
     overlayCount: overlays?.length || 0,
   })
 
@@ -482,6 +541,7 @@ app.post('/start', (req, res) => {
     destinationCount: destinations.length,
     overlayCount: overlays?.length || 0,
     isPlaylist,
+    isRtmpPull,
     videoCount: videoSources?.length || 1,
     errors: errors.length > 0 ? errors : undefined,
   })

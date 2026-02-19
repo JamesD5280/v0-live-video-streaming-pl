@@ -34,6 +34,8 @@ import {
   Eye,
   EyeOff,
   Pencil,
+  Video,
+  Repeat,
 } from "lucide-react"
 import type { Overlay, OverlayType, OverlayPosition } from "@/lib/store"
 import { createClient } from "@/lib/supabase/client"
@@ -46,6 +48,7 @@ const overlayTypeLabels: Record<OverlayType, string> = {
   lower_third: "Lower Third",
   text: "Text Overlay",
   image: "Image Overlay",
+  video: "Video Overlay",
 }
 
 const overlayTypeIcons: Record<OverlayType, typeof ImageIcon> = {
@@ -54,6 +57,7 @@ const overlayTypeIcons: Record<OverlayType, typeof ImageIcon> = {
   lower_third: Type,
   text: Type,
   image: ImageIcon,
+  video: Video,
 }
 
 const positionLabels: Record<OverlayPosition, string> = {
@@ -86,8 +90,12 @@ export function OverlayManager() {
   const [fontSize, setFontSize] = useState(24)
   const [fontColor, setFontColor] = useState("#ffffff")
   const [bgColor, setBgColor] = useState("#00000080")
+  const [loopOverlay, setLoopOverlay] = useState(true)
+  const [videoPath, setVideoPath] = useState("")
+  const [uploadProgress, setUploadProgress] = useState(0)
 
   const isTextType = type === "text" || type === "lower_third"
+  const isVideoType = type === "video"
 
   const resetForm = () => {
     setName("")
@@ -101,6 +109,9 @@ export function OverlayManager() {
     setFontSize(24)
     setFontColor("#ffffff")
     setBgColor("#00000080")
+    setLoopOverlay(true)
+    setVideoPath("")
+    setUploadProgress(0)
     setEditingId(null)
   }
 
@@ -122,7 +133,53 @@ export function OverlayManager() {
     setFontSize(overlay.font_size)
     setFontColor(overlay.font_color)
     setBgColor(overlay.bg_color)
+    setLoopOverlay(overlay.loop_overlay ?? true)
+    setVideoPath(overlay.video_path || "")
     setDialogOpen(true)
+  }
+
+  const handleVideoOverlayUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setUploading(true)
+    setUploadProgress(0)
+    try {
+      // Upload video overlay to streaming server using the same chunked approach as videos
+      const CHUNK_SIZE = 4 * 1024 * 1024
+      const totalChunks = Math.ceil(file.size / CHUNK_SIZE)
+      const uploadId = `overlay-${Date.now()}`
+
+      for (let i = 0; i < totalChunks; i++) {
+        const start = i * CHUNK_SIZE
+        const end = Math.min(start + CHUNK_SIZE, file.size)
+        const chunk = file.slice(start, end)
+
+        const formData = new FormData()
+        formData.append("chunk", chunk)
+        formData.append("filename", `overlay-${file.name}`)
+        formData.append("uploadId", uploadId)
+        formData.append("chunkIndex", String(i))
+        formData.append("totalChunks", String(totalChunks))
+
+        const res = await fetch("/api/videos/upload/chunk", {
+          method: "POST",
+          body: formData,
+        })
+
+        if (!res.ok) throw new Error("Upload failed")
+
+        const data = await res.json()
+        setUploadProgress(Math.round(((i + 1) / totalChunks) * 100))
+
+        if (data.complete && data.serverPath) {
+          setVideoPath(data.serverPath)
+        }
+      }
+    } catch (err) {
+      console.error("Video overlay upload error:", err)
+    }
+    setUploading(false)
   }
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -166,7 +223,9 @@ export function OverlayManager() {
         position,
         size_percent: sizePercent,
         opacity,
-        image_path: imagePath || null,
+        image_path: isVideoType ? null : (imagePath || null),
+        video_path: isVideoType ? (videoPath || null) : null,
+        loop_overlay: isVideoType ? loopOverlay : true,
         text_content: textContent || null,
         font_size: fontSize,
         font_color: fontColor,
@@ -268,7 +327,7 @@ export function OverlayManager() {
                 </Select>
               </div>
 
-              {!isTextType && (
+              {!isTextType && !isVideoType && (
                 <div className="space-y-2">
                   <Label>Image</Label>
                   <input
@@ -310,6 +369,65 @@ export function OverlayManager() {
                       </p>
                     </button>
                   )}
+                </div>
+              )}
+
+              {isVideoType && (
+                <div className="space-y-3">
+                  <Label>Video File (.MOV, .MP4)</Label>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".mov,.mp4,.webm"
+                    className="hidden"
+                    onChange={handleVideoOverlayUpload}
+                  />
+                  {videoPath ? (
+                    <div className="flex items-center gap-3 rounded-lg border border-border bg-secondary p-3">
+                      <Video className="h-8 w-8 text-primary" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-foreground">Video uploaded</p>
+                        <p className="text-xs text-muted-foreground truncate">{videoPath.split("/").pop()}</p>
+                      </div>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        Change
+                      </Button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="flex w-full flex-col items-center gap-2 rounded-lg border-2 border-dashed border-border p-6 text-center transition-colors hover:border-primary/50 hover:bg-secondary"
+                    >
+                      {uploading ? (
+                        <>
+                          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                          <p className="text-sm text-muted-foreground">Uploading... {uploadProgress}%</p>
+                          <div className="h-1.5 w-full max-w-xs rounded-full bg-muted">
+                            <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${uploadProgress}%` }} />
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="h-8 w-8 text-muted-foreground" />
+                          <p className="text-sm text-muted-foreground">Click to upload rotating logo or animation (.MOV, .MP4)</p>
+                        </>
+                      )}
+                    </button>
+                  )}
+
+                  <div className="flex items-center gap-3 rounded-lg border border-border bg-secondary p-3">
+                    <Repeat className="h-4 w-4 text-muted-foreground" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-foreground">Loop Video</p>
+                      <p className="text-xs text-muted-foreground">Continuously loop the overlay during the stream</p>
+                    </div>
+                    <Switch checked={loopOverlay} onCheckedChange={setLoopOverlay} />
+                  </div>
                 </div>
               )}
 
@@ -443,7 +561,7 @@ export function OverlayManager() {
 
               <Button
                 onClick={handleSave}
-                disabled={creating || !name.trim() || (!isTextType && !imagePath) || (isTextType && !textContent.trim())}
+                disabled={creating || !name.trim() || (!isTextType && !isVideoType && !imagePath) || (isTextType && !textContent.trim()) || (isVideoType && !videoPath)}
                 className="w-full"
               >
                 {creating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
@@ -492,13 +610,20 @@ export function OverlayManager() {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {overlay.image_path && (
+                  {overlay.image_path && overlay.type !== "video" && (
                     <div className="overflow-hidden rounded-md bg-secondary">
                       <img
                         src={overlay.image_path}
                         alt={overlay.name}
                         className="mx-auto max-h-20 object-contain p-2"
                       />
+                    </div>
+                  )}
+                  {overlay.type === "video" && overlay.video_path && (
+                    <div className="flex items-center gap-2 rounded-md bg-secondary p-2">
+                      <Video className="h-5 w-5 text-primary" />
+                      <span className="truncate text-xs text-muted-foreground">{overlay.video_path.split("/").pop()}</span>
+                      {overlay.loop_overlay && <Repeat className="h-3.5 w-3.5 text-primary" />}
                     </div>
                   )}
                   {overlay.text_content && (

@@ -34,6 +34,8 @@ export async function POST(req: NextRequest) {
         name: body.name,
         type: body.type,
         image_path: body.image_path || null,
+        video_path: body.video_path || null,
+        loop_overlay: body.loop_overlay !== false,
         text_content: body.text_content || null,
         font_size: body.font_size || 24,
         font_color: body.font_color || "#ffffff",

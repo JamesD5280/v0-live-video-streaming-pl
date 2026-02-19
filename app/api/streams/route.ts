@@ -35,6 +35,7 @@ export async function POST(req: NextRequest) {
         user_id: user.id,
         video_id: body.video_id || null,
         playlist_id: body.playlist_id || null,
+        rtmp_pull_url: body.rtmp_pull_url || null,
         title: body.title,
         status: "pending",
       })

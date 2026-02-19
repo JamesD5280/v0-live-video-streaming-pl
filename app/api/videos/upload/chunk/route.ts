@@ -63,6 +63,10 @@ export async function POST(req: NextRequest) {
     }
 
     const data = await res.json()
+    // Include serverPath for video overlay uploads
+    if (data.complete && data.path) {
+      data.serverPath = data.path
+    }
     return NextResponse.json(data)
   } catch (e) {
     console.error("Chunk upload error:", e)
