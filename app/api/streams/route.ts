@@ -101,3 +101,33 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+
+    const { searchParams } = new URL(req.url)
+    const id = searchParams.get("id")
+    if (!id) return NextResponse.json({ error: "Missing stream id" }, { status: 400 })
+
+    // Only allow deletion of stopped/completed/error streams
+    const { data: stream } = await supabase.from("streams").select("status").eq("id", id).single()
+    if (!stream) return NextResponse.json({ error: "Stream not found" }, { status: 404 })
+    if (stream.status === "live" || stream.status === "pending") {
+      return NextResponse.json({ error: "Cannot delete active or pending streams" }, { status: 400 })
+    }
+
+    // Delete related rows first, then the stream
+    await supabase.from("stream_overlays").delete().eq("stream_id", id)
+    await supabase.from("stream_destinations").delete().eq("stream_id", id)
+    const { error } = await supabase.from("streams").delete().eq("id", id)
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ success: true })
+  } catch (e) {
+    console.error("Streams DELETE error:", e)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+  }
+}

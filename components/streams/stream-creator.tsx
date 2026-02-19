@@ -19,7 +19,7 @@ import { fetcher } from "@/lib/fetcher"
 import type { Video, Destination, Stream, Playlist, Overlay } from "@/lib/store"
 import {
   Radio, Play, Calendar, CheckCircle2, Clock, AlertCircle, StopCircle, Loader2,
-  Film, ListMusic, Layers, Eye, EyeOff, Rss,
+  Film, ListMusic, Layers, Eye, EyeOff, Rss, Trash2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -49,6 +49,11 @@ export function StreamCreator() {
   const [selectedOverlays, setSelectedOverlays] = useState<string[]>([])
   const [creating, setCreating] = useState(false)
   const [startError, setStartError] = useState<string | null>(null)
+  const [rtmpChecking, setRtmpChecking] = useState(false)
+  const [rtmpCheckResult, setRtmpCheckResult] = useState<{ valid: boolean; error?: string; hasVideo?: boolean; hasAudio?: boolean } | null>(null)
+  const [previewing, setPreviewing] = useState(false)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [previewError, setPreviewError] = useState<string | null>(null)
 
   const readyVideos = Array.isArray(videos) ? videos.filter((v) => v.status === "ready") : []
   const enabledDestinations = Array.isArray(destinations) ? destinations.filter((d) => d.enabled) : []
@@ -135,6 +140,68 @@ export function StreamCreator() {
     })
     mutateStreams()
   }
+
+  const handleDeleteStream = async (streamId: string) => {
+    await fetch(`/api/streams?id=${streamId}`, { method: "DELETE" })
+    mutateStreams()
+  }
+
+  const handleDeleteAllStopped = async () => {
+    if (!streams) return
+    const stoppedStreams = streams.filter((s) => s.status === "stopped" || s.status === "completed")
+    await Promise.all(stoppedStreams.map((s) => fetch(`/api/streams?id=${s.id}`, { method: "DELETE" })))
+    mutateStreams()
+  }
+
+  const handleCheckRtmp = async () => {
+    if (!rtmpPullUrl.trim()) return
+    setRtmpChecking(true)
+    setRtmpCheckResult(null)
+    try {
+      const res = await fetch("/api/streams/check-rtmp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: rtmpPullUrl.trim() }),
+      })
+      const data = await res.json()
+      setRtmpCheckResult(data)
+    } catch {
+      setRtmpCheckResult({ valid: false, error: "Failed to check RTMP stream" })
+    }
+    setRtmpChecking(false)
+  }
+
+  const handlePreview = async () => {
+    setPreviewing(true)
+    setPreviewError(null)
+    setPreviewUrl(null)
+    try {
+      const payload: Record<string, unknown> = { overlayIds: selectedOverlays }
+      if (sourceType === "video") payload.videoId = selectedVideo
+      else if (sourceType === "playlist") payload.playlistId = selectedPlaylist
+      else if (sourceType === "rtmp_pull") payload.rtmpPullUrl = rtmpPullUrl.trim()
+
+      const res = await fetch("/api/streams/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Preview failed" }))
+        setPreviewError(err.error || "Preview generation failed")
+      } else {
+        const blob = await res.blob()
+        const url = URL.createObjectURL(blob)
+        setPreviewUrl(url)
+      }
+    } catch {
+      setPreviewError("Failed to generate preview")
+    }
+    setPreviewing(false)
+  }
+
+  const stoppedCount = Array.isArray(streams) ? streams.filter((s) => s.status === "stopped" || s.status === "completed").length : 0
 
   return (
     <div className="space-y-6">
@@ -240,14 +307,49 @@ export function StreamCreator() {
               {sourceType === "rtmp_pull" && (
                 <div className="space-y-2">
                   <Label className="text-foreground">RTMP Source URL</Label>
-                  <Input
-                    value={rtmpPullUrl}
-                    onChange={(e) => setRtmpPullUrl(e.target.value)}
-                    placeholder="rtmp://source-server.com/live/stream-key"
-                    className="bg-secondary border-border text-foreground font-mono text-sm"
-                  />
+                  <div className="flex gap-2">
+                    <Input
+                      value={rtmpPullUrl}
+                      onChange={(e) => { setRtmpPullUrl(e.target.value); setRtmpCheckResult(null) }}
+                      placeholder="rtmp://source-server.com/live/stream-key"
+                      className="bg-secondary border-border text-foreground font-mono text-sm flex-1"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0 gap-1.5"
+                      disabled={!rtmpPullUrl.trim() || rtmpChecking}
+                      onClick={handleCheckRtmp}
+                    >
+                      {rtmpChecking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Rss className="h-3.5 w-3.5" />}
+                      {rtmpChecking ? "Testing..." : "Test Stream"}
+                    </Button>
+                  </div>
+                  {rtmpCheckResult && (
+                    <div className={cn(
+                      "rounded-lg border p-2.5 text-xs",
+                      rtmpCheckResult.valid
+                        ? "border-primary/30 bg-primary/5 text-primary"
+                        : "border-destructive/30 bg-destructive/5 text-destructive"
+                    )}>
+                      {rtmpCheckResult.valid ? (
+                        <span className="flex items-center gap-1.5">
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                          Stream is active
+                          {rtmpCheckResult.hasVideo && " (video"}
+                          {rtmpCheckResult.hasVideo && rtmpCheckResult.hasAudio && " + audio)"}
+                          {rtmpCheckResult.hasVideo && !rtmpCheckResult.hasAudio && " only)"}
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1.5">
+                          <AlertCircle className="h-3.5 w-3.5" />
+                          {rtmpCheckResult.error || "Stream not reachable"}
+                        </span>
+                      )}
+                    </div>
+                  )}
                   <p className="text-xs text-muted-foreground">
-                    Enter the RTMP URL of the stream you want to pull and restream with your overlays. Supports rtmp:// and rtmps:// URLs.
+                    Enter the RTMP URL and click Test Stream to verify it is active before going live.
                   </p>
                 </div>
               )}
@@ -350,7 +452,46 @@ export function StreamCreator() {
                 </div>
               )}
 
+              {/* Preview Player */}
+              {previewUrl && (
+                <div className="space-y-2">
+                  <Label className="text-foreground">Stream Preview (5-second clip with overlays)</Label>
+                  <div className="relative rounded-lg overflow-hidden border border-border bg-black">
+                    <video
+                      src={previewUrl}
+                      controls
+                      autoPlay
+                      className="w-full aspect-video"
+                      onEnded={() => {}}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    This is a 5-second preview of how your stream will look with overlays applied.
+                  </p>
+                </div>
+              )}
+              {previewError && (
+                <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+                    <div>
+                      <p className="text-sm font-medium text-destructive">Preview failed</p>
+                      <p className="mt-1 text-xs text-destructive/80">{previewError}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="flex gap-3 pt-2">
+                <Button
+                  disabled={!hasSource || previewing}
+                  variant="outline"
+                  onClick={handlePreview}
+                  className="gap-2"
+                >
+                  {previewing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
+                  {previewing ? "Generating Preview..." : "Preview Stream"}
+                </Button>
                 <Button
                   disabled={!canStart || creating}
                   onClick={handleGoLive}
@@ -394,8 +535,19 @@ export function StreamCreator() {
       </div>
 
       <Card className="border-border bg-card">
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base font-semibold text-foreground">All Streams</CardTitle>
+          {stoppedCount > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 text-xs text-muted-foreground border-border"
+              onClick={handleDeleteAllStopped}
+            >
+              <Trash2 className="h-3 w-3" />
+              Delete Stopped ({stoppedCount})
+            </Button>
+          )}
         </CardHeader>
         <CardContent>
           {!streams ? (
@@ -443,6 +595,17 @@ export function StreamCreator() {
                         >
                           <StopCircle className="h-3.5 w-3.5" />
                           {stream.status === "live" ? "Stop" : "Dismiss"}
+                        </Button>
+                      )}
+                      {(stream.status === "stopped" || stream.status === "completed") && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="gap-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                          onClick={() => handleDeleteStream(stream.id)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Delete
                         </Button>
                       )}
                       <Badge variant="outline" className={cn("text-xs", config.className)}>
