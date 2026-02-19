@@ -20,13 +20,19 @@
 import express from 'express'
 import cors from 'cors'
 import { spawn } from 'child_process'
-import { existsSync, writeFileSync, unlinkSync } from 'fs'
-import { join } from 'path'
+import { existsSync, writeFileSync, unlinkSync, mkdirSync, readdirSync, statSync, createWriteStream } from 'fs'
+import { join, basename } from 'path'
 import { tmpdir } from 'os'
+import { pipeline } from 'stream/promises'
+import { Readable } from 'stream'
 
 const app = express()
 app.use(cors())
-app.use(express.json())
+// JSON body parser for command endpoints (not upload -- that streams raw)
+app.use((req, res, next) => {
+  if (req.path === '/upload') return next() // skip JSON parsing for uploads
+  express.json({ limit: '1mb' })(req, res, next)
+})
 
 const PORT = process.env.PORT || 3001
 const API_SECRET = process.env.API_SECRET || 'change-this-secret'
@@ -155,6 +161,74 @@ function createConcatFile(videoSources, loop) {
   writeFileSync(concatPath, lines.join('\n'))
   return concatPath
 }
+
+// Ensure video directory exists
+mkdirSync(VIDEO_DIR, { recursive: true })
+
+/**
+ * POST /upload
+ * Receives a raw video file as the request body via streaming.
+ * Headers:
+ *   x-filename: "original-filename.mp4"
+ *   content-type: application/octet-stream
+ */
+app.post('/upload', async (req, res) => {
+  const filename = req.headers['x-filename'] || `upload-${Date.now()}.mp4`
+  const safeFilename = basename(String(filename)) // prevent directory traversal
+  const destPath = join(VIDEO_DIR, safeFilename)
+
+  console.log(`[2MStream] Receiving upload: ${safeFilename}`)
+
+  try {
+    const writeStream = createWriteStream(destPath)
+    let received = 0
+
+    req.on('data', (chunk) => {
+      received += chunk.length
+    })
+
+    await pipeline(req, writeStream)
+
+    const sizeMB = (received / (1024 * 1024)).toFixed(1)
+    console.log(`[2MStream] Upload complete: ${safeFilename} (${sizeMB} MB)`)
+
+    res.json({ 
+      success: true, 
+      filename: safeFilename, 
+      path: destPath,
+      size: received,
+    })
+  } catch (err) {
+    console.error(`[2MStream] Upload failed for ${safeFilename}:`, err.message)
+    // Clean up partial file
+    try { unlinkSync(destPath) } catch {}
+    res.status(500).json({ error: `Upload failed: ${err.message}` })
+  }
+})
+
+/**
+ * GET /videos
+ * Lists all video files in the VIDEO_DIR
+ */
+app.get('/videos', (req, res) => {
+  try {
+    const files = readdirSync(VIDEO_DIR)
+      .filter(f => /\.(mp4|mkv|mov|avi|flv|ts|webm)$/i.test(f))
+      .map(f => {
+        const stats = statSync(join(VIDEO_DIR, f))
+        return {
+          filename: f,
+          size: stats.size,
+          modified: stats.mtime,
+        }
+      })
+      .sort((a, b) => new Date(b.modified).getTime() - new Date(a.modified).getTime())
+
+    res.json({ videos: files, directory: VIDEO_DIR })
+  } catch (err) {
+    res.json({ videos: [], directory: VIDEO_DIR, error: err.message })
+  }
+})
 
 /**
  * POST /start
