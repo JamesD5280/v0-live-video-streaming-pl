@@ -1,22 +1,17 @@
-# NOTE: If running alongside Nimble Streamer, make sure:
-# 1. Nimble doesn't use port 3001 (default for 2MStream engine)
-# 2. Set memory/CPU limits to prevent resource competition
-# 3. 2MStream pushes to YouTube/external RTMP, not to Nimble's local RTMP
+# COEXISTENCE WITH NIMBLE STREAMER:
+# This container uses host networking to avoid Docker iptables rules
+# that can interfere with Nimble Streamer's RTMP port (1935).
+# 2MStream API listens on port 3001 (no conflict with Nimble's 1935).
+# 
+# If port 3001 conflicts with anything, change the PORT env var below.
 services:
   streaming-engine:
     build: .
-    ports:
-      - "3001:3001"
+    network_mode: "host"
     environment:
       - PORT=3001
       - API_SECRET=${API_SECRET}
-      - VIDEO_DIR=/videos
+      - VIDEO_DIR=/app/videos
     volumes:
-      - ./videos:/videos
+      - ./videos:/app/videos
     restart: unless-stopped
-    # Limit resources so it doesn't starve Nimble Streamer
-    deploy:
-      resources:
-        limits:
-          memory: 4G
-          cpus: "2.0"
