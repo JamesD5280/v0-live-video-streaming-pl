@@ -326,6 +326,32 @@ app.get('/videos', (req, res) => {
 })
 
 /**
+ * POST /delete-video
+ * Body: { filename: "video-name.mp4" }
+ * Deletes a video file from the VIDEO_DIR
+ */
+app.post('/delete-video', (req, res) => {
+  const { filename } = req.body
+  if (!filename) return res.status(400).json({ error: 'Missing filename' })
+
+  const safeFilename = basename(String(filename))
+  const filePath = join(VIDEO_DIR, safeFilename)
+
+  if (!existsSync(filePath)) {
+    return res.json({ success: true, message: 'File not found (already deleted)' })
+  }
+
+  try {
+    unlinkSync(filePath)
+    console.log(`[2MStream] Deleted video: ${safeFilename}`)
+    res.json({ success: true, filename: safeFilename })
+  } catch (err) {
+    console.error(`[2MStream] Failed to delete ${safeFilename}:`, err.message)
+    res.status(500).json({ error: `Failed to delete: ${err.message}` })
+  }
+})
+
+/**
  * POST /start
  * Body: {
  *   streamId: "uuid",
