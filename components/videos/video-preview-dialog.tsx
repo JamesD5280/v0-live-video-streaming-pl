@@ -53,9 +53,9 @@ export function VideoPreviewDialog({ video, open, onOpenChange }: VideoPreviewDi
   const [showControls, setShowControls] = useState(true)
   const hideControlsTimer = useRef<NodeJS.Timeout | null>(null)
 
-  const videoUrl = video ? `/api/videos/preview?filename=${encodeURIComponent(video.filename)}` : ""
+  const [videoUrl, setVideoUrl] = useState("")
 
-  // Reset state when video changes
+  // Fetch signed direct URL when video changes
   useEffect(() => {
     if (open && video) {
       setPlaying(false)
@@ -64,6 +64,23 @@ export function VideoPreviewDialog({ video, open, onOpenChange }: VideoPreviewDi
       setLoading(true)
       setError(null)
       setShowControls(true)
+      setVideoUrl("")
+
+      // Get signed URL from API
+      fetch(`/api/videos/preview?filename=${encodeURIComponent(video.filename)}`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.url) {
+            setVideoUrl(data.url)
+          } else {
+            setError(data.error || "Failed to load video preview")
+            setLoading(false)
+          }
+        })
+        .catch(() => {
+          setError("Failed to load video preview")
+          setLoading(false)
+        })
     }
   }, [open, video])
 
