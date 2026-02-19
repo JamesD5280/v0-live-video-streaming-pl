@@ -171,7 +171,6 @@ export function VideoPreviewDialog({ video, open, onOpenChange }: VideoPreviewDi
             preload="metadata"
             playsInline
             onLoadedMetadata={(e) => {
-              console.log("[v0] Video loaded metadata, duration:", e.currentTarget.duration)
               setDuration(e.currentTarget.duration)
               setLoading(false)
             }}
@@ -180,14 +179,9 @@ export function VideoPreviewDialog({ video, open, onOpenChange }: VideoPreviewDi
             onPause={() => setPlaying(false)}
             onEnded={() => setPlaying(false)}
             onWaiting={() => setLoading(true)}
-            onCanPlay={() => {
-              console.log("[v0] Video can play")
-              setLoading(false)
-            }}
+            onCanPlay={() => setLoading(false)}
             onError={(e) => {
-              const el = e.currentTarget
-              const mediaError = el.error
-              console.log("[v0] Video error code:", mediaError?.code, "message:", mediaError?.message, "src:", el.src)
+              const mediaError = e.currentTarget.error
               setLoading(false)
               setError(
                 mediaError?.code === 4
