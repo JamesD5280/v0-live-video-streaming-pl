@@ -119,6 +119,8 @@ export async function POST(req: NextRequest) {
           font_color: string;
           bg_color: string;
           position: string;
+          position_x?: number;
+          position_y?: number;
           size_percent: number;
           opacity: number;
         }}) => ({
@@ -132,6 +134,8 @@ export async function POST(req: NextRequest) {
           fontColor: so.overlay.font_color,
           bgColor: so.overlay.bg_color,
           position: so.overlay.position,
+          positionX: so.overlay.position_x ?? undefined,
+          positionY: so.overlay.position_y ?? undefined,
           sizePercent: so.overlay.size_percent,
           opacity: so.overlay.opacity,
         }))
@@ -246,6 +250,8 @@ export async function POST(req: NextRequest) {
         fontColor: string;
         bgColor: string;
         position: string;
+        positionX?: number;
+        positionY?: number;
         sizePercent: number;
         opacity: number;
       }[] = []
@@ -267,6 +273,8 @@ export async function POST(req: NextRequest) {
           font_color: string;
           bg_color: string;
           position: string;
+          position_x?: number;
+          position_y?: number;
           size_percent: number;
           opacity: number;
         }) => ({
@@ -280,6 +288,8 @@ export async function POST(req: NextRequest) {
           fontColor: o.font_color,
           bgColor: o.bg_color,
           position: o.position,
+          positionX: o.position_x ?? undefined,
+          positionY: o.position_y ?? undefined,
           sizePercent: o.size_percent,
           opacity: o.opacity,
         }))

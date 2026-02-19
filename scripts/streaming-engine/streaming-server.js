@@ -89,17 +89,28 @@ function buildOverlayFilters(overlays) {
     const overlay = overlays[i]
     const outputLabel = `ov${i}`
 
-    // Map position string to FFmpeg overlay coordinates
-    const posMap = {
-      'top-left': 'x=10:y=10',
-      'top-center': 'x=(W-w)/2:y=10',
-      'top-right': 'x=W-w-10:y=10',
-      'center': 'x=(W-w)/2:y=(H-h)/2',
-      'bottom-left': 'x=10:y=H-h-10',
-      'bottom-center': 'x=(W-w)/2:y=H-h-10',
-      'bottom-right': 'x=W-w-10:y=H-h-10',
+    // Map position to FFmpeg overlay coordinates
+    // If positionX/positionY are provided (0-100%), use percentage-based positioning
+    // The overlay position is: x = W*(posX/100) - w/2, y = H*(posY/100) - h/2
+    // Clamped so the overlay doesn't go off-screen
+    let posCoords
+    if (overlay.positionX !== undefined && overlay.positionY !== undefined) {
+      const px = overlay.positionX / 100
+      const py = overlay.positionY / 100
+      posCoords = `x=max(0\\,min(W-w\\,W*${px}-w/2)):y=max(0\\,min(H-h\\,H*${py}-h/2))`
+    } else {
+      // Legacy fallback: use preset position strings
+      const posMap = {
+        'top-left': 'x=10:y=10',
+        'top-center': 'x=(W-w)/2:y=10',
+        'top-right': 'x=W-w-10:y=10',
+        'center': 'x=(W-w)/2:y=(H-h)/2',
+        'bottom-left': 'x=10:y=H-h-10',
+        'bottom-center': 'x=(W-w)/2:y=H-h-10',
+        'bottom-right': 'x=W-w-10:y=H-h-10',
+      }
+      posCoords = posMap[overlay.position] || posMap['top-left']
     }
-    const posCoords = posMap[overlay.position] || posMap['top-left']
 
     if (overlay.type === 'text' || overlay.type === 'lower_third') {
       // Text overlay using drawtext filter
@@ -110,13 +121,32 @@ function buildOverlayFilters(overlays) {
       if (overlay.type === 'lower_third') {
         // Lower third: box with background + text at bottom
         const bgColor = overlay.bgColor || '0x00000080'
+        let ltY, ltTextY
+        if (overlay.positionY !== undefined) {
+          ltY = `ih*${overlay.positionY / 100}-${(fontSize + 30) / 2}`
+          ltTextY = `h*${overlay.positionY / 100}-${fontSize / 2}`
+        } else {
+          ltY = `ih-${fontSize + 30}`
+          ltTextY = `h-${fontSize + 15}`
+        }
+        const ltX = overlay.positionX !== undefined ? `iw*${overlay.positionX / 100}-iw/2` : '0'
         filters.push(
-          `[${currentLabel}]drawbox=x=0:y=ih-${fontSize + 30}:w=iw:h=${fontSize + 30}:color=${bgColor}@0.7:t=fill[bg${i}]`,
-          `[bg${i}]drawtext=text='${escapedText}':fontsize=${fontSize}:fontcolor=${fontColor}:x=20:y=h-${fontSize + 15}[${outputLabel}]`
+          `[${currentLabel}]drawbox=x=${ltX}:y=${ltY}:w=iw:h=${fontSize + 30}:color=${bgColor}@0.7:t=fill[bg${i}]`,
+          `[bg${i}]drawtext=text='${escapedText}':fontsize=${fontSize}:fontcolor=${fontColor}:x=20:y=${ltTextY}[${outputLabel}]`
         )
       } else {
+        // Regular text with X/Y percentage positioning
+        let textX, textY
+        if (overlay.positionX !== undefined && overlay.positionY !== undefined) {
+          textX = `w*${overlay.positionX / 100}-tw/2`
+          textY = `h*${overlay.positionY / 100}-th/2`
+        } else {
+          // Fallback to posCoords-based
+          textX = posCoords.split(':')[0].replace('x=', '').replace('W', 'w').replace('w', 'w')
+          textY = posCoords.split(':')[1]?.replace('y=', '').replace('H', 'h') || '10'
+        }
         filters.push(
-          `[${currentLabel}]drawtext=text='${escapedText}':fontsize=${fontSize}:fontcolor=${fontColor}:${posCoords.replace('x=', 'x=').replace('y=', 'y=')}[${outputLabel}]`
+          `[${currentLabel}]drawtext=text='${escapedText}':fontsize=${fontSize}:fontcolor=${fontColor}:x=${textX}:y=${textY}[${outputLabel}]`
         )
       }
       currentLabel = outputLabel

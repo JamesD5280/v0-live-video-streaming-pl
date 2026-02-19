@@ -41,6 +41,8 @@ export async function POST(req: NextRequest) {
         font_color: body.font_color || "#ffffff",
         bg_color: body.bg_color || "#00000080",
         position: body.position || "top-left",
+        position_x: body.position_x ?? 0,
+        position_y: body.position_y ?? 0,
         size_percent: body.size_percent || 15,
         opacity: body.opacity ?? 100,
         enabled: body.enabled !== false,
