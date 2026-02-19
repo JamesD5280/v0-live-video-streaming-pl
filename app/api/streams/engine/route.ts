@@ -124,25 +124,54 @@ export async function POST(req: NextRequest) {
           opacity: so.overlay.opacity,
         }))
 
-      const result = await callStreamingServer("/start", {
-        streamId: stream.id,
-        videoSources,
-        // Backward compat: also send single video fields
-        videoUrl: videoSources[0]?.url,
-        videoPath: videoSources[0]?.path,
-        destinations,
-        overlays,
-        loop,
-        isPlaylist: !!stream.playlist,
-      })
+      let result
+      try {
+        result = await callStreamingServer("/start", {
+          streamId: stream.id,
+          videoSources,
+          // Backward compat: also send single video fields
+          videoUrl: videoSources[0]?.url,
+          videoPath: videoSources[0]?.path,
+          destinations,
+          overlays,
+          loop,
+          isPlaylist: !!stream.playlist,
+        })
+      } catch (engineErr) {
+        // Mark stream as error since engine couldn't start
+        await supabase
+          .from("streams")
+          .update({ status: "error", updated_at: new Date().toISOString() })
+          .eq("id", streamId)
+        await supabase
+          .from("stream_destinations")
+          .update({ status: "error" })
+          .eq("stream_id", streamId)
+        return NextResponse.json({
+          success: false,
+          error: "Failed to reach streaming engine",
+          detail: engineErr instanceof Error ? engineErr.message : String(engineErr),
+        }, { status: 502 })
+      }
 
-      // Update stream status to live
+      if (result?.error) {
+        await supabase
+          .from("streams")
+          .update({ status: "error", updated_at: new Date().toISOString() })
+          .eq("id", streamId)
+        await supabase
+          .from("stream_destinations")
+          .update({ status: "error" })
+          .eq("stream_id", streamId)
+        return NextResponse.json({ success: false, error: result.error }, { status: 400 })
+      }
+
+      // Only mark as live if engine accepted the start command
       await supabase
         .from("streams")
         .update({ status: "live", started_at: new Date().toISOString() })
         .eq("id", streamId)
 
-      // Update destination statuses
       await supabase
         .from("stream_destinations")
         .update({ status: "connected" })
@@ -171,27 +200,22 @@ export async function POST(req: NextRequest) {
 
     if (action === "status") {
       if (!STREAMING_SERVER_URL) {
-        console.log("[v0] Engine status: STREAMING_SERVER_URL is not set")
         return NextResponse.json({ configured: false })
       }
       try {
-        console.log("[v0] Engine status: checking", `${STREAMING_SERVER_URL}/health`)
         const res = await fetch(`${STREAMING_SERVER_URL}/health`, {
           headers: { Authorization: `Bearer ${STREAMING_API_SECRET}` },
           signal: AbortSignal.timeout(5000),
         })
-        console.log("[v0] Engine status: response status", res.status)
         const health = await res.json()
-        console.log("[v0] Engine status: health response", JSON.stringify(health))
         return NextResponse.json({ configured: true, ...health })
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err)
-        console.log("[v0] Engine status: failed to reach server", errorMsg)
         return NextResponse.json({ 
           configured: true, 
           status: "offline", 
           errorDetail: errorMsg,
-          serverUrl: STREAMING_SERVER_URL?.replace(/\/\/(.+?)@/, '//**@') // mask credentials if any
+          serverUrl: STREAMING_SERVER_URL?.replace(/\/\/(.+?)@/, '//**@')
         })
       }
     }

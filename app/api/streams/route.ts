@@ -28,6 +28,7 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json()
 
+    // Always create as "pending" -- the engine route will set "live" after FFmpeg starts
     const { data: stream, error: streamError } = await supabase
       .from("streams")
       .insert({
@@ -35,8 +36,7 @@ export async function POST(req: NextRequest) {
         video_id: body.video_id || null,
         playlist_id: body.playlist_id || null,
         title: body.title,
-        status: body.go_live ? "live" : "pending",
-        started_at: body.go_live ? new Date().toISOString() : null,
+        status: "pending",
       })
       .select()
       .single()
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
       const destRows = body.destination_ids.map((destId: string) => ({
         stream_id: stream.id,
         destination_id: destId,
-        status: body.go_live ? "connected" : "pending",
+        status: "pending",
       }))
       const { error: destError } = await supabase.from("stream_destinations").insert(destRows)
       if (destError) return NextResponse.json({ error: destError.message }, { status: 500 })

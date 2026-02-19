@@ -47,6 +47,7 @@ export function StreamCreator() {
   const [selectedDestinations, setSelectedDestinations] = useState<string[]>([])
   const [selectedOverlays, setSelectedOverlays] = useState<string[]>([])
   const [creating, setCreating] = useState(false)
+  const [startError, setStartError] = useState<string | null>(null)
 
   const readyVideos = Array.isArray(videos) ? videos.filter((v) => v.status === "ready") : []
   const enabledDestinations = Array.isArray(destinations) ? destinations.filter((d) => d.enabled) : []
@@ -70,6 +71,7 @@ export function StreamCreator() {
 
   const handleGoLive = async () => {
     setCreating(true)
+    setStartError(null)
     try {
       const payload: Record<string, unknown> = {
         title: streamTitle,
@@ -84,6 +86,7 @@ export function StreamCreator() {
         payload.playlist_id = selectedPlaylist
       }
 
+      // 1. Create the stream record (will be "pending")
       const createRes = await fetch("/api/streams", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -92,20 +95,29 @@ export function StreamCreator() {
       const stream = await createRes.json()
 
       if (stream?.id) {
-        await fetch("/api/streams/engine", {
+        // 2. Tell the engine to start -- this sets "live" only if successful
+        const engineRes = await fetch("/api/streams/engine", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "start", streamId: stream.id }),
         })
-      }
+        const engineData = await engineRes.json()
 
-      setStreamTitle("")
-      setSelectedVideo("")
-      setSelectedPlaylist("")
-      setSelectedDestinations([])
-      setSelectedOverlays([])
+        if (!engineData.success) {
+          setStartError(engineData.error || "Streaming engine failed to start the stream")
+        } else {
+          // Only clear form on success
+          setStreamTitle("")
+          setSelectedVideo("")
+          setSelectedPlaylist("")
+          setSelectedDestinations([])
+          setSelectedOverlays([])
+        }
+      } else {
+        setStartError(stream?.error || "Failed to create stream record")
+      }
     } catch (e) {
-      console.error("Failed to start stream:", e)
+      setStartError(e instanceof Error ? e.message : "Failed to start stream")
     }
     setCreating(false)
     mutateStreams()
@@ -297,6 +309,18 @@ export function StreamCreator() {
                 </div>
               )}
 
+              {startError && (
+                <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+                    <div>
+                      <p className="text-sm font-medium text-destructive">Failed to start stream</p>
+                      <p className="mt-1 text-xs text-destructive/80">{startError}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="flex gap-3 pt-2">
                 <Button
                   disabled={!canStart || creating}
@@ -379,7 +403,7 @@ export function StreamCreator() {
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
-                      {stream.status === "live" && (
+                      {(stream.status === "live" || stream.status === "pending" || stream.status === "error") && (
                         <Button
                           variant="outline"
                           size="sm"
@@ -387,7 +411,7 @@ export function StreamCreator() {
                           onClick={() => handleStopStream(stream.id)}
                         >
                           <StopCircle className="h-3.5 w-3.5" />
-                          Stop
+                          {stream.status === "live" ? "Stop" : "Dismiss"}
                         </Button>
                       )}
                       <Badge variant="outline" className={cn("text-xs", config.className)}>
