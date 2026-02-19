@@ -123,6 +123,7 @@ export async function POST(req: NextRequest) {
           position_y?: number;
           size_percent: number;
           opacity: number;
+          scroll_speed?: number;
         }}) => ({
           id: so.overlay.id,
           type: so.overlay.type,
@@ -138,6 +139,7 @@ export async function POST(req: NextRequest) {
           positionY: so.overlay.position_y ?? undefined,
           sizePercent: so.overlay.size_percent,
           opacity: so.overlay.opacity,
+          scrollSpeed: so.overlay.scroll_speed ?? undefined,
         }))
 
       let result
@@ -277,6 +279,7 @@ export async function POST(req: NextRequest) {
           position_y?: number;
           size_percent: number;
           opacity: number;
+          scroll_speed?: number;
         }) => ({
           id: o.id,
           type: o.type,
@@ -292,6 +295,7 @@ export async function POST(req: NextRequest) {
           positionY: o.position_y ?? undefined,
           sizePercent: o.size_percent,
           opacity: o.opacity,
+          scrollSpeed: o.scroll_speed ?? undefined,
         }))
       }
 

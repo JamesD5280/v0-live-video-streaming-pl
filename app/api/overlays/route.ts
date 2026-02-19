@@ -45,6 +45,7 @@ export async function POST(req: NextRequest) {
         position_y: body.position_y ?? 0,
         size_percent: body.size_percent || 15,
         opacity: body.opacity ?? 100,
+        scroll_speed: body.scroll_speed || null,
         enabled: body.enabled !== false,
       })
       .select()

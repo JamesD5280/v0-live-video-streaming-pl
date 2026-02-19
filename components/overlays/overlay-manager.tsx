@@ -36,6 +36,7 @@ import {
   Pencil,
   Video,
   Repeat,
+  MoveHorizontal,
 } from "lucide-react"
 import type { Overlay, OverlayType, OverlayPosition } from "@/lib/store"
 import { createClient } from "@/lib/supabase/client"
@@ -51,6 +52,7 @@ const overlayTypeLabels: Record<OverlayType, string> = {
   text: "Text Overlay",
   image: "Image Overlay",
   video: "Video Overlay",
+  scrolling_text: "Scrolling Text (Ticker)",
 }
 
 const overlayTypeIcons: Record<OverlayType, typeof ImageIcon> = {
@@ -60,6 +62,7 @@ const overlayTypeIcons: Record<OverlayType, typeof ImageIcon> = {
   text: Type,
   image: ImageIcon,
   video: Video,
+  scrolling_text: MoveHorizontal,
 }
 
 const positionLabels: Record<OverlayPosition, string> = {
@@ -97,8 +100,9 @@ export function OverlayManager() {
   const [loopOverlay, setLoopOverlay] = useState(true)
   const [videoPath, setVideoPath] = useState("")
   const [uploadProgress, setUploadProgress] = useState(0)
+  const [scrollSpeed, setScrollSpeed] = useState(100)
 
-  const isTextType = type === "text" || type === "lower_third"
+  const isTextType = type === "text" || type === "lower_third" || type === "scrolling_text"
   const isVideoType = type === "video"
 
   const resetForm = () => {
@@ -118,6 +122,7 @@ export function OverlayManager() {
     setLoopOverlay(true)
     setVideoPath("")
     setUploadProgress(0)
+    setScrollSpeed(100)
     setEditingId(null)
   }
 
@@ -143,6 +148,7 @@ export function OverlayManager() {
     setBgColor(overlay.bg_color)
     setLoopOverlay(overlay.loop_overlay ?? true)
     setVideoPath(overlay.video_path || "")
+    setScrollSpeed(overlay.scroll_speed ?? 100)
     setDialogOpen(true)
   }
 
@@ -240,6 +246,7 @@ export function OverlayManager() {
         font_size: fontSize,
         font_color: fontColor,
         bg_color: bgColor,
+        scroll_speed: type === "scrolling_text" ? scrollSpeed : null,
       }
 
       await fetch("/api/overlays", {
@@ -496,6 +503,25 @@ export function OverlayManager() {
                       </div>
                     </div>
                   </div>
+
+                  {type === "scrolling_text" && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label>Scroll Speed</Label>
+                        <span className="text-xs text-muted-foreground">{scrollSpeed} px/sec</span>
+                      </div>
+                      <Slider
+                        value={[scrollSpeed]}
+                        onValueChange={(v) => setScrollSpeed(v[0])}
+                        min={20}
+                        max={400}
+                        step={10}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Controls how fast text scrolls across the screen (left to right ticker style).
+                      </p>
+                    </div>
+                  )}
                 </>
               )}
 
@@ -551,7 +577,7 @@ export function OverlayManager() {
 
               <Button
                 onClick={handleSave}
-                disabled={creating || !name.trim() || (!isTextType && !isVideoType && !imagePath) || (isTextType && !textContent.trim()) || (isVideoType && !videoPath)}
+                disabled={creating || !name.trim() || (!isTextType && !isVideoType && !imagePath) || (isTextType && !textContent.trim()) || (isVideoType && !videoPath) || (type === "scrolling_text" && !textContent.trim())}
                 className="w-full"
               >
                 {creating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

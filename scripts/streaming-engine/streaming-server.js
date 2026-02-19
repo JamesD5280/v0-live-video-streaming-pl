@@ -112,7 +112,31 @@ function buildOverlayFilters(overlays) {
       posCoords = posMap[overlay.position] || posMap['top-left']
     }
 
-    if (overlay.type === 'text' || overlay.type === 'lower_third') {
+    if (overlay.type === 'scrolling_text') {
+      // Scrolling ticker text using drawtext with scrolling x expression
+      const escapedText = (overlay.textContent || '').replace(/'/g, "'\\''").replace(/:/g, '\\:')
+      const fontSize = overlay.fontSize || 24
+      const fontColor = overlay.fontColor || 'white'
+      const bgColor = overlay.bgColor || '0x00000080'
+      const speed = overlay.scrollSpeed || 100
+
+      // Y position: use positionY if available, otherwise bottom of screen
+      let scrollY
+      if (overlay.positionY !== undefined) {
+        scrollY = `h*${overlay.positionY / 100}-${fontSize / 2}`
+      } else {
+        scrollY = `h-${fontSize + 20}`
+      }
+
+      // Draw a semi-transparent background bar at the text Y position
+      const barHeight = fontSize + 16
+      filters.push(
+        `[${currentLabel}]drawbox=x=0:y=${scrollY}-8:w=iw:h=${barHeight}:color=${bgColor}@0.7:t=fill[tickbg${i}]`,
+        `[tickbg${i}]drawtext=text='${escapedText}':fontsize=${fontSize}:fontcolor=${fontColor}:y=${scrollY}:x='W-mod(t*${speed}\\,W+tw)'[${outputLabel}]`
+      )
+
+      currentLabel = outputLabel
+    } else if (overlay.type === 'text' || overlay.type === 'lower_third') {
       // Text overlay using drawtext filter
       const escapedText = (overlay.textContent || '').replace(/'/g, "'\\''").replace(/:/g, '\\:')
       const fontSize = overlay.fontSize || 24
@@ -372,6 +396,69 @@ app.get('/videos', (req, res) => {
   } catch (err) {
     res.json({ videos: [], directory: VIDEO_DIR, error: err.message })
   }
+})
+
+/**
+ * POST /check-rtmp
+ * Body: { url: "rtmp://..." }
+ * Validates that an RTMP stream is reachable using ffprobe.
+ */
+app.post('/check-rtmp', (req, res) => {
+  const { url } = req.body
+  if (!url) return res.status(400).json({ error: 'Missing url' })
+
+  // Validate it looks like an RTMP URL
+  if (!url.startsWith('rtmp://') && !url.startsWith('rtmps://')) {
+    return res.json({ valid: false, error: 'URL must start with rtmp:// or rtmps://' })
+  }
+
+  // Use ffprobe with a short timeout to check if the stream is accessible
+  const proc = spawn('ffprobe', [
+    '-v', 'quiet',
+    '-rw_timeout', '5000000',     // 5 second timeout
+    '-print_format', 'json',
+    '-show_streams',
+    url,
+  ], { timeout: 10000 })
+
+  let stdout = ''
+  let stderr = ''
+
+  proc.stdout.on('data', (data) => { stdout += data.toString() })
+  proc.stderr.on('data', (data) => { stderr += data.toString() })
+
+  proc.on('close', (code) => {
+    if (code === 0) {
+      try {
+        const info = JSON.parse(stdout)
+        const streams = info.streams || []
+        const hasVideo = streams.some((s) => s.codec_type === 'video')
+        const hasAudio = streams.some((s) => s.codec_type === 'audio')
+        res.json({
+          valid: true,
+          hasVideo,
+          hasAudio,
+          streamCount: streams.length,
+          info: streams.map((s) => ({
+            type: s.codec_type,
+            codec: s.codec_name,
+            resolution: s.width ? `${s.width}x${s.height}` : undefined,
+          })),
+        })
+      } catch {
+        res.json({ valid: true, hasVideo: true, hasAudio: false })
+      }
+    } else {
+      res.json({
+        valid: false,
+        error: 'Stream not reachable or not active. Make sure the source is streaming.',
+      })
+    }
+  })
+
+  proc.on('error', () => {
+    res.json({ valid: false, error: 'ffprobe failed to execute' })
+  })
 })
 
 /**
@@ -709,6 +796,88 @@ app.get('/status/:streamId', (req, res) => {
     isPlaylist: stream.isPlaylist || false,
     overlayCount: stream.overlayCount || 0,
     destinations: destStatuses,
+  })
+})
+
+/**
+ * POST /preview
+ * Body: { videoSource, overlays, isPlaylist, videoSources }
+ * Generates a 5-second preview clip with overlays applied.
+ * Returns the clip as an MP4 file for browser playback.
+ */
+app.post('/preview', async (req, res) => {
+  const { videoSource, videoSources, overlays, isPlaylist } = req.body
+
+  const previewId = `preview-${Date.now()}`
+  const outputFile = join(tmpdir(), `${previewId}.mp4`)
+  const tempFiles = [outputFile]
+
+  // Build input args
+  let inputArgs = []
+  if (isPlaylist && videoSources?.length > 1) {
+    const concatFile = createConcatFile(videoSources, false)
+    tempFiles.push(concatFile)
+    inputArgs = ['-re', '-f', 'concat', '-safe', '0', '-i', concatFile]
+  } else {
+    const source = videoSources?.[0] || {}
+    const inputSource = source.url || videoSource || join(VIDEO_DIR, source.path || '')
+    // Check if it's RTMP (don't use -re for live sources)
+    if (inputSource.startsWith('rtmp://') || inputSource.startsWith('rtmps://')) {
+      inputArgs = ['-rw_timeout', '10000000', '-i', inputSource]
+    } else {
+      inputArgs = ['-i', inputSource]
+    }
+  }
+
+  const overlayResult = buildOverlayFilters(overlays || [])
+
+  let ffmpegArgs = [...inputArgs]
+  if (overlayResult) {
+    ffmpegArgs.push(...overlayResult.inputArgs)
+    ffmpegArgs.push('-filter_complex', overlayResult.filterComplex)
+    ffmpegArgs.push('-map', `[${overlayResult.outputLabel}]`)
+    ffmpegArgs.push('-map', '0:a?')
+  }
+
+  // Output 5 seconds as MP4
+  ffmpegArgs.push(
+    '-t', '5',
+    '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23',
+    '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac', '-b:a', '128k',
+    '-movflags', '+faststart',
+    '-y', outputFile,
+  )
+
+  console.log(`[2MStream] Generating preview ${previewId}`)
+
+  const proc = spawn('ffmpeg', ffmpegArgs, { stdio: ['pipe', 'pipe', 'pipe'] })
+  let stderr = ''
+  proc.stderr.on('data', (data) => { stderr += data.toString() })
+
+  proc.on('close', (code) => {
+    if (code === 0 && existsSync(outputFile)) {
+      res.setHeader('Content-Type', 'video/mp4')
+      res.setHeader('Content-Disposition', `inline; filename="${previewId}.mp4"`)
+      const stat = statSync(outputFile)
+      res.setHeader('Content-Length', stat.size)
+
+      const stream = require('fs').createReadStream(outputFile)
+      stream.pipe(res)
+      stream.on('end', () => {
+        // Clean up temp files
+        tempFiles.forEach(f => { try { unlinkSync(f) } catch {} })
+      })
+    } else {
+      console.error(`[2MStream] Preview generation failed:`, stderr.slice(-500))
+      tempFiles.forEach(f => { try { unlinkSync(f) } catch {} })
+      res.status(500).json({ error: 'Preview generation failed', detail: stderr.slice(-300) })
+    }
+  })
+
+  proc.on('error', (err) => {
+    tempFiles.forEach(f => { try { unlinkSync(f) } catch {} })
+    res.status(500).json({ error: 'FFmpeg failed', detail: err.message })
   })
 })
 

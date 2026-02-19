@@ -40,11 +40,26 @@ export async function GET(req: NextRequest) {
     }
 
     const serverUrl = `${STREAMING_SERVER_URL}/stream-video/${encodeURIComponent(filename)}`
-    const serverRes = await fetch(serverUrl, { headers })
+    console.log("[v0] Preview proxy fetching:", serverUrl)
+    
+    let serverRes: Response
+    try {
+      serverRes = await fetch(serverUrl, { headers })
+    } catch (fetchErr) {
+      console.error("[v0] Preview proxy fetch failed:", fetchErr)
+      return NextResponse.json(
+        { error: "Cannot reach streaming server", detail: String(fetchErr) },
+        { status: 502 }
+      )
+    }
+
+    console.log("[v0] Preview proxy response:", serverRes.status, "content-type:", serverRes.headers.get("content-type"))
 
     if (!serverRes.ok && serverRes.status !== 206) {
+      const errText = await serverRes.text().catch(() => "")
+      console.error("[v0] Preview proxy server error:", serverRes.status, errText)
       return NextResponse.json(
-        { error: "Video not found or server error" },
+        { error: "Video not found or server error", detail: errText },
         { status: serverRes.status }
       )
     }

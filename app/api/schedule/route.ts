@@ -32,10 +32,12 @@ export async function POST(req: NextRequest) {
       .from("scheduled_events")
       .insert({
         user_id: user.id,
-        video_id: body.video_id,
+        video_id: body.source_type === "rtmp_pull" ? null : body.video_id,
         title: body.title,
         scheduled_at: body.scheduled_at,
         repeat_mode: body.repeat_mode || "none",
+        source_type: body.source_type || "video",
+        rtmp_pull_url: body.source_type === "rtmp_pull" ? body.rtmp_pull_url : null,
       })
       .select()
       .single()
