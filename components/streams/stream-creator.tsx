@@ -309,6 +309,18 @@ export function StreamCreator() {
                 </div>
               )}
 
+              {startError && (
+                <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+                    <div>
+                      <p className="text-sm font-medium text-destructive">Failed to start stream</p>
+                      <p className="mt-1 text-xs text-destructive/80">{startError}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="flex gap-3 pt-2">
                 <Button
                   disabled={!canStart || creating}
@@ -391,7 +403,7 @@ export function StreamCreator() {
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
-                      {stream.status === "live" && (
+                      {(stream.status === "live" || stream.status === "pending" || stream.status === "error") && (
                         <Button
                           variant="outline"
                           size="sm"
@@ -399,7 +411,7 @@ export function StreamCreator() {
                           onClick={() => handleStopStream(stream.id)}
                         >
                           <StopCircle className="h-3.5 w-3.5" />
-                          Stop
+                          {stream.status === "live" ? "Stop" : "Dismiss"}
                         </Button>
                       )}
                       <Badge variant="outline" className={cn("text-xs", config.className)}>

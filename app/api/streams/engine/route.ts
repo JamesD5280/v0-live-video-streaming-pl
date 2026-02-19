@@ -138,7 +138,6 @@ export async function POST(req: NextRequest) {
           isPlaylist: !!stream.playlist,
         })
       } catch (engineErr) {
-        console.log("[v0] Engine start failed:", engineErr instanceof Error ? engineErr.message : String(engineErr))
         // Mark stream as error since engine couldn't start
         await supabase
           .from("streams")
@@ -156,7 +155,6 @@ export async function POST(req: NextRequest) {
       }
 
       if (result?.error) {
-        console.log("[v0] Engine start returned error:", result.error)
         await supabase
           .from("streams")
           .update({ status: "error", updated_at: new Date().toISOString() })
@@ -202,27 +200,22 @@ export async function POST(req: NextRequest) {
 
     if (action === "status") {
       if (!STREAMING_SERVER_URL) {
-        console.log("[v0] Engine status: STREAMING_SERVER_URL is not set")
         return NextResponse.json({ configured: false })
       }
       try {
-        console.log("[v0] Engine status: checking", `${STREAMING_SERVER_URL}/health`)
         const res = await fetch(`${STREAMING_SERVER_URL}/health`, {
           headers: { Authorization: `Bearer ${STREAMING_API_SECRET}` },
           signal: AbortSignal.timeout(5000),
         })
-        console.log("[v0] Engine status: response status", res.status)
         const health = await res.json()
-        console.log("[v0] Engine status: health response", JSON.stringify(health))
         return NextResponse.json({ configured: true, ...health })
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err)
-        console.log("[v0] Engine status: failed to reach server", errorMsg)
         return NextResponse.json({ 
           configured: true, 
           status: "offline", 
           errorDetail: errorMsg,
-          serverUrl: STREAMING_SERVER_URL?.replace(/\/\/(.+?)@/, '//**@') // mask credentials if any
+          serverUrl: STREAMING_SERVER_URL?.replace(/\/\/(.+?)@/, '//**@')
         })
       }
     }
