@@ -36,10 +36,62 @@ export default function SettingsPage() {
   const [testError, setTestError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [localSettings, setLocalSettings] = useState<Partial<UserSettings>>({})
+  const [diagnosing, setDiagnosing] = useState(false)
+  const [diagResult, setDiagResult] = useState<string | null>(null)
 
   useEffect(() => {
     if (settings) setLocalSettings(settings)
   }, [settings])
+
+  const runDiagnostics = async () => {
+    setDiagnosing(true)
+    setDiagResult(null)
+    const lines: string[] = []
+    try {
+      // 1. Check engine status
+      lines.push("=== Step 1: Health Check ===")
+      const statusRes = await fetch("/api/streams/engine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "status" }),
+      })
+      const statusData = await statusRes.json()
+      lines.push(JSON.stringify(statusData, null, 2))
+
+      // 2. Check if streaming-server.js on VPS is real JS (test /videos endpoint)
+      if (statusData.status === "ok" || statusData.configured) {
+        lines.push("\n=== Step 2: Test /videos endpoint ===")
+        try {
+          const videosRes = await fetch("/api/streams/engine", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "test_videos" }),
+          })
+          const videosData = await videosRes.json()
+          lines.push(JSON.stringify(videosData, null, 2))
+        } catch (e) {
+          lines.push(`Error: ${e instanceof Error ? e.message : String(e)}`)
+        }
+      }
+
+      // 3. Show streams
+      lines.push("\n=== Step 3: Current Streams ===")
+      const streamsRes = await fetch("/api/streams")
+      const streams = await streamsRes.json()
+      if (Array.isArray(streams)) {
+        lines.push(`Total streams: ${streams.length}`)
+        for (const s of streams.slice(0, 5)) {
+          lines.push(`  - ${s.title} [${s.status}] video=${s.video?.title || "none"} dests=${(s.stream_destinations || []).length}`)
+        }
+      } else {
+        lines.push(JSON.stringify(streams, null, 2))
+      }
+    } catch (e) {
+      lines.push(`Diagnostics failed: ${e instanceof Error ? e.message : String(e)}`)
+    }
+    setDiagResult(lines.join("\n"))
+    setDiagnosing(false)
+  }
 
   const testConnection = async () => {
     setTesting(true)
@@ -169,6 +221,41 @@ export default function SettingsPage() {
                 <p className="mt-1 font-mono text-xs text-destructive/80">{testError}</p>
               </div>
             )}
+
+            <Separator className="my-4 bg-border" />
+
+            <div className="space-y-3">
+              <p className="text-sm font-medium text-foreground">Deploy / Update Streaming Engine</p>
+              <p className="text-xs text-muted-foreground">
+                Run these commands on your VPS to install or update the streaming engine:
+              </p>
+              <pre className="overflow-x-auto rounded-md bg-secondary p-3 text-xs text-foreground font-mono leading-relaxed">
+{`cd /opt/2mstream
+# Download the latest streaming server
+curl -L "${typeof window !== "undefined" ? window.location.origin : ""}/api/download-server" -o streaming-server.js
+curl -L "${typeof window !== "undefined" ? window.location.origin : ""}/api/download-server?file=package.json" -o package.json
+npm install
+# Restart the server (using pm2 or systemd)
+pm2 restart streaming-server || node streaming-server.js`}
+              </pre>
+            </div>
+
+            <Separator className="my-4 bg-border" />
+
+            <div className="space-y-3">
+              <p className="text-sm font-medium text-foreground">Diagnostics</p>
+              <div className="flex items-center gap-3">
+                <Button variant="outline" size="sm" onClick={runDiagnostics} disabled={diagnosing}>
+                  {diagnosing ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <Server className="mr-2 h-3 w-3" />}
+                  Run Diagnostics
+                </Button>
+              </div>
+              {diagResult && (
+                <pre className="max-h-64 overflow-auto rounded-md bg-secondary p-3 text-xs text-foreground font-mono leading-relaxed whitespace-pre-wrap">
+                  {diagResult}
+                </pre>
+              )}
+            </div>
           </CardContent>
         </Card>
 
