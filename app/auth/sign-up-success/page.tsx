@@ -1,18 +1,23 @@
+import Image from "next/image"
 import Link from "next/link"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Radio, MailCheck } from "lucide-react"
+import { MailCheck } from "lucide-react"
 
 export default function SignUpSuccessPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <Card className="w-full max-w-md border-border bg-card text-center">
         <CardHeader>
-          <div className="mx-auto mb-4 flex items-center gap-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary">
-              <Radio className="h-5 w-5 text-primary-foreground" />
-            </div>
-            <span className="text-2xl font-bold text-foreground">2MStream</span>
+          <div className="mx-auto mb-4">
+            <Image
+              src="/images/2mstream-logo.png"
+              alt="2MStream"
+              width={200}
+              height={60}
+              className="h-14 w-auto object-contain"
+              priority
+            />
           </div>
           <div className="mx-auto mb-2 flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
             <MailCheck className="h-7 w-7 text-primary" />

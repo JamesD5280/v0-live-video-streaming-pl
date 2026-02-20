@@ -8,7 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Radio, Loader2, CheckCircle2, XCircle, Shield, Pencil, Eye } from "lucide-react"
+import Image from "next/image"
+import { Loader2, CheckCircle2, XCircle, Shield, Pencil, Eye } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 
@@ -143,11 +144,15 @@ export default function InvitePage() {
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <Card className="w-full max-w-md border-border bg-card">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-4 flex items-center gap-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary">
-              <Radio className="h-5 w-5 text-primary-foreground" />
-            </div>
-            <span className="text-2xl font-bold text-foreground">2MStream</span>
+          <div className="mx-auto mb-4">
+            <Image
+              src="/images/2mstream-logo.png"
+              alt="2MStream"
+              width={200}
+              height={60}
+              className="h-14 w-auto object-contain"
+              priority
+            />
           </div>
           <CardTitle className="text-xl text-foreground">You&apos;re invited!</CardTitle>
           <CardDescription className="text-muted-foreground">
