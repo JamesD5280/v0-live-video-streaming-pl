@@ -276,16 +276,21 @@ export function OverlayPositionEditor({
 
         {/* The draggable overlay indicator */}
         <div
-          className="absolute -translate-x-1/2 -translate-y-1/2 transition-none"
-          style={{ left: `${localX}%`, top: `${localY}%` }}
+          className="absolute transition-none"
+          style={{
+            left: `${localX}%`,
+            top: `${localY}%`,
+            transform: "translate(-50%, -50%)",
+            /* Size as % of canvas width -- use CSS calc based on container */
+            width: `${Math.max(8, sizePercent)}%`,
+          }}
         >
-          {/* Overlay representation -- sized proportionally to canvas (% of width) */}
+          {/* Overlay representation -- sized proportionally to canvas */}
           <div
-            className={`flex items-center justify-center rounded border-2 ${
+            className={`flex w-full items-center justify-center rounded border-2 ${
               isDragging ? "border-primary shadow-lg shadow-primary/30" : "border-primary/70"
             } bg-primary/20 backdrop-blur-sm`}
             style={{
-              width: `${Math.max(8, sizePercent)}%`,
               height: isTextType ? "24px" : undefined,
               aspectRatio: isTextType ? undefined : "4/3",
             }}
