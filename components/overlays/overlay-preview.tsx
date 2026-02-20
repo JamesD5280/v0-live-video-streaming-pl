@@ -203,15 +203,14 @@ export function OverlayPreview({ overlays }: OverlayPreviewProps) {
               onMouseEnter={() => setHighlightedId(overlay.id)}
               onMouseLeave={() => setHighlightedId(null)}
             >
-              {/* Image overlay */}
-              {overlay.image_path && overlay.type !== "video" && overlay.type !== "text" && overlay.type !== "lower_third" && (
+              {/* Image overlay -- sized as % of canvas width (matches real 1920px stream) */}
+              {overlay.image_path && overlay.type !== "video" && overlay.type !== "text" && overlay.type !== "lower_third" && overlay.type !== "scrolling_text" && (
                 <img
                   src={overlay.image_path}
                   alt={overlay.name}
                   className="object-contain"
                   style={{
-                    width: `${sizePercent * 3}px`,
-                    maxWidth: `${sizePercent}vw`,
+                    width: `${sizePercent}%`,
                   }}
                   crossOrigin="anonymous"
                 />
@@ -222,10 +221,8 @@ export function OverlayPreview({ overlays }: OverlayPreviewProps) {
                 <div
                   className="flex items-center justify-center rounded border border-primary/30 bg-primary/10 backdrop-blur-sm"
                   style={{
-                    width: `${sizePercent * 3}px`,
-                    height: `${sizePercent * 3}px`,
-                    maxWidth: `${sizePercent}vw`,
-                    maxHeight: `${sizePercent}vw`,
+                    width: `${sizePercent}%`,
+                    aspectRatio: "16/9",
                   }}
                 >
                   <div className="text-center">
@@ -245,10 +242,28 @@ export function OverlayPreview({ overlays }: OverlayPreviewProps) {
                   style={{
                     backgroundColor: overlay.bg_color,
                     color: overlay.font_color,
-                    fontSize: `${Math.max(10, overlay.font_size * 0.5)}px`,
+                    fontSize: `clamp(8px, ${sizePercent * 0.15}vw, ${overlay.font_size * 0.6}px)`,
                   }}
                 >
                   {overlay.text_content}
+                </div>
+              )}
+
+              {/* Scrolling text overlay */}
+              {overlay.type === "scrolling_text" && overlay.text_content && (
+                <div
+                  className="whitespace-nowrap overflow-hidden"
+                  style={{
+                    width: "100%",
+                    backgroundColor: overlay.bg_color,
+                    color: overlay.font_color,
+                    fontSize: `clamp(8px, ${sizePercent * 0.15}vw, ${overlay.font_size * 0.5}px)`,
+                    padding: "2px 6px",
+                  }}
+                >
+                  <span className="inline-block animate-[scrollText_10s_linear_infinite]">
+                    {overlay.text_content}
+                  </span>
                 </div>
               )}
 
