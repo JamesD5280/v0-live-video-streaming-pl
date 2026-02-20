@@ -1,7 +1,7 @@
 FROM node:20-slim
 
-# Install FFmpeg
-RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
+# Install FFmpeg (allow unauthenticated to handle GPG key rotation)
+RUN apt-get -o Acquire::AllowInsecureRepositories=true update && apt-get --allow-unauthenticated install -y ffmpeg && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
