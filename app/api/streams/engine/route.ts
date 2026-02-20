@@ -365,6 +365,47 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    if (action === "test_videos") {
+      // Diagnostic: test if the VPS has a working /videos endpoint
+      if (!STREAMING_SERVER_URL) {
+        return NextResponse.json({ error: "Streaming server not configured" })
+      }
+      try {
+        const res = await fetch(`${STREAMING_SERVER_URL}/videos`, {
+          headers: { Authorization: `Bearer ${STREAMING_API_SECRET}` },
+          signal: AbortSignal.timeout(5000),
+        })
+        const contentType = res.headers.get("content-type") || ""
+        const text = await res.text()
+        
+        // Check if we got HTML back (means the VPS file is corrupted)
+        if (text.includes("<!DOCTYPE") || text.includes("<html")) {
+          return NextResponse.json({
+            error: "VPS streaming-server.js is corrupted (returning HTML instead of JSON). You need to re-download the correct file.",
+            isHtml: true,
+            contentType,
+            bodyPreview: text.slice(0, 200),
+          })
+        }
+        
+        try {
+          const data = JSON.parse(text)
+          return NextResponse.json({ success: true, ...data })
+        } catch {
+          return NextResponse.json({
+            error: "VPS returned non-JSON response",
+            contentType,
+            bodyPreview: text.slice(0, 200),
+          })
+        }
+      } catch (err) {
+        return NextResponse.json({
+          error: "Failed to reach VPS /videos endpoint",
+          detail: err instanceof Error ? err.message : String(err),
+        })
+      }
+    }
+
     return NextResponse.json({ error: "Invalid action" }, { status: 400 })
   } catch (e) {
     console.error("Engine route error:", e)
