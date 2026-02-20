@@ -279,14 +279,15 @@ export function OverlayPositionEditor({
           className="absolute -translate-x-1/2 -translate-y-1/2 transition-none"
           style={{ left: `${localX}%`, top: `${localY}%` }}
         >
-          {/* Overlay representation */}
+          {/* Overlay representation -- sized proportionally to canvas (% of width) */}
           <div
             className={`flex items-center justify-center rounded border-2 ${
               isDragging ? "border-primary shadow-lg shadow-primary/30" : "border-primary/70"
             } bg-primary/20 backdrop-blur-sm`}
             style={{
-              width: `${Math.max(40, sizePercent * 2.5)}px`,
-              height: isTextType ? "24px" : `${Math.max(30, sizePercent * 2)}px`,
+              width: `${Math.max(8, sizePercent)}%`,
+              height: isTextType ? "24px" : undefined,
+              aspectRatio: isTextType ? undefined : "4/3",
             }}
           >
             {imagePath && !isTextType ? (

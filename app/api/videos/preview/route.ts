@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createHmac } from "crypto"
+
+/**
+ * Edge Runtime streams large video files without body size limits.
+ * No Node.js crypto needed -- we use Bearer token auth which the streaming server
+ * accepts on /stream-video (global middleware skips this path).
+ */
+export const runtime = "edge"
 
 const STREAMING_SERVER_URL = process.env.STREAMING_SERVER_URL
 const STREAMING_API_SECRET = process.env.STREAMING_API_SECRET || "change-this-secret"
@@ -7,9 +13,8 @@ const STREAMING_API_SECRET = process.env.STREAMING_API_SECRET || "change-this-se
 /**
  * GET /api/videos/preview?filename=video.mp4
  * 
- * Server-side proxy that forwards Range requests for video seeking.
- * The browser requests HTTPS from Vercel, and this route fetches from the HTTP streaming server.
- * Uses a signed URL token for auth so /stream-video can skip the global auth middleware.
+ * Edge-based streaming proxy. Forwards Range requests for seeking.
+ * Browser gets HTTPS, proxy fetches from HTTP streaming server.
  */
 export async function GET(req: NextRequest) {
   try {
@@ -23,15 +28,10 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Streaming server not configured" }, { status: 500 })
     }
 
-    // Generate a signed token for the streaming server
-    const expires = Date.now() + 3600 * 1000
-    const payload = `${filename}:${expires}`
-    const token = createHmac("sha256", STREAMING_API_SECRET)
-      .update(payload)
-      .digest("hex")
-
-    // Build the request headers
-    const headers: Record<string, string> = {}
+    // Build the request headers -- Bearer auth for the streaming server
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${STREAMING_API_SECRET}`,
+    }
 
     // Forward Range header for seeking support
     const rangeHeader = req.headers.get("range")
@@ -39,12 +39,12 @@ export async function GET(req: NextRequest) {
       headers["Range"] = rangeHeader
     }
 
-    const serverUrl = `${STREAMING_SERVER_URL}/stream-video/${encodeURIComponent(filename)}?token=${token}&expires=${expires}`
+    const serverUrl = `${STREAMING_SERVER_URL}/stream-video/${encodeURIComponent(filename)}`
     
     let serverRes: Response
     try {
       serverRes = await fetch(serverUrl, { headers })
-    } catch (fetchErr) {
+    } catch {
       return NextResponse.json(
         { error: "Cannot reach streaming server" },
         { status: 502 }
@@ -71,14 +71,12 @@ export async function GET(req: NextRequest) {
     const contentRange = serverRes.headers.get("content-range")
     if (contentRange) responseHeaders.set("Content-Range", contentRange)
 
-    // Read into buffer and return (Node.js runtime, works up to ~50MB)
-    const buffer = Buffer.from(await serverRes.arrayBuffer())
-    return new Response(buffer, {
+    // Stream the body directly -- Edge Runtime has no body size limit
+    return new Response(serverRes.body, {
       status: serverRes.status,
       headers: responseHeaders,
     })
-  } catch (e) {
-    console.error("Video preview proxy error:", e)
+  } catch {
     return NextResponse.json({ error: "Failed to stream video" }, { status: 502 })
   }
 }

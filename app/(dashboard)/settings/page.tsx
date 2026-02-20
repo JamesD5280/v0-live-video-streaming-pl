@@ -19,6 +19,7 @@ import { Separator } from "@/components/ui/separator"
 import { fetcher } from "@/lib/fetcher"
 import type { UserSettings } from "@/lib/store"
 import { Loader2, CheckCircle2, Server, Wifi, WifiOff, RefreshCw } from "lucide-react"
+import { TeamManager } from "@/components/team/team-manager"
 
 export default function SettingsPage() {
   const { data: settings, error: settingsError, mutate } = useSWR<UserSettings>("/api/settings", fetcher)
@@ -298,6 +299,11 @@ export default function SettingsPage() {
             </span>
           )}
         </div>
+
+        <Separator className="bg-border" />
+
+        {/* Team Management */}
+        <TeamManager />
       </div>
     </div>
   )

@@ -8,6 +8,11 @@
   }
 }
 
+@keyframes scrollText {
+  0% { transform: translateX(100%); }
+  100% { transform: translateX(-100%); }
+}
+
 @layer base {
   :root {
     --background: 220 20% 4%;
