@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 
 export async function updateSession(request: NextRequest) {
   // Public routes that don't need auth
-  const publicPaths = ['/auth/login', '/auth/sign-up', '/auth/sign-up-success', '/auth/error']
+  const publicPaths = ['/auth/login', '/auth/sign-up', '/auth/sign-up-success', '/auth/error', '/api/download-server', '/invite/']
   const isPublicPath = publicPaths.some(path => request.nextUrl.pathname.startsWith(path))
 
   let supabaseResponse = NextResponse.next({
