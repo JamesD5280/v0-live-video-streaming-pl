@@ -43,8 +43,13 @@ export async function GET(req: NextRequest) {
     
     let serverRes: Response
     try {
-      serverRes = await fetch(serverUrl, { headers })
-    } catch {
+      serverRes = await fetch(serverUrl, {
+        headers,
+        // @ts-expect-error -- Next.js edge specific cache option
+        cache: "no-store",
+      })
+    } catch (fetchErr) {
+      console.error("[v0] Video proxy fetch error:", fetchErr)
       return NextResponse.json(
         { error: "Cannot reach streaming server" },
         { status: 502 }
@@ -52,8 +57,10 @@ export async function GET(req: NextRequest) {
     }
 
     if (!serverRes.ok && serverRes.status !== 206) {
+      const errorBody = await serverRes.text().catch(() => "unknown")
+      console.error("[v0] Video proxy server error:", serverRes.status, errorBody)
       return NextResponse.json(
-        { error: "Video not found or server error" },
+        { error: `Video server error: ${serverRes.status}` },
         { status: serverRes.status }
       )
     }

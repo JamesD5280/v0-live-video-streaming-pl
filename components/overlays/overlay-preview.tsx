@@ -199,19 +199,18 @@ export function OverlayPreview({ overlays }: OverlayPreviewProps) {
                 ...positionStyle,
                 opacity: opacityValue,
                 zIndex: isHighlighted ? 10 : 1,
+                /* Width as % of the canvas (parent) so overlays scale correctly */
+                width: `${Math.max(5, sizePercent)}%`,
               }}
               onMouseEnter={() => setHighlightedId(overlay.id)}
               onMouseLeave={() => setHighlightedId(null)}
             >
-              {/* Image overlay -- sized as % of canvas width (matches real 1920px stream) */}
+              {/* Image overlay -- inherits width from parent which is % of canvas */}
               {overlay.image_path && overlay.type !== "video" && overlay.type !== "text" && overlay.type !== "lower_third" && overlay.type !== "scrolling_text" && (
                 <img
                   src={overlay.image_path}
                   alt={overlay.name}
-                  className="object-contain"
-                  style={{
-                    width: `${sizePercent}%`,
-                  }}
+                  className="w-full object-contain"
                   crossOrigin="anonymous"
                 />
               )}
@@ -219,9 +218,8 @@ export function OverlayPreview({ overlays }: OverlayPreviewProps) {
               {/* Video overlay placeholder */}
               {overlay.type === "video" && (
                 <div
-                  className="flex items-center justify-center rounded border border-primary/30 bg-primary/10 backdrop-blur-sm"
+                  className="flex w-full items-center justify-center rounded border border-primary/30 bg-primary/10 backdrop-blur-sm"
                   style={{
-                    width: `${sizePercent}%`,
                     aspectRatio: "16/9",
                   }}
                 >
