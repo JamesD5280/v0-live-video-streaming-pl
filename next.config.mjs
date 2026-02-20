@@ -3,7 +3,9 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  turbopack: {},
+  outputFileTracingIncludes: {
+    '/api/download-server': ['./scripts/streaming-engine/streaming-server.js'],
+  },
 }
 
 export default nextConfig
