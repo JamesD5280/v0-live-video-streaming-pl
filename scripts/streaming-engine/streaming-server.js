@@ -20,7 +20,7 @@
 import express from 'express'
 import cors from 'cors'
 import { spawn } from 'child_process'
-import { existsSync, writeFileSync, unlinkSync, mkdirSync, readdirSync, statSync, createWriteStream } from 'fs'
+import { existsSync, writeFileSync, unlinkSync, mkdirSync, readdirSync, statSync, createWriteStream, createReadStream, readFileSync, rmdirSync } from 'fs'
 import { join, basename } from 'path'
 import { tmpdir } from 'os'
 import { pipeline } from 'stream/promises'
@@ -517,7 +517,6 @@ app.get('/stream-video/:filename', (req, res) => {
     const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1
     const chunkSize = end - start + 1
 
-    const { createReadStream } = require('fs')
     const stream = createReadStream(filePath, { start, end })
 
     res.writeHead(206, {
@@ -530,7 +529,6 @@ app.get('/stream-video/:filename', (req, res) => {
     stream.pipe(res)
   } else {
     // Full file
-    const { createReadStream } = require('fs')
     const stream = createReadStream(filePath)
 
     res.writeHead(200, {
