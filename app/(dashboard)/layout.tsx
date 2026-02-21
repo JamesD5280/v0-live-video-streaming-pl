@@ -35,7 +35,7 @@ export default async function DashboardLayout({
         displayName={profile?.display_name}
         liveStreams={liveStreams}
       />
-      <main className="ml-64 flex-1">{children}</main>
+      <main className="flex-1 pt-14 lg:ml-64 lg:pt-0">{children}</main>
     </div>
   )
 }
