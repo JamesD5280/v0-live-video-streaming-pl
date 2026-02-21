@@ -142,6 +142,18 @@ export async function POST(req: NextRequest) {
           scrollSpeed: so.overlay.scroll_speed ?? undefined,
         }))
 
+      console.log("[v0] Starting stream:", {
+        streamId: stream.id,
+        videoSourceCount: videoSources.length,
+        firstSource: videoSources[0],
+        destinationCount: destinations.length,
+        overlayCount: overlays.length,
+        loop,
+        isPlaylist: !!stream.playlist,
+        isRtmpPull,
+        serverUrl: STREAMING_SERVER_URL,
+      })
+
       let result
       try {
         result = await callStreamingServer("/start", {
@@ -158,6 +170,7 @@ export async function POST(req: NextRequest) {
           rtmpPullUrl: stream.rtmp_pull_url || null,
         })
       } catch (engineErr) {
+        console.error("[v0] Engine start failed:", engineErr instanceof Error ? engineErr.message : String(engineErr))
         // Mark stream as error since engine couldn't start
         await supabase
           .from("streams")
@@ -173,6 +186,8 @@ export async function POST(req: NextRequest) {
           detail: engineErr instanceof Error ? engineErr.message : String(engineErr),
         }, { status: 502 })
       }
+
+      console.log("[v0] Engine start result:", JSON.stringify(result))
 
       if (result?.error) {
         await supabase
@@ -196,11 +211,14 @@ export async function POST(req: NextRequest) {
           signal: AbortSignal.timeout(5000),
         })
         const health = await healthRes.json()
+        console.log("[v0] Health check after start:", JSON.stringify(health))
         // Check if the engine reports any active streams or this specific stream
         const activeStreams = health.activeStreams || health.active_streams || 0
         const activeIds = health.streamIds || health.active_ids || []
         engineRunning = activeStreams > 0 || activeIds.includes(streamId)
-      } catch {
+        console.log("[v0] Engine running check:", { activeStreams, activeIds, engineRunning, streamId })
+      } catch (healthErr) {
+        console.error("[v0] Health check failed:", healthErr instanceof Error ? healthErr.message : String(healthErr))
         // Health check failed -- might be temporarily busy starting
         engineRunning = false
       }
