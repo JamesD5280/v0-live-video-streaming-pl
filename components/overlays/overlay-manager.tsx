@@ -315,7 +315,7 @@ export function OverlayManager() {
               New Overlay
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+          <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-4xl">
             <DialogHeader>
               <DialogTitle>{editingId ? "Edit Overlay" : "Create Overlay"}</DialogTitle>
             </DialogHeader>
@@ -556,7 +556,7 @@ export function OverlayManager() {
                   value={[sizePercent]}
                   onValueChange={(v) => setSizePercent(v[0])}
                   min={5}
-                  max={50}
+                  max={100}
                   step={1}
                 />
               </div>
