@@ -204,8 +204,11 @@ function buildOverlayFilters(overlays) {
       const scalePercent = overlay.sizePercent || 15
       const opacityValue = (overlay.opacity || 100) / 100
 
-      // Scale the video overlay, apply alpha channel (for .MOV with transparency), and set opacity
-      const scaleFilter = `[${inputIndex}:v]scale=iw*${scalePercent}/100:-1,format=rgba,colorchannelmixer=aa=${opacityValue}[vid${i}]`
+      // Scale relative to MAIN VIDEO width (1920 for 1080p) not the overlay's own size
+      // Use main_w from the overlay filter context -- but scale filter doesn't have access to it
+      // So we calculate target width as percentage of 1920 (standard 1080p width)
+      const targetWidth = Math.round(1920 * scalePercent / 100)
+      const scaleFilter = `[${inputIndex}:v]scale=${targetWidth}:-1,format=rgba,colorchannelmixer=aa=${opacityValue}[vid${i}]`
       filters.push(scaleFilter)
       filters.push(`[${currentLabel}][vid${i}]overlay=${posCoords}:shortest=0[${outputLabel}]`)
       
@@ -218,8 +221,9 @@ function buildOverlayFilters(overlays) {
       const scalePercent = overlay.sizePercent || 15
       const opacityValue = (overlay.opacity || 100) / 100
 
-      // Scale the overlay image relative to main video size, and apply opacity
-      const scaleFilter = `[${inputIndex}:v]scale=iw*${scalePercent}/100:-1,format=rgba,colorchannelmixer=aa=${opacityValue}[img${i}]`
+      // Scale relative to MAIN VIDEO width (1920 for 1080p) not the overlay's own size
+      const targetWidth = Math.round(1920 * scalePercent / 100)
+      const scaleFilter = `[${inputIndex}:v]scale=${targetWidth}:-1,format=rgba,colorchannelmixer=aa=${opacityValue}[img${i}]`
       filters.push(scaleFilter)
       filters.push(`[${currentLabel}][img${i}]overlay=${posCoords}[${outputLabel}]`)
       
@@ -665,23 +669,31 @@ app.post('/start', async (req, res) => {
     ]
   }
 
-  // Download remote overlay images to temp files so FFmpeg can access them
+  // Download remote overlay images to local temp files for FFmpeg
   if (overlays && overlays.length > 0) {
+    console.log(`[2MStream] Processing ${overlays.length} overlay(s)...`)
     for (const overlay of overlays) {
+      console.log(`[2MStream] Overlay ${overlay.id}: type=${overlay.type}, imagePath=${overlay.imagePath ? overlay.imagePath.slice(0, 80) : 'none'}, videoPath=${overlay.videoPath ? overlay.videoPath.slice(0, 80) : 'none'}`)
       try {
         if (overlay.imagePath && overlay.imagePath.startsWith('http')) {
+          console.log(`[2MStream] Downloading overlay image: ${overlay.imagePath.slice(0, 100)}...`)
           const localPath = await downloadToTemp(overlay.imagePath)
           tempFiles.push(localPath)
           overlay.imagePath = localPath
+          console.log(`[2MStream] Overlay image saved to: ${localPath}`)
         }
         if (overlay.videoPath && overlay.videoPath.startsWith('http')) {
+          console.log(`[2MStream] Downloading overlay video: ${overlay.videoPath.slice(0, 100)}...`)
           const localPath = await downloadToTemp(overlay.videoPath)
           tempFiles.push(localPath)
           overlay.videoPath = localPath
+          console.log(`[2MStream] Overlay video saved to: ${localPath}`)
         }
       } catch (dlErr) {
-        console.error(`[2MStream] Failed to download overlay ${overlay.id}:`, dlErr.message)
-        // Skip this overlay rather than failing the whole stream
+        console.error(`[2MStream] Overlay download failed for ${overlay.id}:`, dlErr.message)
+        // Null out the path so FFmpeg skips this overlay
+        overlay.imagePath = null
+        overlay.videoPath = null
       }
     }
   }
@@ -723,6 +735,7 @@ app.post('/start', async (req, res) => {
     )
 
     console.log(`[2MStream] Starting FFmpeg for stream ${streamId} -> ${dest.name || rtmpTarget}`)
+    console.log(`[2MStream] FFmpeg args: ffmpeg ${ffmpegArgs.join(' ')}`)
     if (overlays?.length > 0) {
       console.log(`[2MStream]   with ${overlays.length} overlay(s)`)
     }
