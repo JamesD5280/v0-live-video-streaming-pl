@@ -2,8 +2,12 @@ import { updateSession } from '@/lib/supabase/middleware'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
-  // Skip auth entirely for the download endpoint
-  if (request.nextUrl.pathname.startsWith('/api/download-server')) {
+  // Skip auth for download and preview endpoints
+  if (
+    request.nextUrl.pathname.startsWith('/api/download-server') ||
+    request.nextUrl.pathname.startsWith('/api/videos/preview') ||
+    request.nextUrl.pathname.startsWith('/api/streams/preview')
+  ) {
     return NextResponse.next()
   }
 
