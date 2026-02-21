@@ -665,23 +665,31 @@ app.post('/start', async (req, res) => {
     ]
   }
 
-  // Download remote overlay images to temp files so FFmpeg can access them
+  // Download remote overlay images to local temp files for FFmpeg
   if (overlays && overlays.length > 0) {
+    console.log(`[2MStream] Processing ${overlays.length} overlay(s)...`)
     for (const overlay of overlays) {
+      console.log(`[2MStream] Overlay ${overlay.id}: type=${overlay.type}, imagePath=${overlay.imagePath ? overlay.imagePath.slice(0, 80) : 'none'}, videoPath=${overlay.videoPath ? overlay.videoPath.slice(0, 80) : 'none'}`)
       try {
         if (overlay.imagePath && overlay.imagePath.startsWith('http')) {
+          console.log(`[2MStream] Downloading overlay image: ${overlay.imagePath.slice(0, 100)}...`)
           const localPath = await downloadToTemp(overlay.imagePath)
           tempFiles.push(localPath)
           overlay.imagePath = localPath
+          console.log(`[2MStream] Overlay image saved to: ${localPath}`)
         }
         if (overlay.videoPath && overlay.videoPath.startsWith('http')) {
+          console.log(`[2MStream] Downloading overlay video: ${overlay.videoPath.slice(0, 100)}...`)
           const localPath = await downloadToTemp(overlay.videoPath)
           tempFiles.push(localPath)
           overlay.videoPath = localPath
+          console.log(`[2MStream] Overlay video saved to: ${localPath}`)
         }
       } catch (dlErr) {
-        console.error(`[2MStream] Failed to download overlay ${overlay.id}:`, dlErr.message)
-        // Skip this overlay rather than failing the whole stream
+        console.error(`[2MStream] Overlay download failed for ${overlay.id}:`, dlErr.message)
+        // Null out the path so FFmpeg skips this overlay
+        overlay.imagePath = null
+        overlay.videoPath = null
       }
     }
   }
@@ -723,6 +731,7 @@ app.post('/start', async (req, res) => {
     )
 
     console.log(`[2MStream] Starting FFmpeg for stream ${streamId} -> ${dest.name || rtmpTarget}`)
+    console.log(`[2MStream] FFmpeg args: ffmpeg ${ffmpegArgs.join(' ')}`)
     if (overlays?.length > 0) {
       console.log(`[2MStream]   with ${overlays.length} overlay(s)`)
     }
