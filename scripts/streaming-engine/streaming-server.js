@@ -204,8 +204,11 @@ function buildOverlayFilters(overlays) {
       const scalePercent = overlay.sizePercent || 15
       const opacityValue = (overlay.opacity || 100) / 100
 
-      // Scale the video overlay, apply alpha channel (for .MOV with transparency), and set opacity
-      const scaleFilter = `[${inputIndex}:v]scale=iw*${scalePercent}/100:-1,format=rgba,colorchannelmixer=aa=${opacityValue}[vid${i}]`
+      // Scale relative to MAIN VIDEO width (1920 for 1080p) not the overlay's own size
+      // Use main_w from the overlay filter context -- but scale filter doesn't have access to it
+      // So we calculate target width as percentage of 1920 (standard 1080p width)
+      const targetWidth = Math.round(1920 * scalePercent / 100)
+      const scaleFilter = `[${inputIndex}:v]scale=${targetWidth}:-1,format=rgba,colorchannelmixer=aa=${opacityValue}[vid${i}]`
       filters.push(scaleFilter)
       filters.push(`[${currentLabel}][vid${i}]overlay=${posCoords}:shortest=0[${outputLabel}]`)
       
@@ -218,8 +221,9 @@ function buildOverlayFilters(overlays) {
       const scalePercent = overlay.sizePercent || 15
       const opacityValue = (overlay.opacity || 100) / 100
 
-      // Scale the overlay image relative to main video size, and apply opacity
-      const scaleFilter = `[${inputIndex}:v]scale=iw*${scalePercent}/100:-1,format=rgba,colorchannelmixer=aa=${opacityValue}[img${i}]`
+      // Scale relative to MAIN VIDEO width (1920 for 1080p) not the overlay's own size
+      const targetWidth = Math.round(1920 * scalePercent / 100)
+      const scaleFilter = `[${inputIndex}:v]scale=${targetWidth}:-1,format=rgba,colorchannelmixer=aa=${opacityValue}[img${i}]`
       filters.push(scaleFilter)
       filters.push(`[${currentLabel}][img${i}]overlay=${posCoords}[${outputLabel}]`)
       
