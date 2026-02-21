@@ -109,14 +109,14 @@ function buildOverlayFilters(overlays) {
     const outputLabel = `ov${i}`
 
     // Map position to FFmpeg overlay coordinates
-    // If positionX/positionY are provided (0-100%), use percentage-based positioning
-    // The overlay position is: x = W*(posX/100) - w/2, y = H*(posY/100) - h/2
-    // Clamped so the overlay doesn't go off-screen
+    // positionX/positionY are 0-100% representing the CENTER of the overlay
+    // Convert to top-left by: x = W*(px/100) - w/2, y = H*(py/100) - h/2
+    // Clamp so the overlay stays fully on-screen
     let posCoords
     if (overlay.positionX !== undefined && overlay.positionY !== undefined) {
       const px = overlay.positionX / 100
       const py = overlay.positionY / 100
-      posCoords = `x=max(0\\,min(W-w\\,W*${px}-w/2)):y=max(0\\,min(H-h\\,H*${py}-h/2))`
+      posCoords = `x=max(0\\,min(W-w\\,round(W*${px}-w/2))):y=max(0\\,min(H-h\\,round(H*${py}-h/2)))`
     } else {
       // Legacy fallback: use preset position strings
       const posMap = {
