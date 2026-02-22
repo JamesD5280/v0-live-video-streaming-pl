@@ -773,29 +773,32 @@ app.post('/start', async (req, res) => {
         if (procEntry && !procEntry.killed) {
           const restartCount = (procEntry.restartCount || 0) + 1
           if (restartCount <= 10) {
-            const delay = Math.min(5000 * restartCount, 30000) // 5s, 10s, 15s... up to 30s
+            const delay = Math.min(5000 * restartCount, 30000)
             console.log(`[2MStream] Auto-restarting FFmpeg for ${streamId}/${dest.id} in ${delay / 1000}s (attempt ${restartCount})`)
             setTimeout(() => {
               const currentStream = activeStreams.get(streamId)
               if (!currentStream || currentStream.stopping) return
               console.log(`[2MStream] Restarting FFmpeg for ${streamId}/${dest.id}...`)
-              const newProc = spawn('ffmpeg', ffmpegArgs, { stdio: ['pipe', 'pipe', 'pipe'] })
-              let newStderrBuffer = ''
-              newProc.stderr.on('data', (data) => {
-                const msg = data.toString()
-                newStderrBuffer += msg
-                if (msg.includes('Error') || msg.includes('error') || msg.includes('Opening') || msg.includes('Invalid')) {
-                  console.log(`[FFmpeg ${streamId}/${dest.id}] ${msg.trim()}`)
-                }
-              })
-              // Recursively attach the same close handler for further restarts
-              newProc.on('close', proc.listeners('close')[0])
-              newProc.on('error', (err) => {
-                console.error(`[2MStream] FFmpeg restart error for ${streamId}/${dest.id}:`, err.message)
-              })
-              procEntry.proc = newProc
-              procEntry.restartCount = restartCount
-              procEntry.killed = false
+              try {
+                const newProc = spawn('ffmpeg', ffmpegArgs, { stdio: ['pipe', 'pipe', 'pipe'] })
+                newProc.stderr.on('data', (data) => {
+                  const msg = data.toString()
+                  if (msg.includes('Error') || msg.includes('error') || msg.includes('Opening')) {
+                    console.log(`[FFmpeg ${streamId}/${dest.id}] ${msg.trim()}`)
+                  }
+                })
+                newProc.on('close', (restartCode) => {
+                  console.log(`[2MStream] Restarted FFmpeg for ${streamId}/${dest.id} exited with code ${restartCode}`)
+                })
+                newProc.on('error', (err) => {
+                  console.error(`[2MStream] FFmpeg restart error for ${streamId}/${dest.id}:`, err.message)
+                })
+                procEntry.proc = newProc
+                procEntry.restartCount = restartCount
+                procEntry.killed = false
+              } catch (spawnErr) {
+                console.error(`[2MStream] Failed to restart FFmpeg for ${streamId}/${dest.id}:`, spawnErr.message)
+              }
             }, delay)
           } else {
             console.error(`[2MStream] FFmpeg for ${streamId}/${dest.id} exceeded max restart attempts (10)`)
