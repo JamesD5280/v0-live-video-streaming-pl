@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 
 /**
  * Edge Runtime streams large video files without body size limits.
- * No Node.js crypto needed -- we use Bearer token auth which the streaming server
- * accepts on /stream-video (global middleware skips this path).
+ * Uses Bearer token auth which the streaming server accepts on /stream-video.
  */
 export const runtime = "edge"
 
@@ -12,7 +11,7 @@ const STREAMING_API_SECRET = process.env.STREAMING_API_SECRET || "change-this-se
 
 /**
  * GET /api/videos/preview?filename=video.mp4
- * 
+ *
  * Edge-based streaming proxy. Forwards Range requests for seeking.
  * Browser gets HTTPS, proxy fetches from HTTP streaming server.
  */
@@ -39,38 +38,30 @@ export async function GET(req: NextRequest) {
       headers["Range"] = rangeHeader
     }
 
+    // Double-encode the filename: once for the URL path, the server will decode it
     const serverUrl = `${STREAMING_SERVER_URL}/stream-video/${encodeURIComponent(filename)}`
-    
-    let serverRes: Response
-    try {
-      serverRes = await fetch(serverUrl, {
-        headers,
-        // @ts-expect-error -- Next.js edge specific cache option
-        cache: "no-store",
-      })
-    } catch (fetchErr) {
-      console.error("[v0] Video proxy fetch error:", fetchErr)
-      return NextResponse.json(
-        { error: "Cannot reach streaming server" },
-        { status: 502 }
-      )
-    }
+
+    const serverRes = await fetch(serverUrl, {
+      headers,
+      // @ts-expect-error -- Next.js edge specific cache option
+      cache: "no-store",
+    })
 
     if (!serverRes.ok && serverRes.status !== 206) {
-      const errorBody = await serverRes.text().catch(() => "unknown")
-      console.error("[v0] Video proxy server error:", serverRes.status, errorBody)
       return NextResponse.json(
         { error: `Video server error: ${serverRes.status}` },
         { status: serverRes.status }
       )
     }
 
-    // Build response headers
+    // Build response headers -- forward all relevant headers from upstream
     const responseHeaders = new Headers()
     const contentType = serverRes.headers.get("content-type") || "video/mp4"
     responseHeaders.set("Content-Type", contentType)
     responseHeaders.set("Accept-Ranges", "bytes")
     responseHeaders.set("Cache-Control", "public, max-age=3600")
+    // Allow cross-origin requests for the video player
+    responseHeaders.set("Access-Control-Allow-Origin", "*")
 
     const contentLength = serverRes.headers.get("content-length")
     if (contentLength) responseHeaders.set("Content-Length", contentLength)
@@ -86,4 +77,9 @@ export async function GET(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Failed to stream video" }, { status: 502 })
   }
+}
+
+/** HEAD requests let the browser know the file size and that Range is supported */
+export async function HEAD(req: NextRequest) {
+  return GET(req)
 }
