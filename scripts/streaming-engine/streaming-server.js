@@ -735,14 +735,21 @@ app.post('/start', async (req, res) => {
     
     let ffmpegArgs = [...inputArgs]
 
+    // Always normalize video to 1920x1080@30fps to prevent crashes on resolution/fps changes between files
+    const normalizeFilter = 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30'
+
     if (overlayResult) {
       // Add overlay input files
       ffmpegArgs.push(...overlayResult.inputArgs)
-      // Add filter_complex
-      ffmpegArgs.push('-filter_complex', overlayResult.filterComplex)
-      // Map the final output label
+      // Prepend normalization, then feed into overlay chain (replace first [0:v] with [norm])
+      const overlayChain = overlayResult.filterComplex.replace('[0:v]', '[norm]')
+      const combinedFilter = `[0:v]${normalizeFilter}[norm];${overlayChain}`
+      ffmpegArgs.push('-filter_complex', combinedFilter)
       ffmpegArgs.push('-map', `[${overlayResult.outputLabel}]`)
-      ffmpegArgs.push('-map', '0:a?') // Map audio from first input if it exists
+      ffmpegArgs.push('-map', '0:a?')
+    } else {
+      // No overlays -- still normalize via video filter
+      ffmpegArgs.push('-vf', normalizeFilter)
     }
 
     ffmpegArgs.push(
@@ -1067,16 +1074,24 @@ app.post('/restart', async (req, res) => {
     const rtmpTarget = `${dest.rtmpUrl}/${dest.streamKey}`
     let ffmpegArgs = [...inputArgs]
 
+    const normalizeFilter = 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30'
+
     if (overlayResult) {
       ffmpegArgs.push(...overlayResult.inputArgs)
-      ffmpegArgs.push('-filter_complex', overlayResult.filterComplex)
+      const overlayChain = overlayResult.filterComplex.replace('[0:v]', '[norm]')
+      const combinedFilter = `[0:v]${normalizeFilter}[norm];${overlayChain}`
+      ffmpegArgs.push('-filter_complex', combinedFilter)
       ffmpegArgs.push('-map', `[${overlayResult.outputLabel}]`)
       ffmpegArgs.push('-map', '0:a?')
+    } else {
+      ffmpegArgs.push('-vf', normalizeFilter)
     }
 
     ffmpegArgs.push(
       '-c:v', 'libx264', '-preset', 'veryfast', '-maxrate', '4500k', '-bufsize', '9000k',
-      '-pix_fmt', 'yuv420p', '-g', '60', '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-f', 'flv',
+      '-pix_fmt', 'yuv420p', '-g', '60', '-keyint_min', '60', '-sc_threshold', '0',
+      '-c:a', 'aac', '-b:a', '128k', '-ar', '44100',
+      '-f', 'flv', '-flvflags', 'no_duration_filesize',
       rtmpTarget,
     )
 
