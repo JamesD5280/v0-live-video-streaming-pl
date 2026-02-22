@@ -653,18 +653,20 @@ app.post('/start', async (req, res) => {
       '-i', rtmpPullUrl,
     ]
   } else if (isPlaylist && videoSources && videoSources.length >= 1) {
-    // Playlist mode: use concat demuxer
+    // Playlist mode: use concat demuxer with genpts to handle timestamp resets between files
     const concatFile = createConcatFile(videoSources, loop)
     tempFiles.push(concatFile)
     
     inputArgs = [
       '-re',
+      '-fflags', '+genpts+discardcorrupt',
       '-f', 'concat',
       '-safe', '0',
+      '-segment_time_metadata', '1',
       '-i', concatFile,
     ]
   } else {
-    // Single video mode -- use concat file for reliable looping (stream_loop is unreliable with moov-at-end files)
+    // Single video mode
     const source = videoSources?.[0]
     const inputSource = source?.url || videoUrl || join(VIDEO_DIR, source?.path || videoPath || '')
 
@@ -676,14 +678,15 @@ app.post('/start', async (req, res) => {
     }
 
     if (loop) {
-      // Use concat file with repeats for reliable looping
       const singleSource = [{ url: source?.url, path: source?.path || videoPath }]
       const concatFile = createConcatFile(singleSource, true)
       tempFiles.push(concatFile)
       inputArgs = [
         '-re',
+        '-fflags', '+genpts+discardcorrupt',
         '-f', 'concat',
         '-safe', '0',
+        '-segment_time_metadata', '1',
         '-i', concatFile,
       ]
     } else {
@@ -735,21 +738,25 @@ app.post('/start', async (req, res) => {
     
     let ffmpegArgs = [...inputArgs]
 
-    // Always normalize video to 1920x1080@30fps to prevent crashes on resolution/fps changes between files
-    const normalizeFilter = 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30'
+    // Normalize video to 1920x1080@30fps and audio to stereo 44100Hz
+    // This prevents stream death when concat switches between files with different resolutions/audio formats
+    const videoNorm = 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30'
+    const audioNorm = 'aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo,volume=1.0'
 
     if (overlayResult) {
-      // Add overlay input files
       ffmpegArgs.push(...overlayResult.inputArgs)
-      // Prepend normalization, then feed into overlay chain (replace first [0:v] with [norm])
       const overlayChain = overlayResult.filterComplex.replace('[0:v]', '[norm]')
-      const combinedFilter = `[0:v]${normalizeFilter}[norm];${overlayChain}`
+      const combinedFilter = [
+        `[0:v]${videoNorm}[norm]`,
+        `[0:a]${audioNorm}[aout]`,
+        overlayChain
+      ].join(';')
       ffmpegArgs.push('-filter_complex', combinedFilter)
       ffmpegArgs.push('-map', `[${overlayResult.outputLabel}]`)
-      ffmpegArgs.push('-map', '0:a?')
+      ffmpegArgs.push('-map', '[aout]')
     } else {
-      // No overlays -- still normalize via video filter
-      ffmpegArgs.push('-vf', normalizeFilter)
+      ffmpegArgs.push('-vf', videoNorm)
+      ffmpegArgs.push('-af', audioNorm)
     }
 
     ffmpegArgs.push(
@@ -1074,17 +1081,19 @@ app.post('/restart', async (req, res) => {
     const rtmpTarget = `${dest.rtmpUrl}/${dest.streamKey}`
     let ffmpegArgs = [...inputArgs]
 
-    const normalizeFilter = 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30'
+    const videoNorm = 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30'
+    const audioNorm = 'aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo,volume=1.0'
 
     if (overlayResult) {
       ffmpegArgs.push(...overlayResult.inputArgs)
       const overlayChain = overlayResult.filterComplex.replace('[0:v]', '[norm]')
-      const combinedFilter = `[0:v]${normalizeFilter}[norm];${overlayChain}`
+      const combinedFilter = `[0:v]${videoNorm}[norm];[0:a]${audioNorm}[aout];${overlayChain}`
       ffmpegArgs.push('-filter_complex', combinedFilter)
       ffmpegArgs.push('-map', `[${overlayResult.outputLabel}]`)
-      ffmpegArgs.push('-map', '0:a?')
+      ffmpegArgs.push('-map', '[aout]')
     } else {
-      ffmpegArgs.push('-vf', normalizeFilter)
+      ffmpegArgs.push('-vf', videoNorm)
+      ffmpegArgs.push('-af', audioNorm)
     }
 
     ffmpegArgs.push(
