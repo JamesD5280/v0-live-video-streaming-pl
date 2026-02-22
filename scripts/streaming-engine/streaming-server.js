@@ -147,12 +147,18 @@ function buildOverlayFilters(overlays) {
         scrollY = `h-${fontSize + 20}`
       }
 
-      // Draw a semi-transparent background bar at the text Y position
+      // Draw background bar (skip if transparent) then scrolling text
       const barHeight = fontSize + 16
-      filters.push(
-        `[${currentLabel}]drawbox=x=0:y=${scrollY}-8:w=iw:h=${barHeight}:color=${bgColor}@0.7:t=fill[tickbg${i}]`,
-        `[tickbg${i}]drawtext=text='${escapedText}':fontsize=${fontSize}:fontcolor=${fontColor}:y=${scrollY}:x='W-mod(t*${speed}\\,W+tw)'[${outputLabel}]`
-      )
+      if (bgColor === 'transparent' || bgColor === 'none') {
+        filters.push(
+          `[${currentLabel}]drawtext=text='${escapedText}':fontsize=${fontSize}:fontcolor=${fontColor}:y=${scrollY}:x='W-mod(t*${speed}\\,W+tw)'[${outputLabel}]`
+        )
+      } else {
+        filters.push(
+          `[${currentLabel}]drawbox=x=0:y=${scrollY}-8:w=iw:h=${barHeight}:color=${bgColor}@0.7:t=fill[tickbg${i}]`,
+          `[tickbg${i}]drawtext=text='${escapedText}':fontsize=${fontSize}:fontcolor=${fontColor}:y=${scrollY}:x='W-mod(t*${speed}\\,W+tw)'[${outputLabel}]`
+        )
+      }
 
       currentLabel = outputLabel
     } else if (overlay.type === 'text' || overlay.type === 'lower_third') {
@@ -195,18 +201,16 @@ function buildOverlayFilters(overlays) {
       currentLabel = outputLabel
     } else if (overlay.type === 'video' && overlay.videoPath) {
       // Video overlay (rotating logo, animation .MOV/.MP4)
-      // Use -stream_loop -1 for looping, applied per-input via input options
       if (overlay.loopOverlay !== false) {
         inputArgs.push('-stream_loop', '-1')
       }
       inputArgs.push('-i', overlay.videoPath)
       
-      const scalePercent = overlay.sizePercent || 100
+      const scalePercent = overlay.sizePercent || 20
       const opacityValue = (overlay.opacity || 100) / 100
 
-      // Scale relative to MAIN VIDEO width (1920 for 1080p) not the overlay's own size
-      const targetWidth = Math.round(1920 * scalePercent / 100)
-      const scaleFilter = `[${inputIndex}:v]scale=${targetWidth}:-1,format=rgba,colorchannelmixer=aa=${opacityValue}[vid${i}]`
+      // Scale: use percentage of original size (iw*pct/100), keep aspect ratio
+      const scaleFilter = `[${inputIndex}:v]scale=iw*${scalePercent}/100:-1,format=rgba,colorchannelmixer=aa=${opacityValue}[vid${i}]`
       filters.push(scaleFilter)
       filters.push(`[${currentLabel}][vid${i}]overlay=${posCoords}:shortest=0[${outputLabel}]`)
       
@@ -216,12 +220,11 @@ function buildOverlayFilters(overlays) {
       // Image overlay (logo, bug, image)
       inputArgs.push('-i', overlay.imagePath)
       
-      const scalePercent = overlay.sizePercent || 100
+      const scalePercent = overlay.sizePercent || 20
       const opacityValue = (overlay.opacity || 100) / 100
 
-      // Scale relative to MAIN VIDEO width (1920 for 1080p) not the overlay's own size
-      const targetWidth = Math.round(1920 * scalePercent / 100)
-      const scaleFilter = `[${inputIndex}:v]scale=${targetWidth}:-1,format=rgba,colorchannelmixer=aa=${opacityValue}[img${i}]`
+      // Scale: use percentage of original size (iw*pct/100), keep aspect ratio
+      const scaleFilter = `[${inputIndex}:v]scale=iw*${scalePercent}/100:-1,format=rgba,colorchannelmixer=aa=${opacityValue}[img${i}]`
       filters.push(scaleFilter)
       filters.push(`[${currentLabel}][img${i}]overlay=${posCoords}[${outputLabel}]`)
       
