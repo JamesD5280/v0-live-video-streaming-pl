@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
   const { data: dueEvents, error } = await supabase
     .from("scheduled_events")
     .select("*, video:videos(*), event_destinations(*, destination:destinations(*)), event_overlays(*, overlay:overlays(*))")
-    .eq("status", "pending")
+    .in("status", ["pending", "scheduled"])
     .lte("scheduled_at", now)
 
   if (error) {
