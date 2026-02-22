@@ -661,7 +661,7 @@ app.post('/start', async (req, res) => {
       '-i', concatFile,
     ]
   } else {
-    // Single video mode
+    // Single video mode -- use concat file for reliable looping (stream_loop is unreliable with moov-at-end files)
     const source = videoSources?.[0]
     const inputSource = source?.url || videoUrl || join(VIDEO_DIR, source?.path || videoPath || '')
 
@@ -672,12 +672,23 @@ app.post('/start', async (req, res) => {
       }
     }
 
-    inputArgs = [
-      '-re',
-      '-fflags', '+genpts',
-      ...(loop ? ['-stream_loop', '-1'] : []),
-      '-i', inputSource,
-    ]
+    if (loop) {
+      // Use concat file with repeats for reliable looping
+      const singleSource = [{ url: source?.url, path: source?.path || videoPath }]
+      const concatFile = createConcatFile(singleSource, true)
+      tempFiles.push(concatFile)
+      inputArgs = [
+        '-re',
+        '-f', 'concat',
+        '-safe', '0',
+        '-i', concatFile,
+      ]
+    } else {
+      inputArgs = [
+        '-re',
+        '-i', inputSource,
+      ]
+    }
   }
 
   // Download remote overlay images to local temp files for FFmpeg
@@ -1036,7 +1047,14 @@ app.post('/restart', async (req, res) => {
   } else {
     const source = updatedConfig.videoSources?.[0]
     const inputSource = source?.url || updatedConfig.videoUrl || join(VIDEO_DIR, source?.path || updatedConfig.videoPath || '')
-    inputArgs = ['-re', '-fflags', '+genpts', ...(updatedConfig.loop ? ['-stream_loop', '-1'] : []), '-i', inputSource]
+    if (updatedConfig.loop) {
+      const singleSource = [{ url: source?.url, path: source?.path || updatedConfig.videoPath }]
+      const concatFile = createConcatFile(singleSource, true)
+      tempFiles.push(concatFile)
+      inputArgs = ['-re', '-f', 'concat', '-safe', '0', '-i', concatFile]
+    } else {
+      inputArgs = ['-re', '-i', inputSource]
+    }
   }
 
   const overlayResult = buildOverlayFilters(updatedConfig.overlays)

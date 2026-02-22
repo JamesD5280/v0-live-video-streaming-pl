@@ -9,7 +9,6 @@ async function callStreamingServer(path: string, body: Record<string, unknown>) 
     return { error: "Streaming server not configured" }
   }
   const url = `${STREAMING_SERVER_URL}${path}`
-  console.log("[v0] callStreamingServer:", url, "secret-length:", STREAMING_API_SECRET?.length)
   const res = await fetch(url, {
     method: "POST",
     headers: {
@@ -18,7 +17,6 @@ async function callStreamingServer(path: string, body: Record<string, unknown>) 
     },
     body: JSON.stringify(body),
   })
-  console.log("[v0] Engine response status:", res.status)
   return res.json()
 }
 
@@ -145,17 +143,6 @@ export async function POST(req: NextRequest) {
           scrollSpeed: so.overlay.scroll_speed ?? undefined,
         }))
 
-      console.log("[v0] Playlist debug:", {
-        hasPlaylist: !!stream.playlist,
-        playlistId: stream.playlist_id,
-        itemCount: stream.playlist?.playlist_items?.length,
-        videoSourceCount: videoSources.length,
-        videoSources: videoSources.map((v: { url?: string; path?: string; title?: string }) => ({ url: v.url?.slice(0, 50), path: v.path, title: v.title })),
-        isPlaylist: !!stream.playlist,
-        isRtmpPull,
-        loop,
-      })
-
       let result
       try {
         result = await callStreamingServer("/start", {
@@ -172,7 +159,6 @@ export async function POST(req: NextRequest) {
           rtmpPullUrl: stream.rtmp_pull_url || null,
         })
       } catch (engineErr) {
-        console.log("[v0] Engine start error:", engineErr instanceof Error ? engineErr.message : String(engineErr), "URL:", STREAMING_SERVER_URL)
         // Mark stream as error since engine couldn't start
         await supabase
           .from("streams")

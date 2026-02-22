@@ -249,16 +249,24 @@ export function OverlayManager() {
         scroll_speed: type === "scrolling_text" ? scrollSpeed : null,
       }
 
-      await fetch("/api/overlays", {
+      const res = await fetch("/api/overlays", {
         method: editingId ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        console.error("Overlay save failed:", res.status, err)
+        alert(`Failed to save overlay: ${err.error || res.statusText}`)
+        setCreating(false)
+        return
+      }
       setDialogOpen(false)
       resetForm()
       mutate()
-    } catch {
-      // error
+    } catch (err) {
+      console.error("Overlay save error:", err)
+      alert("Failed to save overlay. Check console for details.")
     }
     setCreating(false)
   }
@@ -489,18 +497,31 @@ export function OverlayManager() {
                     <div className="space-y-2">
                       <Label>Background</Label>
                       <div className="flex items-center gap-2">
-                        <input
-                          type="color"
-                          value={bgColor.slice(0, 7)}
-                          onChange={(e) => setBgColor(e.target.value + "80")}
-                          className="h-9 w-9 cursor-pointer rounded border border-border"
-                        />
-                        <Input
-                          value={bgColor}
-                          onChange={(e) => setBgColor(e.target.value)}
-                          className="flex-1"
-                        />
+                        <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={bgColor === "transparent"}
+                            onChange={(e) => setBgColor(e.target.checked ? "transparent" : "#00000080")}
+                            className="rounded border-border"
+                          />
+                          No Background
+                        </label>
                       </div>
+                      {bgColor !== "transparent" && (
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="color"
+                            value={bgColor.slice(0, 7)}
+                            onChange={(e) => setBgColor(e.target.value + "80")}
+                            className="h-9 w-9 cursor-pointer rounded border border-border"
+                          />
+                          <Input
+                            value={bgColor}
+                            onChange={(e) => setBgColor(e.target.value)}
+                            className="flex-1"
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
 
