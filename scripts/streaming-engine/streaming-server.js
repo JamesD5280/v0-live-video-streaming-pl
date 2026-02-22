@@ -245,10 +245,23 @@ function buildOverlayFilters(overlays) {
  * Returns the path to the temp concat file.
  */
 function createConcatFile(videoSources, loop) {
-  const lines = ["# FFmpeg concat demuxer file"]
+  const fileLines = []
   for (const src of videoSources) {
-    const path = src.url || join(VIDEO_DIR, src.path || '')
-    lines.push(`file '${path}'`)
+    const filePath = src.url || join(VIDEO_DIR, src.path || '')
+    fileLines.push(`file '${filePath}'`)
+  }
+  
+  // For looping playlists, repeat the file list many times (enough for ~48 hours)
+  // -stream_loop does NOT work with the concat demuxer, so we repeat the list instead
+  let lines = ["# FFmpeg concat demuxer file"]
+  if (loop) {
+    const repeatCount = Math.max(500, Math.ceil(172800 / (videoSources.length * 60))) // ~48hrs assuming 60s avg per video
+    for (let i = 0; i < repeatCount; i++) {
+      lines.push(...fileLines)
+    }
+    console.log(`[2MStream] Concat file: ${fileLines.length} files repeated ${repeatCount}x for looping`)
+  } else {
+    lines.push(...fileLines)
   }
   
   const concatPath = join(tmpdir(), `2mstream-concat-${Date.now()}.txt`)
@@ -636,7 +649,7 @@ app.post('/start', async (req, res) => {
       '-rw_timeout', '10000000', // 10s timeout for RTMP connection
       '-i', rtmpPullUrl,
     ]
-  } else if (isPlaylist && videoSources && videoSources.length > 1) {
+  } else if (isPlaylist && videoSources && videoSources.length >= 1) {
     // Playlist mode: use concat demuxer
     const concatFile = createConcatFile(videoSources, loop)
     tempFiles.push(concatFile)
@@ -645,7 +658,6 @@ app.post('/start', async (req, res) => {
       '-re',
       '-f', 'concat',
       '-safe', '0',
-      ...(loop ? ['-stream_loop', '-1'] : []),
       '-i', concatFile,
     ]
   } else {
@@ -662,6 +674,7 @@ app.post('/start', async (req, res) => {
 
     inputArgs = [
       '-re',
+      '-fflags', '+genpts',
       ...(loop ? ['-stream_loop', '-1'] : []),
       '-i', inputSource,
     ]
@@ -1016,14 +1029,14 @@ app.post('/restart', async (req, res) => {
 
   if (updatedConfig.isRtmpPull && updatedConfig.rtmpPullUrl) {
     inputArgs = ['-rw_timeout', '10000000', '-i', updatedConfig.rtmpPullUrl]
-  } else if (updatedConfig.isPlaylist && updatedConfig.videoSources?.length > 1) {
+  } else if (updatedConfig.isPlaylist && updatedConfig.videoSources?.length >= 1) {
     const concatFile = createConcatFile(updatedConfig.videoSources, updatedConfig.loop)
     tempFiles.push(concatFile)
-    inputArgs = ['-re', '-f', 'concat', '-safe', '0', ...(updatedConfig.loop ? ['-stream_loop', '-1'] : []), '-i', concatFile]
+    inputArgs = ['-re', '-f', 'concat', '-safe', '0', '-i', concatFile]
   } else {
     const source = updatedConfig.videoSources?.[0]
     const inputSource = source?.url || updatedConfig.videoUrl || join(VIDEO_DIR, source?.path || updatedConfig.videoPath || '')
-    inputArgs = ['-re', ...(updatedConfig.loop ? ['-stream_loop', '-1'] : []), '-i', inputSource]
+    inputArgs = ['-re', '-fflags', '+genpts', ...(updatedConfig.loop ? ['-stream_loop', '-1'] : []), '-i', inputSource]
   }
 
   const overlayResult = buildOverlayFilters(updatedConfig.overlays)
