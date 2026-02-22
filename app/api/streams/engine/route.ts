@@ -8,7 +8,9 @@ async function callStreamingServer(path: string, body: Record<string, unknown>) 
   if (!STREAMING_SERVER_URL) {
     return { error: "Streaming server not configured" }
   }
-  const res = await fetch(`${STREAMING_SERVER_URL}${path}`, {
+  const url = `${STREAMING_SERVER_URL}${path}`
+  console.log("[v0] callStreamingServer:", url, "secret-length:", STREAMING_API_SECRET?.length)
+  const res = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -16,6 +18,7 @@ async function callStreamingServer(path: string, body: Record<string, unknown>) 
     },
     body: JSON.stringify(body),
   })
+  console.log("[v0] Engine response status:", res.status)
   return res.json()
 }
 
