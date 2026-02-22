@@ -145,6 +145,17 @@ export async function POST(req: NextRequest) {
           scrollSpeed: so.overlay.scroll_speed ?? undefined,
         }))
 
+      console.log("[v0] Playlist debug:", {
+        hasPlaylist: !!stream.playlist,
+        playlistId: stream.playlist_id,
+        itemCount: stream.playlist?.playlist_items?.length,
+        videoSourceCount: videoSources.length,
+        videoSources: videoSources.map((v: { url?: string; path?: string; title?: string }) => ({ url: v.url?.slice(0, 50), path: v.path, title: v.title })),
+        isPlaylist: !!stream.playlist,
+        isRtmpPull,
+        loop,
+      })
+
       let result
       try {
         result = await callStreamingServer("/start", {
