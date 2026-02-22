@@ -182,7 +182,6 @@ export function VideoPreviewDialog({ video, open, onOpenChange }: VideoPreviewDi
             onCanPlay={() => setLoading(false)}
             onError={(e) => {
               const mediaError = e.currentTarget.error
-              console.log("[v0] Video error:", { code: mediaError?.code, message: mediaError?.message, networkState: e.currentTarget.networkState, readyState: e.currentTarget.readyState, src: e.currentTarget.src?.slice(0, 100) })
               setLoading(false)
               setError(
                 mediaError?.code === 4

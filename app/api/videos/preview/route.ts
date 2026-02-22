@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
+import http from "http"
 
 /**
- * Edge Runtime streams large video files without body size limits.
- * Uses Bearer token auth which the streaming server accepts on /stream-video.
+ * Node.js runtime -- required for proper HTTP piping with Range support.
+ * Edge Runtime buffers responses and breaks video streaming.
  */
-export const runtime = "edge"
+export const maxDuration = 60
 
 const STREAMING_SERVER_URL = process.env.STREAMING_SERVER_URL
 const STREAMING_API_SECRET = process.env.STREAMING_API_SECRET || "change-this-secret"
@@ -12,74 +13,100 @@ const STREAMING_API_SECRET = process.env.STREAMING_API_SECRET || "change-this-se
 /**
  * GET /api/videos/preview?filename=video.mp4
  *
- * Edge-based streaming proxy. Forwards Range requests for seeking.
- * Browser gets HTTPS, proxy fetches from HTTP streaming server.
+ * Node.js-based video proxy that uses raw http.get to properly pipe
+ * Range responses from the VPS streaming server to the browser.
  */
 export async function GET(req: NextRequest) {
-  try {
-    const { searchParams } = new URL(req.url)
-    const filename = searchParams.get("filename")
-    if (!filename) {
-      return NextResponse.json({ error: "Missing filename" }, { status: 400 })
-    }
-
-    if (!STREAMING_SERVER_URL) {
-      return NextResponse.json({ error: "Streaming server not configured" }, { status: 500 })
-    }
-
-    // Build the request headers -- Bearer auth for the streaming server
-    const headers: Record<string, string> = {
-      Authorization: `Bearer ${STREAMING_API_SECRET}`,
-    }
-
-    // Forward Range header for seeking support
-    const rangeHeader = req.headers.get("range")
-    if (rangeHeader) {
-      headers["Range"] = rangeHeader
-    }
-
-    // Double-encode the filename: once for the URL path, the server will decode it
-    const serverUrl = `${STREAMING_SERVER_URL}/stream-video/${encodeURIComponent(filename)}`
-
-    const serverRes = await fetch(serverUrl, {
-      headers,
-      // @ts-expect-error -- Next.js edge specific cache option
-      cache: "no-store",
-    })
-
-    if (!serverRes.ok && serverRes.status !== 206) {
-      return NextResponse.json(
-        { error: `Video server error: ${serverRes.status}` },
-        { status: serverRes.status }
-      )
-    }
-
-    // Build response headers -- forward all relevant headers from upstream
-    const responseHeaders = new Headers()
-    const contentType = serverRes.headers.get("content-type") || "video/mp4"
-    responseHeaders.set("Content-Type", contentType)
-    responseHeaders.set("Accept-Ranges", "bytes")
-    responseHeaders.set("Cache-Control", "public, max-age=3600")
-    // Allow cross-origin requests for the video player
-    responseHeaders.set("Access-Control-Allow-Origin", "*")
-
-    const contentLength = serverRes.headers.get("content-length")
-    if (contentLength) responseHeaders.set("Content-Length", contentLength)
-
-    const contentRange = serverRes.headers.get("content-range")
-    if (contentRange) responseHeaders.set("Content-Range", contentRange)
-
-    // Stream the body directly -- Edge Runtime has no body size limit
-    return new Response(serverRes.body, {
-      status: serverRes.status,
-      headers: responseHeaders,
-    })
-  } catch {
-    return NextResponse.json({ error: "Failed to stream video" }, { status: 502 })
+  const { searchParams } = new URL(req.url)
+  const filename = searchParams.get("filename")
+  if (!filename) {
+    return NextResponse.json({ error: "Missing filename" }, { status: 400 })
   }
+
+  if (!STREAMING_SERVER_URL) {
+    return NextResponse.json({ error: "Streaming server not configured" }, { status: 500 })
+  }
+
+  const serverUrl = `${STREAMING_SERVER_URL}/stream-video/${encodeURIComponent(filename)}`
+
+  // Build headers for the upstream request
+  const upstreamHeaders: Record<string, string> = {
+    Authorization: `Bearer ${STREAMING_API_SECRET}`,
+  }
+  const rangeHeader = req.headers.get("range")
+  if (rangeHeader) {
+    upstreamHeaders["Range"] = rangeHeader
+  }
+
+  // Use native http module for proper streaming
+  return new Promise<Response>((resolve) => {
+    const parsedUrl = new URL(serverUrl)
+    
+    const options: http.RequestOptions = {
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port || 80,
+      path: parsedUrl.pathname + parsedUrl.search,
+      method: "GET",
+      headers: upstreamHeaders,
+    }
+
+    const proxyReq = http.request(options, (proxyRes) => {
+      const responseHeaders = new Headers()
+      
+      // Forward relevant headers
+      const ct = proxyRes.headers["content-type"] || "video/mp4"
+      responseHeaders.set("Content-Type", ct)
+      responseHeaders.set("Accept-Ranges", "bytes")
+      responseHeaders.set("Cache-Control", "public, max-age=3600")
+      responseHeaders.set("Access-Control-Allow-Origin", "*")
+
+      if (proxyRes.headers["content-length"]) {
+        responseHeaders.set("Content-Length", proxyRes.headers["content-length"])
+      }
+      if (proxyRes.headers["content-range"]) {
+        responseHeaders.set("Content-Range", proxyRes.headers["content-range"])
+      }
+
+      // Convert Node.js readable stream to web ReadableStream
+      const readable = new ReadableStream({
+        start(controller) {
+          proxyRes.on("data", (chunk: Buffer) => {
+            controller.enqueue(new Uint8Array(chunk))
+          })
+          proxyRes.on("end", () => {
+            controller.close()
+          })
+          proxyRes.on("error", (err) => {
+            controller.error(err)
+          })
+        },
+        cancel() {
+          proxyRes.destroy()
+        },
+      })
+
+      resolve(
+        new Response(readable, {
+          status: proxyRes.statusCode || 200,
+          headers: responseHeaders,
+        })
+      )
+    })
+
+    proxyReq.on("error", () => {
+      resolve(
+        NextResponse.json(
+          { error: "Cannot reach streaming server" },
+          { status: 502 }
+        )
+      )
+    })
+
+    proxyReq.end()
+  })
 }
 
-/** HEAD requests let the browser know the file size and that Range is supported */
+/** HEAD support for browser content-length discovery */
 export async function HEAD(req: NextRequest) {
   return GET(req)
 }
