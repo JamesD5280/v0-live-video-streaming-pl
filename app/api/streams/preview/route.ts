@@ -112,7 +112,6 @@ export async function POST(req: NextRequest) {
       },
     })
   } catch (e) {
-    console.error("[v0] Preview error:", e)
     return NextResponse.json({ error: "Failed to generate preview" }, { status: 502 })
   }
 }
