@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/select"
 import { type Destination, type Platform, platformRtmpUrls } from "@/lib/store"
 import { fetcher } from "@/lib/fetcher"
-import { Plus, Trash2, Eye, EyeOff, Globe, Loader2 } from "lucide-react"
+import { Plus, Trash2, Eye, EyeOff, Globe, Loader2, Pencil } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const platformConfig: Record<Platform, { label: string; abbr: string; color: string }> = {
@@ -38,6 +38,7 @@ export function DestinationList() {
   const { data: destinations, error: fetchError, mutate } = useSWR<Destination[]>("/api/destinations", fetcher)
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({})
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [newDest, setNewDest] = useState({
     platform: "youtube" as Platform,
@@ -45,6 +46,13 @@ export function DestinationList() {
     stream_key: "",
     rtmp_url: platformRtmpUrls.youtube,
   })
+  const [editDest, setEditDest] = useState<{
+    id: string
+    platform: Platform
+    name: string
+    stream_key: string
+    rtmp_url: string
+  } | null>(null)
 
   const toggleEnabled = async (dest: Destination) => {
     await fetch("/api/destinations", {
@@ -61,6 +69,31 @@ export function DestinationList() {
 
   const removeDestination = async (id: string) => {
     await fetch(`/api/destinations?id=${id}`, { method: "DELETE" })
+    mutate()
+  }
+
+  const openEdit = (dest: Destination) => {
+    setEditDest({
+      id: dest.id,
+      platform: dest.platform,
+      name: dest.name,
+      stream_key: dest.stream_key,
+      rtmp_url: dest.rtmp_url,
+    })
+    setEditDialogOpen(true)
+  }
+
+  const saveEdit = async () => {
+    if (!editDest) return
+    setSaving(true)
+    await fetch("/api/destinations", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(editDest),
+    })
+    setEditDialogOpen(false)
+    setEditDest(null)
+    setSaving(false)
     mutate()
   }
 
@@ -238,6 +271,15 @@ export function DestinationList() {
                       <Button
                         variant="ghost"
                         size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                        onClick={() => openEdit(dest)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                        <span className="sr-only">Edit destination</span>
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
                         className="h-8 w-8 text-muted-foreground hover:text-destructive"
                         onClick={() => removeDestination(dest.id)}
                       >
@@ -252,6 +294,84 @@ export function DestinationList() {
           })}
         </div>
       )}
+
+      {/* Edit Destination Dialog */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="bg-card border-border">
+          <DialogHeader>
+            <DialogTitle className="text-foreground">Edit Destination</DialogTitle>
+          </DialogHeader>
+          {editDest && (
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label className="text-foreground">Platform</Label>
+                <Select
+                  value={editDest.platform}
+                  onValueChange={(val: Platform) =>
+                    setEditDest({
+                      ...editDest,
+                      platform: val,
+                      rtmp_url: platformRtmpUrls[val] || editDest.rtmp_url,
+                    })
+                  }
+                >
+                  <SelectTrigger className="bg-secondary border-border text-foreground">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-card border-border">
+                    <SelectItem value="youtube">YouTube</SelectItem>
+                    <SelectItem value="twitch">Twitch</SelectItem>
+                    <SelectItem value="facebook">Facebook</SelectItem>
+                    <SelectItem value="custom">Custom RTMP</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-foreground">Display Name</Label>
+                <Input
+                  value={editDest.name}
+                  onChange={(e) => setEditDest({ ...editDest, name: e.target.value })}
+                  className="bg-secondary border-border text-foreground"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-foreground">Server URL</Label>
+                <Input
+                  value={editDest.rtmp_url}
+                  onChange={(e) => setEditDest({ ...editDest, rtmp_url: e.target.value })}
+                  className="bg-secondary border-border font-mono text-sm text-foreground"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-foreground">Stream Key</Label>
+                <Input
+                  value={editDest.stream_key}
+                  onChange={(e) => setEditDest({ ...editDest, stream_key: e.target.value })}
+                  type="password"
+                  className="bg-secondary border-border font-mono text-sm text-foreground"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  onClick={saveEdit}
+                  disabled={!editDest.name || !editDest.stream_key || saving}
+                  className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90"
+                >
+                  {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  Save Changes
+                </Button>
+                <Button
+                  variant="outline"
+                  className="border-border text-foreground"
+                  onClick={() => setEditDialogOpen(false)}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

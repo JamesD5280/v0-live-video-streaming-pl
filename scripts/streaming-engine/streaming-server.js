@@ -201,12 +201,10 @@ function buildOverlayFilters(overlays) {
       }
       inputArgs.push('-i', overlay.videoPath)
       
-      const scalePercent = overlay.sizePercent || 15
+      const scalePercent = overlay.sizePercent || 100
       const opacityValue = (overlay.opacity || 100) / 100
 
       // Scale relative to MAIN VIDEO width (1920 for 1080p) not the overlay's own size
-      // Use main_w from the overlay filter context -- but scale filter doesn't have access to it
-      // So we calculate target width as percentage of 1920 (standard 1080p width)
       const targetWidth = Math.round(1920 * scalePercent / 100)
       const scaleFilter = `[${inputIndex}:v]scale=${targetWidth}:-1,format=rgba,colorchannelmixer=aa=${opacityValue}[vid${i}]`
       filters.push(scaleFilter)
@@ -218,7 +216,7 @@ function buildOverlayFilters(overlays) {
       // Image overlay (logo, bug, image)
       inputArgs.push('-i', overlay.imagePath)
       
-      const scalePercent = overlay.sizePercent || 15
+      const scalePercent = overlay.sizePercent || 100
       const opacityValue = (overlay.opacity || 100) / 100
 
       // Scale relative to MAIN VIDEO width (1920 for 1080p) not the overlay's own size
@@ -727,10 +725,13 @@ app.post('/start', async (req, res) => {
       '-bufsize', '9000k',
       '-pix_fmt', 'yuv420p',
       '-g', '60',
+      '-keyint_min', '60',
+      '-sc_threshold', '0',
       '-c:a', 'aac',
       '-b:a', '128k',
       '-ar', '44100',
       '-f', 'flv',
+      '-flvflags', 'no_duration_filesize',
       rtmpTarget,
     )
 

@@ -9,13 +9,12 @@ export async function GET() {
 
     const { data, error } = await supabase
       .from("scheduled_events")
-      .select("*, video:videos(*), event_destinations(*, destination:destinations(*))")
+      .select("*, video:videos(*), event_destinations(*, destination:destinations(*)), event_overlays(*, overlay:overlays(*))")
       .order("scheduled_at", { ascending: true })
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json(data)
   } catch (e) {
-    console.error("[v0] Schedule GET crash:", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
@@ -57,9 +56,22 @@ export async function POST(req: NextRequest) {
       if (destError) return NextResponse.json({ error: destError.message }, { status: 500 })
     }
 
+    // Save overlay associations
+    if (body.overlay_ids && body.overlay_ids.length > 0) {
+      const overlayRows = body.overlay_ids.map((overlayId: string) => ({
+        event_id: event.id,
+        overlay_id: overlayId,
+      }))
+
+      const { error: overlayError } = await supabase
+        .from("event_overlays")
+        .insert(overlayRows)
+
+      if (overlayError) return NextResponse.json({ error: overlayError.message }, { status: 500 })
+    }
+
     return NextResponse.json(event)
   } catch (e) {
-    console.error("[v0] Schedule POST crash:", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
@@ -78,7 +90,6 @@ export async function DELETE(req: NextRequest) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ success: true })
   } catch (e) {
-    console.error("[v0] Schedule DELETE crash:", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

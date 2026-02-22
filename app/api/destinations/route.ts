@@ -16,7 +16,6 @@ export async function GET() {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json(data)
   } catch (e) {
-    console.error("[v0] Destinations GET crash:", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
@@ -44,7 +43,7 @@ export async function POST(req: NextRequest) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json(data)
   } catch (e) {
-    console.error("[v0] Destinations POST crash:", e)
+
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
@@ -56,9 +55,16 @@ export async function PATCH(req: NextRequest) {
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     const body = await req.json()
+    const updateData: Record<string, unknown> = { updated_at: new Date().toISOString() }
+    if (body.enabled !== undefined) updateData.enabled = body.enabled
+    if (body.name !== undefined) updateData.name = body.name
+    if (body.platform !== undefined) updateData.platform = body.platform
+    if (body.rtmp_url !== undefined) updateData.rtmp_url = body.rtmp_url
+    if (body.stream_key !== undefined) updateData.stream_key = body.stream_key
+
     const { data, error } = await supabase
       .from("destinations")
-      .update({ enabled: body.enabled, updated_at: new Date().toISOString() })
+      .update(updateData)
       .eq("id", body.id)
       .select()
       .single()
@@ -66,7 +72,7 @@ export async function PATCH(req: NextRequest) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json(data)
   } catch (e) {
-    console.error("[v0] Destinations PATCH crash:", e)
+
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
@@ -85,7 +91,7 @@ export async function DELETE(req: NextRequest) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ success: true })
   } catch (e) {
-    console.error("[v0] Destinations DELETE crash:", e)
+
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

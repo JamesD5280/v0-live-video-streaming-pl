@@ -16,13 +16,14 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { fetcher } from "@/lib/fetcher"
-import type { Video, Destination, ScheduledEvent } from "@/lib/store"
-import { Calendar, Clock, Plus, Trash2, Video as VideoIcon, Radio, Repeat, Loader2, Rss, Film } from "lucide-react"
+import type { Video, Destination, ScheduledEvent, Overlay } from "@/lib/store"
+import { Calendar, Clock, Plus, Trash2, Video as VideoIcon, Radio, Repeat, Loader2, Rss, Film, Layers } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export function StreamScheduler() {
-  const { data: videos, error: videosError } = useSWR<Video[]>("/api/videos", fetcher)
-  const { data: destinations, error: destsError } = useSWR<Destination[]>("/api/destinations", fetcher)
+  const { data: videos } = useSWR<Video[]>("/api/videos", fetcher)
+  const { data: destinations } = useSWR<Destination[]>("/api/destinations", fetcher)
+  const { data: overlays } = useSWR<Overlay[]>("/api/overlays", fetcher)
   const { data: events, error: eventsError, mutate } = useSWR<ScheduledEvent[]>("/api/schedule", fetcher)
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -32,6 +33,7 @@ export function StreamScheduler() {
     sourceType: "video" as "video" | "rtmp_pull",
     rtmpPullUrl: "",
     destinations: [] as string[],
+    overlayIds: [] as string[],
     date: "",
     time: "",
     repeat: "none",
@@ -39,6 +41,7 @@ export function StreamScheduler() {
 
   const readyVideos = Array.isArray(videos) ? videos.filter((v) => v.status === "ready") : []
   const enabledDests = Array.isArray(destinations) ? destinations.filter((d) => d.enabled) : []
+  const enabledOverlays = Array.isArray(overlays) ? overlays.filter((o) => o.enabled) : []
 
   const toggleDest = (id: string) => {
     setNewEvent((prev) => ({
@@ -46,6 +49,15 @@ export function StreamScheduler() {
       destinations: prev.destinations.includes(id)
         ? prev.destinations.filter((d) => d !== id)
         : [...prev.destinations, id],
+    }))
+  }
+
+  const toggleOverlay = (id: string) => {
+    setNewEvent((prev) => ({
+      ...prev,
+      overlayIds: prev.overlayIds.includes(id)
+        ? prev.overlayIds.filter((o) => o !== id)
+        : [...prev.overlayIds, id],
     }))
   }
 
@@ -63,9 +75,10 @@ export function StreamScheduler() {
         scheduled_at: scheduledAt,
         repeat_mode: newEvent.repeat,
         destination_ids: newEvent.destinations,
+        overlay_ids: newEvent.overlayIds,
       }),
     })
-    setNewEvent({ title: "", videoId: "", sourceType: "video", rtmpPullUrl: "", destinations: [], date: "", time: "", repeat: "none" })
+    setNewEvent({ title: "", videoId: "", sourceType: "video", rtmpPullUrl: "", destinations: [], overlayIds: [], date: "", time: "", repeat: "none" })
     setShowForm(false)
     setSaving(false)
     mutate()
@@ -213,6 +226,32 @@ export function StreamScheduler() {
                 ))}
               </div>
             </div>
+            {enabledOverlays.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-foreground flex items-center gap-1.5">
+                  <Layers className="h-3.5 w-3.5" />
+                  Overlays
+                </Label>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {enabledOverlays.map((overlay) => (
+                    <div
+                      key={overlay.id}
+                      className={cn(
+                        "flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition-colors",
+                        newEvent.overlayIds.includes(overlay.id) ? "border-primary bg-primary/5" : "border-border bg-secondary/50 hover:bg-secondary"
+                      )}
+                      onClick={() => toggleOverlay(overlay.id)}
+                    >
+                      <Checkbox checked={newEvent.overlayIds.includes(overlay.id)} onCheckedChange={() => toggleOverlay(overlay.id)} />
+                      <div>
+                        <span className="text-sm text-foreground">{overlay.name}</span>
+                        <span className="ml-2 text-xs text-muted-foreground">{overlay.type}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="flex gap-2">
               <Button onClick={addEvent} disabled={!newEvent.title || (newEvent.sourceType === "video" ? !newEvent.videoId : !newEvent.rtmpPullUrl.trim()) || !newEvent.date || !newEvent.time || saving} className="bg-primary text-primary-foreground hover:bg-primary/90">
                 {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
