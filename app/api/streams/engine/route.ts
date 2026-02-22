@@ -158,6 +158,7 @@ export async function POST(req: NextRequest) {
           rtmpPullUrl: stream.rtmp_pull_url || null,
         })
       } catch (engineErr) {
+        console.log("[v0] Engine start error:", engineErr instanceof Error ? engineErr.message : String(engineErr), "URL:", STREAMING_SERVER_URL)
         // Mark stream as error since engine couldn't start
         await supabase
           .from("streams")
