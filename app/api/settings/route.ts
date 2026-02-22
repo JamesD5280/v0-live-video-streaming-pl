@@ -30,7 +30,6 @@ export async function GET() {
 
     return NextResponse.json(data)
   } catch (e) {
-    console.error("[v0] Settings GET crash:", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
@@ -58,7 +57,6 @@ export async function PATCH(req: NextRequest) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json(data)
   } catch (e) {
-    console.error("[v0] Settings PATCH crash:", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
