@@ -141,6 +141,32 @@ export function StreamCreator() {
     mutateStreams()
   }
 
+  const handleRestartStream = async (streamId: string) => {
+    setCreating(true)
+    setStartError(null)
+    try {
+      // Reset stream status to pending, then tell engine to start
+      await fetch("/api/streams", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: streamId, status: "pending" }),
+      })
+      const engineRes = await fetch("/api/streams/engine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "start", streamId }),
+      })
+      const engineData = await engineRes.json()
+      if (!engineData.success) {
+        setStartError(engineData.error || "Failed to restart stream")
+      }
+    } catch (e) {
+      setStartError(e instanceof Error ? e.message : "Failed to restart stream")
+    }
+    setCreating(false)
+    mutateStreams()
+  }
+
   const handleDeleteStream = async (streamId: string) => {
     await fetch(`/api/streams?id=${streamId}`, { method: "DELETE" })
     mutateStreams()
@@ -595,6 +621,18 @@ export function StreamCreator() {
                         >
                           <StopCircle className="h-3.5 w-3.5" />
                           {stream.status === "live" ? "Stop" : "Dismiss"}
+                        </Button>
+                      )}
+                      {(stream.status === "stopped" || stream.status === "completed" || stream.status === "error") && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="gap-1 border-primary text-primary hover:bg-primary/10"
+                          onClick={() => handleRestartStream(stream.id)}
+                          disabled={creating}
+                        >
+                          <Play className="h-3.5 w-3.5" />
+                          Restart
                         </Button>
                       )}
                       {(stream.status === "stopped" || stream.status === "completed") && (

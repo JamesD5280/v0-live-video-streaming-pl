@@ -201,12 +201,10 @@ function buildOverlayFilters(overlays) {
       }
       inputArgs.push('-i', overlay.videoPath)
       
-      const scalePercent = overlay.sizePercent || 15
+      const scalePercent = overlay.sizePercent || 100
       const opacityValue = (overlay.opacity || 100) / 100
 
       // Scale relative to MAIN VIDEO width (1920 for 1080p) not the overlay's own size
-      // Use main_w from the overlay filter context -- but scale filter doesn't have access to it
-      // So we calculate target width as percentage of 1920 (standard 1080p width)
       const targetWidth = Math.round(1920 * scalePercent / 100)
       const scaleFilter = `[${inputIndex}:v]scale=${targetWidth}:-1,format=rgba,colorchannelmixer=aa=${opacityValue}[vid${i}]`
       filters.push(scaleFilter)
@@ -218,7 +216,7 @@ function buildOverlayFilters(overlays) {
       // Image overlay (logo, bug, image)
       inputArgs.push('-i', overlay.imagePath)
       
-      const scalePercent = overlay.sizePercent || 15
+      const scalePercent = overlay.sizePercent || 100
       const opacityValue = (overlay.opacity || 100) / 100
 
       // Scale relative to MAIN VIDEO width (1920 for 1080p) not the overlay's own size
@@ -727,10 +725,13 @@ app.post('/start', async (req, res) => {
       '-bufsize', '9000k',
       '-pix_fmt', 'yuv420p',
       '-g', '60',
+      '-keyint_min', '60',
+      '-sc_threshold', '0',
       '-c:a', 'aac',
       '-b:a', '128k',
       '-ar', '44100',
       '-f', 'flv',
+      '-flvflags', 'no_duration_filesize',
       rtmpTarget,
     )
 
@@ -761,9 +762,45 @@ app.post('/start', async (req, res) => {
     proc.on('close', (code) => {
       console.log(`[2MStream] FFmpeg process for ${streamId}/${dest.id} exited with code ${code}`)
       if (code !== 0 && stderrBuffer) {
-        // Log the last 500 chars of stderr for debugging
         const lastLines = stderrBuffer.slice(-500).trim()
         console.error(`[FFmpeg ${streamId}/${dest.id}] Last output:\n${lastLines}`)
+      }
+
+      // Auto-restart if the stream is still supposed to be active (not manually stopped)
+      const streamEntry = activeStreams.get(streamId)
+      if (streamEntry && !streamEntry.stopping) {
+        const procEntry = streamEntry.processes.find(p => p.destId === dest.id)
+        if (procEntry && !procEntry.killed) {
+          const restartCount = (procEntry.restartCount || 0) + 1
+          if (restartCount <= 10) {
+            const delay = Math.min(5000 * restartCount, 30000) // 5s, 10s, 15s... up to 30s
+            console.log(`[2MStream] Auto-restarting FFmpeg for ${streamId}/${dest.id} in ${delay / 1000}s (attempt ${restartCount})`)
+            setTimeout(() => {
+              const currentStream = activeStreams.get(streamId)
+              if (!currentStream || currentStream.stopping) return
+              console.log(`[2MStream] Restarting FFmpeg for ${streamId}/${dest.id}...`)
+              const newProc = spawn('ffmpeg', ffmpegArgs, { stdio: ['pipe', 'pipe', 'pipe'] })
+              let newStderrBuffer = ''
+              newProc.stderr.on('data', (data) => {
+                const msg = data.toString()
+                newStderrBuffer += msg
+                if (msg.includes('Error') || msg.includes('error') || msg.includes('Opening') || msg.includes('Invalid')) {
+                  console.log(`[FFmpeg ${streamId}/${dest.id}] ${msg.trim()}`)
+                }
+              })
+              // Recursively attach the same close handler for further restarts
+              newProc.on('close', proc.listeners('close')[0])
+              newProc.on('error', (err) => {
+                console.error(`[2MStream] FFmpeg restart error for ${streamId}/${dest.id}:`, err.message)
+              })
+              procEntry.proc = newProc
+              procEntry.restartCount = restartCount
+              procEntry.killed = false
+            }, delay)
+          } else {
+            console.error(`[2MStream] FFmpeg for ${streamId}/${dest.id} exceeded max restart attempts (10)`)
+          }
+        }
       }
     })
 
@@ -1040,7 +1077,9 @@ app.post('/restart', async (req, res) => {
 function stopStream(streamId) {
   const stream = activeStreams.get(streamId)
   if (!stream) return false
-
+  
+  // Mark as stopping so auto-restart doesn't trigger
+  stream.stopping = true
   console.log(`[2MStream] Stopping stream ${streamId}`)
   
   for (const p of stream.processes) {
