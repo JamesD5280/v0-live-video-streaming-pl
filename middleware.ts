@@ -2,11 +2,13 @@ import { updateSession } from '@/lib/supabase/middleware'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
-  // Skip auth for download and preview endpoints
+  // Skip auth for download, preview, and cron endpoints
   if (
     request.nextUrl.pathname.startsWith('/api/download-server') ||
     request.nextUrl.pathname.startsWith('/api/videos/preview') ||
-    request.nextUrl.pathname.startsWith('/api/streams/preview')
+    request.nextUrl.pathname.startsWith('/api/streams/preview') ||
+    request.nextUrl.pathname.startsWith('/api/schedule/cron') ||
+    request.nextUrl.pathname.startsWith('/api/notifications')
   ) {
     return NextResponse.next()
   }
@@ -14,7 +16,7 @@ export async function middleware(request: NextRequest) {
   try {
     return await updateSession(request)
   } catch (error) {
-    console.error('[v0] Root middleware error:', error)
+    console.error('Root middleware error:', error)
     return NextResponse.next()
   }
 }

@@ -649,7 +649,7 @@ app.post('/start', async (req, res) => {
       '-rw_timeout', '10000000', // 10s timeout for RTMP connection
       '-i', rtmpPullUrl,
     ]
-  } else if (isPlaylist && videoSources && videoSources.length > 1) {
+  } else if (isPlaylist && videoSources && videoSources.length >= 1) {
     // Playlist mode: use concat demuxer
     const concatFile = createConcatFile(videoSources, loop)
     tempFiles.push(concatFile)
@@ -1029,7 +1029,7 @@ app.post('/restart', async (req, res) => {
 
   if (updatedConfig.isRtmpPull && updatedConfig.rtmpPullUrl) {
     inputArgs = ['-rw_timeout', '10000000', '-i', updatedConfig.rtmpPullUrl]
-  } else if (updatedConfig.isPlaylist && updatedConfig.videoSources?.length > 1) {
+  } else if (updatedConfig.isPlaylist && updatedConfig.videoSources?.length >= 1) {
     const concatFile = createConcatFile(updatedConfig.videoSources, updatedConfig.loop)
     tempFiles.push(concatFile)
     inputArgs = ['-re', '-f', 'concat', '-safe', '0', '-i', concatFile]
