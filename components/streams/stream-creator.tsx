@@ -285,7 +285,7 @@ export function StreamCreator() {
                 </div>
               </div>
 
-              {sourceType === "video" ? (
+              {sourceType === "video" && (
                 <div className="space-y-2">
                   <Label className="text-foreground">Select Video</Label>
                   <Select value={selectedVideo} onValueChange={setSelectedVideo}>
@@ -304,7 +304,9 @@ export function StreamCreator() {
                     <p className="text-xs text-muted-foreground">No videos ready. Upload videos from the Video Library.</p>
                   )}
                 </div>
-              ) : (
+              )}
+
+              {sourceType === "playlist" && (
                 <div className="space-y-2">
                   <Label className="text-foreground">Select Playlist</Label>
                   <Select value={selectedPlaylist} onValueChange={setSelectedPlaylist}>
