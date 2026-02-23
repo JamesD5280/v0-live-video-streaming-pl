@@ -647,13 +647,10 @@ app.post('/start', async (req, res) => {
 
   if (isRtmpPull && rtmpPullUrl) {
     // RTMP pull mode: pull from external RTMP stream
+    // Note: -reconnect flags are HTTP-only, not RTMP compatible. Auto-restart handles reconnection.
     console.log(`[2MStream] RTMP Pull mode from: ${rtmpPullUrl}`)
     inputArgs = [
       '-rw_timeout', '10000000', // 10s timeout for RTMP connection
-      '-reconnect', '1',
-      '-reconnect_at_eof', '1',
-      '-reconnect_streamed', '1',
-      '-reconnect_delay_max', '5',
       '-i', rtmpPullUrl,
     ]
   } else if (isPlaylist && videoSources && videoSources.length >= 1) {
@@ -1055,8 +1052,6 @@ app.post('/restart', async (req, res) => {
   if (updatedConfig.isRtmpPull && updatedConfig.rtmpPullUrl) {
     inputArgs = [
       '-rw_timeout', '10000000',
-      '-reconnect', '1', '-reconnect_at_eof', '1',
-      '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
       '-i', updatedConfig.rtmpPullUrl,
     ]
   } else if (updatedConfig.isPlaylist && updatedConfig.videoSources?.length >= 1) {
