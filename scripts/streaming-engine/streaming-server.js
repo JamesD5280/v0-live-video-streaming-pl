@@ -790,70 +790,68 @@ app.post('/start', async (req, res) => {
     
     const proc = spawn('ffmpeg', ffmpegArgs, { stdio: ['pipe', 'pipe', 'pipe'] })
 
-    let stderrBuffer = ''
     proc.stderr.on('data', (data) => {
       const msg = data.toString()
-      stderrBuffer += msg
-      // Log important messages immediately
       if (msg.includes('Error') || msg.includes('error') || msg.includes('Opening') || msg.includes('No such file') || msg.includes('Invalid')) {
         console.log(`[FFmpeg ${streamId}/${dest.id}] ${msg.trim()}`)
       }
     })
 
-    proc.on('close', (code) => {
-      console.log(`[2MStream] FFmpeg process for ${streamId}/${dest.id} exited with code ${code}`)
-      if (code !== 0 && stderrBuffer) {
-        const lastLines = stderrBuffer.slice(-500).trim()
-        console.error(`[FFmpeg ${streamId}/${dest.id}] Last output:\n${lastLines}`)
-      }
-
-      // Auto-restart if the stream is still supposed to be active (not manually stopped)
-      const streamEntry = activeStreams.get(streamId)
-      if (streamEntry && !streamEntry.stopping) {
-        const procEntry = streamEntry.processes.find(p => p.destId === dest.id)
-        if (procEntry && !procEntry.killed) {
-          const restartCount = (procEntry.restartCount || 0) + 1
-          if (restartCount <= 10) {
-            const delay = Math.min(5000 * restartCount, 30000)
-            console.log(`[2MStream] Auto-restarting FFmpeg for ${streamId}/${dest.id} in ${delay / 1000}s (attempt ${restartCount})`)
-            setTimeout(() => {
-              const currentStream = activeStreams.get(streamId)
-              if (!currentStream || currentStream.stopping) return
-              console.log(`[2MStream] Restarting FFmpeg for ${streamId}/${dest.id}...`)
-              try {
-                const newProc = spawn('ffmpeg', ffmpegArgs, { stdio: ['pipe', 'pipe', 'pipe'] })
-                newProc.stderr.on('data', (data) => {
-                  const msg = data.toString()
-                  if (msg.includes('Error') || msg.includes('error') || msg.includes('Opening')) {
-                    console.log(`[FFmpeg ${streamId}/${dest.id}] ${msg.trim()}`)
-                  }
-                })
-                newProc.on('close', (restartCode) => {
-                  console.log(`[2MStream] Restarted FFmpeg for ${streamId}/${dest.id} exited with code ${restartCode}`)
-                })
-                newProc.on('error', (err) => {
-                  console.error(`[2MStream] FFmpeg restart error for ${streamId}/${dest.id}:`, err.message)
-                })
-                procEntry.proc = newProc
-                procEntry.restartCount = restartCount
-                procEntry.killed = false
-              } catch (spawnErr) {
-                console.error(`[2MStream] Failed to restart FFmpeg for ${streamId}/${dest.id}:`, spawnErr.message)
-              }
-            }, delay)
-          } else {
-            console.error(`[2MStream] FFmpeg for ${streamId}/${dest.id} exceeded max restart attempts (10)`)
-          }
+    // Recursive auto-restart function that keeps the stream alive
+    function setupAutoRestart(ffmpegProc, procEntry) {
+      ffmpegProc.on('close', (code) => {
+        console.log(`[2MStream] FFmpeg for ${streamId}/${dest.id} exited code=${code}`)
+        if (code !== 0) {
+          const lastLines = (procEntry._stderrBuf || '').slice(-500).trim()
+          if (lastLines) console.error(`[FFmpeg ${streamId}/${dest.id}] ${lastLines}`)
         }
-      }
-    })
+        // Auto-restart if not manually stopped
+        const streamEntry = activeStreams.get(streamId)
+        if (!streamEntry || streamEntry.stopping || procEntry.killed) return
+        procEntry.restartCount = (procEntry.restartCount || 0) + 1
+        if (procEntry.restartCount > 100) {
+          console.error(`[2MStream] ${streamId}/${dest.id} exceeded 100 restarts, giving up`)
+          return
+        }
+        // Quick restart (2s) - the stream normalization handles file transitions
+        const delay = code === 0 ? 1000 : Math.min(3000 * procEntry.restartCount, 15000)
+        console.log(`[2MStream] Auto-restarting ${streamId}/${dest.id} in ${delay/1000}s (attempt ${procEntry.restartCount})`)
+        setTimeout(() => {
+          const current = activeStreams.get(streamId)
+          if (!current || current.stopping) return
+          try {
+            const newProc = spawn('ffmpeg', ffmpegArgs, { stdio: ['pipe', 'pipe', 'pipe'] })
+            procEntry._stderrBuf = ''
+            newProc.stderr.on('data', (d) => {
+              const m = d.toString()
+              procEntry._stderrBuf = (procEntry._stderrBuf || '').slice(-2000) + m
+              if (m.includes('Error') || m.includes('error') || m.includes('No such file')) {
+                console.log(`[FFmpeg ${streamId}/${dest.id}] ${m.trim()}`)
+              }
+            })
+            newProc.on('error', (err) => {
+              console.error(`[2MStream] FFmpeg spawn error: ${err.message}`)
+            })
+            procEntry.proc = newProc
+            procEntry.killed = false
+            // Recursively set up auto-restart for the new process
+            setupAutoRestart(newProc, procEntry)
+          } catch (e) {
+            console.error(`[2MStream] Restart failed: ${e.message}`)
+          }
+        }, delay)
+      })
+    }
+
+    const procEntry = { proc, destId: dest.id, killed: false, restartCount: 0, _stderrBuf: '' }
+    setupAutoRestart(proc, procEntry)
 
     proc.on('error', (err) => {
       console.error(`[2MStream] FFmpeg spawn error for ${streamId}/${dest.id}:`, err.message)
       errors.push({ destinationId: dest.id, error: err.message })
     })
 
-    processes.push({ proc, destId: dest.id, killed: false })
+    processes.push(procEntry)
   }
 
   activeStreams.set(streamId, { 

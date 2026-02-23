@@ -63,7 +63,15 @@ export function StreamScheduler() {
 
   const addEvent = async () => {
     setSaving(true)
-    const scheduledAt = new Date(`${newEvent.date}T${newEvent.time}:00`).toISOString()
+    // Get the user's timezone offset and build the correct ISO string
+    // so the scheduled time matches exactly what the user picked
+    const localDate = new Date(`${newEvent.date}T${newEvent.time}:00`)
+    const tzOffset = -localDate.getTimezoneOffset()
+    const sign = tzOffset >= 0 ? '+' : '-'
+    const absOffset = Math.abs(tzOffset)
+    const tzHours = String(Math.floor(absOffset / 60)).padStart(2, '0')
+    const tzMins = String(absOffset % 60).padStart(2, '0')
+    const scheduledAt = `${newEvent.date}T${newEvent.time}:00${sign}${tzHours}:${tzMins}`
     await fetch("/api/schedule", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -92,10 +100,12 @@ export function StreamScheduler() {
   const getDaysUntil = (dateStr: string) => {
     const now = new Date()
     const target = new Date(dateStr)
-    const diff = Math.ceil((target.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
-    if (diff <= 0) return "Today"
-    if (diff === 1) return "Tomorrow"
-    return `In ${diff} days`
+    const nowDate = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const targetDate = new Date(target.getFullYear(), target.getMonth(), target.getDate())
+    const diffDays = Math.round((targetDate.getTime() - nowDate.getTime()) / (1000 * 60 * 60 * 24))
+    if (diffDays <= 0) return "Today"
+    if (diffDays === 1) return "Tomorrow"
+    return `In ${diffDays} days`
   }
 
   return (
