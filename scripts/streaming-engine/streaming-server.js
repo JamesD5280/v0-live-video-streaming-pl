@@ -738,25 +738,20 @@ app.post('/start', async (req, res) => {
     
     let ffmpegArgs = [...inputArgs]
 
-    // Normalize video to 1920x1080@30fps and audio to stereo 44100Hz
-    // This prevents stream death when concat switches between files with different resolutions/audio formats
+    // Normalize video to 1920x1080@30fps
+    // This prevents stream death when concat switches between files with different resolutions
     const videoNorm = 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30'
-    const audioNorm = 'aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo,volume=1.0'
 
     if (overlayResult) {
       ffmpegArgs.push(...overlayResult.inputArgs)
+      // Replace [0:v] in overlay chain with [norm] (normalized video)
       const overlayChain = overlayResult.filterComplex.replace('[0:v]', '[norm]')
-      const combinedFilter = [
-        `[0:v]${videoNorm}[norm]`,
-        `[0:a]${audioNorm}[aout]`,
-        overlayChain
-      ].join(';')
+      const combinedFilter = `[0:v]${videoNorm}[norm];${overlayChain}`
       ffmpegArgs.push('-filter_complex', combinedFilter)
       ffmpegArgs.push('-map', `[${overlayResult.outputLabel}]`)
-      ffmpegArgs.push('-map', '[aout]')
+      ffmpegArgs.push('-map', '0:a?')
     } else {
       ffmpegArgs.push('-vf', videoNorm)
-      ffmpegArgs.push('-af', audioNorm)
     }
 
     ffmpegArgs.push(
@@ -1080,18 +1075,16 @@ app.post('/restart', async (req, res) => {
     let ffmpegArgs = [...inputArgs]
 
     const videoNorm = 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30'
-    const audioNorm = 'aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo,volume=1.0'
 
     if (overlayResult) {
       ffmpegArgs.push(...overlayResult.inputArgs)
       const overlayChain = overlayResult.filterComplex.replace('[0:v]', '[norm]')
-      const combinedFilter = `[0:v]${videoNorm}[norm];[0:a]${audioNorm}[aout];${overlayChain}`
+      const combinedFilter = `[0:v]${videoNorm}[norm];${overlayChain}`
       ffmpegArgs.push('-filter_complex', combinedFilter)
       ffmpegArgs.push('-map', `[${overlayResult.outputLabel}]`)
-      ffmpegArgs.push('-map', '[aout]')
+      ffmpegArgs.push('-map', '0:a?')
     } else {
       ffmpegArgs.push('-vf', videoNorm)
-      ffmpegArgs.push('-af', audioNorm)
     }
 
     ffmpegArgs.push(
