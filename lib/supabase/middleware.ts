@@ -14,13 +14,8 @@ export async function updateSession(request: NextRequest) {
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
   if (!supabaseUrl || !supabaseAnonKey) {
-    console.error('[v0] Missing Supabase env vars in middleware')
-    // If env vars are missing and it's a public path, let it through
-    if (isPublicPath) return supabaseResponse
-    // Otherwise redirect to login
-    const url = request.nextUrl.clone()
-    url.pathname = '/auth/login'
-    return NextResponse.redirect(url)
+    // If env vars are missing, let all requests through (don't redirect to avoid loops)
+    return supabaseResponse
   }
 
   try {
@@ -65,7 +60,7 @@ export async function updateSession(request: NextRequest) {
 
     return supabaseResponse
   } catch (error) {
-    console.error('[v0] Middleware error:', error)
+    console.error('Middleware auth error:', error)
     // On error, allow public paths through, redirect everything else to login
     if (isPublicPath) {
       return supabaseResponse
