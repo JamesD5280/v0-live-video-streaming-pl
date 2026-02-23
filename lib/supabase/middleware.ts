@@ -52,10 +52,14 @@ export async function updateSession(request: NextRequest) {
       return NextResponse.redirect(url)
     }
 
-    if (user && isPublicPath) {
-      const url = request.nextUrl.clone()
-      url.pathname = '/'
-      return NextResponse.redirect(url)
+    if (user && isPublicPath && !request.nextUrl.pathname.startsWith('/api/')) {
+      // Only redirect on full page navigations, not RSC fetches
+      const isRSC = request.headers.get('rsc') === '1' || request.headers.get('next-router-state-tree')
+      if (!isRSC) {
+        const url = request.nextUrl.clone()
+        url.pathname = '/'
+        return NextResponse.redirect(url)
+      }
     }
 
     return supabaseResponse
