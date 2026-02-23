@@ -650,6 +650,10 @@ app.post('/start', async (req, res) => {
     console.log(`[2MStream] RTMP Pull mode from: ${rtmpPullUrl}`)
     inputArgs = [
       '-rw_timeout', '10000000', // 10s timeout for RTMP connection
+      '-reconnect', '1',
+      '-reconnect_at_eof', '1',
+      '-reconnect_streamed', '1',
+      '-reconnect_delay_max', '5',
       '-i', rtmpPullUrl,
     ]
   } else if (isPlaylist && videoSources && videoSources.length >= 1) {
@@ -738,13 +742,11 @@ app.post('/start', async (req, res) => {
     
     let ffmpegArgs = [...inputArgs]
 
-    // Normalize video to 1920x1080@30fps
-    // This prevents stream death when concat switches between files with different resolutions
-    const videoNorm = 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30'
+    // Normalize video: scale to 1080p, pad to fit, but do NOT force fps (too CPU expensive)
+    const videoNorm = 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1'
 
     if (overlayResult) {
       ffmpegArgs.push(...overlayResult.inputArgs)
-      // Replace [0:v] in overlay chain with [norm] (normalized video)
       const overlayChain = overlayResult.filterComplex.replace('[0:v]', '[norm]')
       const combinedFilter = `[0:v]${videoNorm}[norm];${overlayChain}`
       ffmpegArgs.push('-filter_complex', combinedFilter)
@@ -756,7 +758,8 @@ app.post('/start', async (req, res) => {
 
     ffmpegArgs.push(
       '-c:v', 'libx264',
-      '-preset', 'veryfast',
+      '-preset', 'ultrafast',
+      '-tune', 'zerolatency',
       '-maxrate', '4500k',
       '-bufsize', '9000k',
       '-pix_fmt', 'yuv420p',
@@ -766,6 +769,7 @@ app.post('/start', async (req, res) => {
       '-c:a', 'aac',
       '-b:a', '128k',
       '-ar', '44100',
+      '-ac', '2',
       '-f', 'flv',
       '-flvflags', 'no_duration_filesize',
       rtmpTarget,
@@ -1049,7 +1053,12 @@ app.post('/restart', async (req, res) => {
   let inputArgs = []
 
   if (updatedConfig.isRtmpPull && updatedConfig.rtmpPullUrl) {
-    inputArgs = ['-rw_timeout', '10000000', '-i', updatedConfig.rtmpPullUrl]
+    inputArgs = [
+      '-rw_timeout', '10000000',
+      '-reconnect', '1', '-reconnect_at_eof', '1',
+      '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
+      '-i', updatedConfig.rtmpPullUrl,
+    ]
   } else if (updatedConfig.isPlaylist && updatedConfig.videoSources?.length >= 1) {
     const concatFile = createConcatFile(updatedConfig.videoSources, updatedConfig.loop)
     tempFiles.push(concatFile)
@@ -1074,7 +1083,7 @@ app.post('/restart', async (req, res) => {
     const rtmpTarget = `${dest.rtmpUrl}/${dest.streamKey}`
     let ffmpegArgs = [...inputArgs]
 
-    const videoNorm = 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30'
+    const videoNorm = 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1'
 
     if (overlayResult) {
       ffmpegArgs.push(...overlayResult.inputArgs)
@@ -1088,9 +1097,10 @@ app.post('/restart', async (req, res) => {
     }
 
     ffmpegArgs.push(
-      '-c:v', 'libx264', '-preset', 'veryfast', '-maxrate', '4500k', '-bufsize', '9000k',
+      '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency',
+      '-maxrate', '4500k', '-bufsize', '9000k',
       '-pix_fmt', 'yuv420p', '-g', '60', '-keyint_min', '60', '-sc_threshold', '0',
-      '-c:a', 'aac', '-b:a', '128k', '-ar', '44100',
+      '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2',
       '-f', 'flv', '-flvflags', 'no_duration_filesize',
       rtmpTarget,
     )
@@ -1102,10 +1112,40 @@ app.post('/restart', async (req, res) => {
         console.log(`[FFmpeg ${streamId}/${dest.id}] ${msg.trim()}`)
       }
     })
-    proc.on('close', (code) => {
-      console.log(`[2MStream] FFmpeg process for ${streamId}/${dest.id} exited with code ${code}`)
-    })
-    processes.push({ proc, destId: dest.id, killed: false })
+
+    // Auto-restart for restarted processes too
+    function setupRestartAutoRestart(ffmpegProc, procEntry) {
+      ffmpegProc.on('close', (code) => {
+        console.log(`[2MStream] FFmpeg for ${streamId}/${dest.id} exited code=${code}`)
+        const streamEntry = activeStreams.get(streamId)
+        if (!streamEntry || streamEntry.stopping || procEntry.killed) return
+        procEntry.restartCount = (procEntry.restartCount || 0) + 1
+        if (procEntry.restartCount > 100) return
+        const delay = code === 0 ? 1000 : Math.min(3000 * procEntry.restartCount, 15000)
+        console.log(`[2MStream] Auto-restarting ${streamId}/${dest.id} in ${delay/1000}s (attempt ${procEntry.restartCount})`)
+        setTimeout(() => {
+          const current = activeStreams.get(streamId)
+          if (!current || current.stopping) return
+          try {
+            const newProc = spawn('ffmpeg', ffmpegArgs, { stdio: ['pipe', 'pipe', 'pipe'] })
+            newProc.stderr.on('data', (d) => {
+              const m = d.toString()
+              if (m.includes('Error') || m.includes('error')) console.log(`[FFmpeg ${streamId}/${dest.id}] ${m.trim()}`)
+            })
+            newProc.on('error', (err) => console.error(`[2MStream] FFmpeg spawn error: ${err.message}`))
+            procEntry.proc = newProc
+            procEntry.killed = false
+            setupRestartAutoRestart(newProc, procEntry)
+          } catch (e) {
+            console.error(`[2MStream] Restart failed: ${e.message}`)
+          }
+        }, delay)
+      })
+    }
+
+    const procEntry = { proc, destId: dest.id, killed: false, restartCount: 0 }
+    setupRestartAutoRestart(proc, procEntry)
+    processes.push(procEntry)
   }
 
   activeStreams.set(streamId, {
