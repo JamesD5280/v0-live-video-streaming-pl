@@ -661,6 +661,8 @@ app.post('/start', async (req, res) => {
     inputArgs = [
       '-re',
       '-fflags', '+genpts+discardcorrupt+nobuffer',
+      '-err_detect', 'ignore_err',
+      '-ec', 'deblock+favor_inter',
       '-f', 'concat',
       '-safe', '0',
       '-i', concatFile,
@@ -684,6 +686,8 @@ app.post('/start', async (req, res) => {
       inputArgs = [
         '-re',
         '-fflags', '+genpts+discardcorrupt+nobuffer',
+        '-err_detect', 'ignore_err',
+        '-ec', 'deblock+favor_inter',
         '-f', 'concat',
         '-safe', '0',
         '-i', concatFile,
@@ -755,9 +759,9 @@ app.post('/start', async (req, res) => {
       '-c:v', 'libx264',
       '-preset', 'ultrafast',
       '-tune', 'zerolatency',
-      '-b:v', '2500k',
-      '-maxrate', '2500k',
-      '-bufsize', '5000k',
+      '-b:v', '3000k',
+      '-maxrate', '3000k',
+      '-bufsize', '6000k',
       '-pix_fmt', 'yuv420p',
       '-g', '60',
       '-keyint_min', '60',
@@ -1056,7 +1060,7 @@ app.post('/restart', async (req, res) => {
   } else if (updatedConfig.isPlaylist && updatedConfig.videoSources?.length >= 1) {
     const concatFile = createConcatFile(updatedConfig.videoSources, updatedConfig.loop)
     tempFiles.push(concatFile)
-    inputArgs = ['-re', '-f', 'concat', '-safe', '0', '-i', concatFile]
+    inputArgs = ['-re', '-fflags', '+genpts+discardcorrupt+nobuffer', '-err_detect', 'ignore_err', '-ec', 'deblock+favor_inter', '-f', 'concat', '-safe', '0', '-i', concatFile]
   } else {
     const source = updatedConfig.videoSources?.[0]
     const inputSource = source?.url || updatedConfig.videoUrl || join(VIDEO_DIR, source?.path || updatedConfig.videoPath || '')
@@ -1064,7 +1068,7 @@ app.post('/restart', async (req, res) => {
       const singleSource = [{ url: source?.url, path: source?.path || updatedConfig.videoPath }]
       const concatFile = createConcatFile(singleSource, true)
       tempFiles.push(concatFile)
-      inputArgs = ['-re', '-f', 'concat', '-safe', '0', '-i', concatFile]
+      inputArgs = ['-re', '-fflags', '+genpts+discardcorrupt+nobuffer', '-err_detect', 'ignore_err', '-ec', 'deblock+favor_inter', '-f', 'concat', '-safe', '0', '-i', concatFile]
     } else {
       inputArgs = ['-re', '-i', inputSource]
     }
