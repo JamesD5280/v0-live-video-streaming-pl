@@ -588,7 +588,20 @@ function startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop,
     if (stopped) return
 
     const streamEntry = activeStreams.get(streamId)
-    if (!streamEntry || streamEntry.stopping) return
+    if (!streamEntry || streamEntry.stopping) {
+      console.log(`[2MStream] playCurrentFile: stream ${streamId} not found in activeStreams or stopping, will retry in 500ms`)
+      // Retry once -- the stream may not be registered yet
+      setTimeout(() => {
+        const retry = activeStreams.get(streamId)
+        if (retry && !retry.stopping) {
+          console.log(`[2MStream] playCurrentFile: retry succeeded, stream found`)
+          playCurrentFile()
+        } else {
+          console.log(`[2MStream] playCurrentFile: retry failed, stream still not found`)
+        }
+      }, 500)
+      return
+    }
 
     const source = videoSources[currentIndex]
     const filePath = source.url || join(VIDEO_DIR, source.path || '')
@@ -680,8 +693,8 @@ function startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop,
     }
   }
 
-  // Start playing the first file
-  playCurrentFile()
+  // Start playing the first file (delay to allow activeStreams.set() to complete first)
+  setTimeout(playCurrentFile, 100)
 
   return { stop, getCurrentIndex: () => currentIndex }
 }
