@@ -660,10 +660,9 @@ app.post('/start', async (req, res) => {
     
     inputArgs = [
       '-re',
-      '-fflags', '+genpts+discardcorrupt',
+      '-fflags', '+genpts+discardcorrupt+nobuffer',
       '-f', 'concat',
       '-safe', '0',
-      '-segment_time_metadata', '1',
       '-i', concatFile,
     ]
   } else {
@@ -684,10 +683,9 @@ app.post('/start', async (req, res) => {
       tempFiles.push(concatFile)
       inputArgs = [
         '-re',
-        '-fflags', '+genpts+discardcorrupt',
+        '-fflags', '+genpts+discardcorrupt+nobuffer',
         '-f', 'concat',
         '-safe', '0',
-        '-segment_time_metadata', '1',
         '-i', concatFile,
       ]
     } else {
@@ -757,8 +755,9 @@ app.post('/start', async (req, res) => {
       '-c:v', 'libx264',
       '-preset', 'ultrafast',
       '-tune', 'zerolatency',
-      '-maxrate', '4500k',
-      '-bufsize', '9000k',
+      '-b:v', '3000k',
+      '-maxrate', '3000k',
+      '-bufsize', '6000k',
       '-pix_fmt', 'yuv420p',
       '-g', '60',
       '-keyint_min', '60',
@@ -1093,7 +1092,7 @@ app.post('/restart', async (req, res) => {
 
     ffmpegArgs.push(
       '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency',
-      '-maxrate', '4500k', '-bufsize', '9000k',
+      '-b:v', '3000k', '-maxrate', '3000k', '-bufsize', '6000k',
       '-pix_fmt', 'yuv420p', '-g', '60', '-keyint_min', '60', '-sc_threshold', '0',
       '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2',
       '-f', 'flv', '-flvflags', 'no_duration_filesize',
