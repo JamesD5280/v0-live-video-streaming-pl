@@ -39,7 +39,7 @@ const PORT = process.env.PORT || 3001
 const API_SECRET = process.env.API_SECRET || 'change-this-secret'
 const VIDEO_DIR = process.env.VIDEO_DIR || './videos'
 
-// Active FFmpeg processes: streamId -> { processes, destinations[], tempFiles[] }
+// Active FFmpeg processes: streamId -> { processes, destinations[], tempFiles[], playlistState? }
 const activeStreams = new Map()
 
 // Auth middleware
@@ -109,16 +109,12 @@ function buildOverlayFilters(overlays) {
     const outputLabel = `ov${i}`
 
     // Map position to FFmpeg overlay coordinates
-    // positionX/positionY are 0-100% representing the CENTER of the overlay
-    // Convert to top-left by: x = W*(px/100) - w/2, y = H*(py/100) - h/2
-    // Clamp so the overlay stays fully on-screen
     let posCoords
     if (overlay.positionX !== undefined && overlay.positionY !== undefined) {
       const px = overlay.positionX / 100
       const py = overlay.positionY / 100
       posCoords = `x=max(0\\,min(W-w\\,round(W*${px}-w/2))):y=max(0\\,min(H-h\\,round(H*${py}-h/2)))`
     } else {
-      // Legacy fallback: use preset position strings
       const posMap = {
         'top-left': 'x=10:y=10',
         'top-center': 'x=(W-w)/2:y=10',
@@ -132,14 +128,12 @@ function buildOverlayFilters(overlays) {
     }
 
     if (overlay.type === 'scrolling_text') {
-      // Scrolling ticker text using drawtext with scrolling x expression
       const escapedText = (overlay.textContent || '').replace(/'/g, "'\\''").replace(/:/g, '\\:')
       const fontSize = overlay.fontSize || 24
       const fontColor = overlay.fontColor || 'white'
       const bgColor = overlay.bgColor || '0x00000080'
       const speed = overlay.scrollSpeed || 100
 
-      // Y position: use positionY if available, otherwise bottom of screen
       let scrollY
       if (overlay.positionY !== undefined) {
         scrollY = `h*${overlay.positionY / 100}-${fontSize / 2}`
@@ -147,7 +141,6 @@ function buildOverlayFilters(overlays) {
         scrollY = `h-${fontSize + 20}`
       }
 
-      // Draw background bar (skip if transparent) then scrolling text
       const barHeight = fontSize + 16
       if (bgColor === 'transparent' || bgColor === 'none') {
         filters.push(
@@ -162,13 +155,11 @@ function buildOverlayFilters(overlays) {
 
       currentLabel = outputLabel
     } else if (overlay.type === 'text' || overlay.type === 'lower_third') {
-      // Text overlay using drawtext filter
       const escapedText = (overlay.textContent || '').replace(/'/g, "'\\''").replace(/:/g, '\\:')
       const fontSize = overlay.fontSize || 24
       const fontColor = overlay.fontColor || 'white'
       
       if (overlay.type === 'lower_third') {
-        // Lower third: box with background + text at bottom
         const bgColor = overlay.bgColor || '0x00000080'
         let ltY, ltTextY
         if (overlay.positionY !== undefined) {
@@ -184,13 +175,11 @@ function buildOverlayFilters(overlays) {
           `[bg${i}]drawtext=text='${escapedText}':fontsize=${fontSize}:fontcolor=${fontColor}:x=20:y=${ltTextY}[${outputLabel}]`
         )
       } else {
-        // Regular text with X/Y percentage positioning
         let textX, textY
         if (overlay.positionX !== undefined && overlay.positionY !== undefined) {
           textX = `w*${overlay.positionX / 100}-tw/2`
           textY = `h*${overlay.positionY / 100}-th/2`
         } else {
-          // Fallback to posCoords-based
           textX = posCoords.split(':')[0].replace('x=', '').replace('W', 'w').replace('w', 'w')
           textY = posCoords.split(':')[1]?.replace('y=', '').replace('H', 'h') || '10'
         }
@@ -200,7 +189,6 @@ function buildOverlayFilters(overlays) {
       }
       currentLabel = outputLabel
     } else if (overlay.type === 'video' && overlay.videoPath) {
-      // Video overlay (rotating logo, animation .MOV/.MP4)
       if (overlay.loopOverlay !== false) {
         inputArgs.push('-stream_loop', '-1')
       }
@@ -209,7 +197,6 @@ function buildOverlayFilters(overlays) {
       const scalePercent = overlay.sizePercent || 20
       const opacityValue = (overlay.opacity || 100) / 100
 
-      // Scale: use percentage of original size (iw*pct/100), keep aspect ratio
       const scaleFilter = `[${inputIndex}:v]scale=iw*${scalePercent}/100:-1,format=rgba,colorchannelmixer=aa=${opacityValue}[vid${i}]`
       filters.push(scaleFilter)
       filters.push(`[${currentLabel}][vid${i}]overlay=${posCoords}:shortest=0[${outputLabel}]`)
@@ -217,13 +204,11 @@ function buildOverlayFilters(overlays) {
       currentLabel = outputLabel
       inputIndex++
     } else if (overlay.imagePath) {
-      // Image overlay (logo, bug, image)
       inputArgs.push('-i', overlay.imagePath)
       
       const scalePercent = overlay.sizePercent || 20
       const opacityValue = (overlay.opacity || 100) / 100
 
-      // Scale: use percentage of original size (iw*pct/100), keep aspect ratio
       const scaleFilter = `[${inputIndex}:v]scale=iw*${scalePercent}/100:-1,format=rgba,colorchannelmixer=aa=${opacityValue}[img${i}]`
       filters.push(scaleFilter)
       filters.push(`[${currentLabel}][img${i}]overlay=${posCoords}[${outputLabel}]`)
@@ -235,41 +220,11 @@ function buildOverlayFilters(overlays) {
 
   if (filters.length === 0) return null
 
-  // The final label needs to map to output
   return {
     inputArgs,
     filterComplex: filters.join(';'),
     outputLabel: currentLabel,
   }
-}
-
-/**
- * Create a concat file for FFmpeg playlist mode.
- * Returns the path to the temp concat file.
- */
-function createConcatFile(videoSources, loop) {
-  const fileLines = []
-  for (const src of videoSources) {
-    const filePath = src.url || join(VIDEO_DIR, src.path || '')
-    fileLines.push(`file '${filePath}'`)
-  }
-  
-  // For looping playlists, repeat the file list many times (enough for ~48 hours)
-  // -stream_loop does NOT work with the concat demuxer, so we repeat the list instead
-  let lines = ["# FFmpeg concat demuxer file"]
-  if (loop) {
-    const repeatCount = Math.max(500, Math.ceil(172800 / (videoSources.length * 60))) // ~48hrs assuming 60s avg per video
-    for (let i = 0; i < repeatCount; i++) {
-      lines.push(...fileLines)
-    }
-    console.log(`[2MStream] Concat file: ${fileLines.length} files repeated ${repeatCount}x for looping`)
-  } else {
-    lines.push(...fileLines)
-  }
-  
-  const concatPath = join(tmpdir(), `2mstream-concat-${Date.now()}.txt`)
-  writeFileSync(concatPath, lines.join('\n'))
-  return concatPath
 }
 
 // Ensure video directory exists
@@ -278,13 +233,10 @@ mkdirSync(VIDEO_DIR, { recursive: true })
 /**
  * POST /upload
  * Receives a raw video file as the request body via streaming.
- * Headers:
- *   x-filename: "original-filename.mp4"
- *   content-type: application/octet-stream
  */
 app.post('/upload', async (req, res) => {
   const filename = req.headers['x-filename'] || `upload-${Date.now()}.mp4`
-  const safeFilename = basename(String(filename)) // prevent directory traversal
+  const safeFilename = basename(String(filename))
   const destPath = join(VIDEO_DIR, safeFilename)
 
   console.log(`[2MStream] Receiving upload: ${safeFilename}`)
@@ -310,24 +262,16 @@ app.post('/upload', async (req, res) => {
     })
   } catch (err) {
     console.error(`[2MStream] Upload failed for ${safeFilename}:`, err.message)
-    // Clean up partial file
     try { unlinkSync(destPath) } catch {}
     res.status(500).json({ error: `Upload failed: ${err.message}` })
   }
 })
 
-// Track ongoing chunked uploads: uploadId -> { filename, receivedChunks, totalChunks, tempDir }
+// Track ongoing chunked uploads
 const chunkedUploads = new Map()
 
 /**
  * POST /upload/chunk
- * Receives a chunk of a file upload for reassembly.
- * Headers:
- *   x-filename: "original-filename.mp4"
- *   x-upload-id: unique upload identifier
- *   x-chunk-index: 0-based index of this chunk
- *   x-total-chunks: total number of chunks
- *   content-type: application/octet-stream
  */
 app.post('/upload/chunk', async (req, res) => {
   const filename = req.headers['x-filename'] || `upload-${Date.now()}.mp4`
@@ -337,7 +281,6 @@ app.post('/upload/chunk', async (req, res) => {
   const safeFilename = basename(String(filename))
 
   try {
-    // Create temp directory for chunks if needed
     if (!chunkedUploads.has(uploadId)) {
       const tempDir = join(tmpdir(), `2mstream-upload-${uploadId}`)
       mkdirSync(tempDir, { recursive: true })
@@ -352,14 +295,12 @@ app.post('/upload/chunk', async (req, res) => {
     const upload = chunkedUploads.get(uploadId)
     const chunkPath = join(upload.tempDir, `chunk-${String(chunkIndex).padStart(6, '0')}`)
 
-    // Write chunk to temp file
     const writeStream = createWriteStream(chunkPath)
     await pipeline(req, writeStream)
     upload.receivedChunks.add(chunkIndex)
 
     console.log(`[2MStream] Chunk ${chunkIndex + 1}/${totalChunks} received for ${safeFilename}`)
 
-    // If all chunks received, assemble the file
     if (upload.receivedChunks.size === totalChunks) {
       const destPath = join(VIDEO_DIR, safeFilename)
       const finalStream = createWriteStream(destPath)
@@ -373,13 +314,11 @@ app.post('/upload/chunk', async (req, res) => {
       }
       finalStream.end()
 
-      // Wait for write to finish
       await new Promise((resolve, reject) => {
         finalStream.on('finish', resolve)
         finalStream.on('error', reject)
       })
 
-      // Clean up temp dir
       try { 
         const { rmdirSync } = await import('fs')
         rmdirSync(upload.tempDir) 
@@ -413,7 +352,6 @@ app.post('/upload/chunk', async (req, res) => {
 
 /**
  * GET /videos
- * Lists all video files in the VIDEO_DIR
  */
 app.get('/videos', (req, res) => {
   try {
@@ -437,22 +375,18 @@ app.get('/videos', (req, res) => {
 
 /**
  * POST /check-rtmp
- * Body: { url: "rtmp://..." }
- * Validates that an RTMP stream is reachable using ffprobe.
  */
 app.post('/check-rtmp', (req, res) => {
   const { url } = req.body
   if (!url) return res.status(400).json({ error: 'Missing url' })
 
-  // Validate it looks like an RTMP URL
   if (!url.startsWith('rtmp://') && !url.startsWith('rtmps://')) {
     return res.json({ valid: false, error: 'URL must start with rtmp:// or rtmps://' })
   }
 
-  // Use ffprobe with a short timeout to check if the stream is accessible
   const proc = spawn('ffprobe', [
     '-v', 'quiet',
-    '-rw_timeout', '5000000',     // 5 second timeout
+    '-rw_timeout', '5000000',
     '-print_format', 'json',
     '-show_streams',
     url,
@@ -500,17 +434,12 @@ app.post('/check-rtmp', (req, res) => {
 
 /**
  * GET /stream-video/:filename
- * Streams a video file for preview playback.
- * Supports HTTP Range requests for seeking.
- * Accepts either Bearer token auth or signed URL token (?token=...&expires=...)
  */
 app.get('/stream-video/:filename', (req, res) => {
-  // Allow signed token auth for direct browser access
   const { token, expires } = req.query
   const bearerAuth = req.headers.authorization
   
   if (token && expires) {
-    // Verify signed URL token
     const filename = basename(req.params.filename)
     const payload = `${filename}:${expires}`
     const expected = createHmac('sha256', API_SECRET).update(payload).digest('hex')
@@ -531,7 +460,6 @@ app.get('/stream-video/:filename', (req, res) => {
   const stat = statSync(filePath)
   const fileSize = stat.size
 
-  // Determine content type
   const ext = safeFilename.split('.').pop()?.toLowerCase() || 'mp4'
   const mimeTypes = {
     mp4: 'video/mp4',
@@ -546,7 +474,6 @@ app.get('/stream-video/:filename', (req, res) => {
 
   const range = req.headers.range
   if (range) {
-    // Partial content for seeking
     const parts = range.replace(/bytes=/, '').split('-')
     const start = parseInt(parts[0], 10)
     const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1
@@ -563,7 +490,6 @@ app.get('/stream-video/:filename', (req, res) => {
     })
     stream.pipe(res)
   } else {
-    // Full file
     const stream = createReadStream(filePath)
 
     res.writeHead(200, {
@@ -578,8 +504,6 @@ app.get('/stream-video/:filename', (req, res) => {
 
 /**
  * POST /delete-video
- * Body: { filename: "video-name.mp4" }
- * Deletes a video file from the VIDEO_DIR
  */
 app.post('/delete-video', (req, res) => {
   const { filename } = req.body
@@ -602,15 +526,176 @@ app.post('/delete-video', (req, res) => {
   }
 })
 
+
+/**
+ * Build FFmpeg args for a single file with overlays and encoding.
+ * Returns the full ffmpegArgs array.
+ */
+function buildFFmpegArgs(inputArgs, overlayResult, rtmpTarget) {
+  const ffmpegArgs = [...inputArgs]
+
+  // Normalize video to 1080p
+  const videoNorm = 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1'
+
+  if (overlayResult) {
+    ffmpegArgs.push(...overlayResult.inputArgs)
+    const overlayChain = overlayResult.filterComplex.replace('[0:v]', '[norm]')
+    const combinedFilter = `[0:v]${videoNorm}[norm];${overlayChain}`
+    ffmpegArgs.push('-filter_complex', combinedFilter)
+    ffmpegArgs.push('-map', `[${overlayResult.outputLabel}]`)
+    ffmpegArgs.push('-map', '0:a?')
+  } else {
+    ffmpegArgs.push('-vf', videoNorm)
+  }
+
+  ffmpegArgs.push(
+    '-c:v', 'libx264',
+    '-preset', 'ultrafast',
+    '-tune', 'zerolatency',
+    '-b:v', '3000k',
+    '-maxrate', '3000k',
+    '-bufsize', '6000k',
+    '-pix_fmt', 'yuv420p',
+    '-g', '60',
+    '-keyint_min', '60',
+    '-sc_threshold', '0',
+    '-c:a', 'aac',
+    '-b:a', '128k',
+    '-ar', '44100',
+    '-ac', '2',
+    '-f', 'flv',
+    '-flvflags', 'no_duration_filesize',
+    rtmpTarget,
+  )
+
+  return ffmpegArgs
+}
+
+
+/**
+ * Sequential playlist player.
+ * Plays one file at a time. When a file finishes (exit code 0), starts the next.
+ * Each file gets a clean FFmpeg process -- no concat demuxer, no H264 boundary errors.
+ */
+function startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop, tempFiles) {
+  const rtmpTarget = `${dest.rtmpUrl}/${dest.streamKey}`
+  let currentIndex = 0
+  let stopped = false
+  let currentProc = null
+  let restartCount = 0
+
+  function playCurrentFile() {
+    if (stopped) return
+
+    const streamEntry = activeStreams.get(streamId)
+    if (!streamEntry || streamEntry.stopping) return
+
+    const source = videoSources[currentIndex]
+    const filePath = source.url || join(VIDEO_DIR, source.path || '')
+
+    // Check file exists for local files
+    if (!source.url && !existsSync(filePath)) {
+      console.error(`[2MStream] File not found, skipping: ${filePath}`)
+      advanceToNext()
+      return
+    }
+
+    const inputArgs = ['-re', '-i', filePath]
+    const ffmpegArgs = buildFFmpegArgs(inputArgs, overlayResult, rtmpTarget)
+
+    console.log(`[2MStream] Playing file ${currentIndex + 1}/${videoSources.length}: ${source.title || source.path || source.url}`)
+
+    const proc = spawn('ffmpeg', ffmpegArgs, { stdio: ['pipe', 'pipe', 'pipe'] })
+    currentProc = proc
+
+    // Update the procEntry in activeStreams so status checks work
+    const entry = activeStreams.get(streamId)
+    if (entry) {
+      const pe = entry.processes.find(p => p.destId === dest.id)
+      if (pe) {
+        pe.proc = proc
+        pe.killed = false
+      }
+    }
+
+    proc.stderr.on('data', (data) => {
+      const msg = data.toString()
+      if (msg.includes('Error') || msg.includes('error') || msg.includes('No such file') || msg.includes('Invalid')) {
+        console.log(`[FFmpeg ${streamId}/${dest.id}] ${msg.trim()}`)
+      }
+    })
+
+    proc.on('error', (err) => {
+      console.error(`[2MStream] FFmpeg spawn error: ${err.message}`)
+    })
+
+    proc.on('close', (code) => {
+      if (stopped) return
+      const entry = activeStreams.get(streamId)
+      if (!entry || entry.stopping) return
+
+      if (code === 0) {
+        // File finished cleanly -- play next file immediately
+        console.log(`[2MStream] File finished cleanly, advancing to next`)
+        restartCount = 0 // reset on clean finish
+        advanceToNext()
+      } else {
+        // FFmpeg crashed -- retry the same file after a delay
+        restartCount++
+        if (restartCount > 50) {
+          console.error(`[2MStream] ${streamId}/${dest.id} exceeded 50 retries, skipping file`)
+          restartCount = 0
+          advanceToNext()
+          return
+        }
+        const delay = Math.min(2000 * restartCount, 10000)
+        console.log(`[2MStream] FFmpeg crashed (code ${code}), retrying in ${delay/1000}s (attempt ${restartCount})`)
+        setTimeout(playCurrentFile, delay)
+      }
+    })
+  }
+
+  function advanceToNext() {
+    currentIndex++
+    if (currentIndex >= videoSources.length) {
+      if (loop) {
+        currentIndex = 0
+        console.log(`[2MStream] Playlist loop: restarting from beginning`)
+      } else {
+        console.log(`[2MStream] Playlist finished (no loop)`)
+        return
+      }
+    }
+    // Small delay between files to let YouTube settle
+    setTimeout(playCurrentFile, 500)
+  }
+
+  function stop() {
+    stopped = true
+    if (currentProc && !currentProc.killed) {
+      currentProc.kill('SIGTERM')
+      setTimeout(() => {
+        try { if (!currentProc.killed) currentProc.kill('SIGKILL') } catch {}
+      }, 3000)
+    }
+  }
+
+  // Start playing the first file
+  playCurrentFile()
+
+  return { stop, getCurrentIndex: () => currentIndex }
+}
+
+
 /**
  * POST /start
  * Body: {
  *   streamId: "uuid",
  *   videoSources: [{ url?, path?, title? }],
- *   videoUrl: "https://...",       // backward compat
- *   videoPath: "local-file.mp4",   // backward compat
+ *   videoUrl: "https://...",
+ *   videoPath: "local-file.mp4",
  *   destinations: [{ id, name, rtmpUrl, streamKey }],
- *   overlays: [{ id, type, imagePath?, videoPath?, loopOverlay?, textContent?, fontSize, fontColor, bgColor, position, sizePercent, opacity }],
+ *   overlays: [...],
  *   loop: true/false,
  *   isPlaylist: true/false,
  *   isRtmpPull: true/false,
@@ -642,60 +727,6 @@ app.post('/start', async (req, res) => {
 
   const tempFiles = []
 
-  // Determine input arguments
-  let inputArgs = []
-
-  if (isRtmpPull && rtmpPullUrl) {
-    // RTMP pull mode: pull from external RTMP stream
-    // Note: -reconnect flags are HTTP-only, not RTMP compatible. Auto-restart handles reconnection.
-    console.log(`[2MStream] RTMP Pull mode from: ${rtmpPullUrl}`)
-    inputArgs = [
-      '-rw_timeout', '10000000', // 10s timeout for RTMP connection
-      '-i', rtmpPullUrl,
-    ]
-  } else if (isPlaylist && videoSources && videoSources.length >= 1) {
-    // Playlist mode: use concat demuxer with genpts to handle timestamp resets between files
-    const concatFile = createConcatFile(videoSources, loop)
-    tempFiles.push(concatFile)
-    
-    inputArgs = [
-      '-re',
-      '-fflags', '+genpts+discardcorrupt+nobuffer',
-      '-f', 'concat',
-      '-safe', '0',
-      '-i', concatFile,
-    ]
-  } else {
-    // Single video mode
-    const source = videoSources?.[0]
-    const inputSource = source?.url || videoUrl || join(VIDEO_DIR, source?.path || videoPath || '')
-
-    if (!source?.url && !videoUrl) {
-      const localPath = join(VIDEO_DIR, source?.path || videoPath || '')
-      if (!existsSync(localPath)) {
-        return res.status(400).json({ error: `Video file not found: ${localPath}` })
-      }
-    }
-
-    if (loop) {
-      const singleSource = [{ url: source?.url, path: source?.path || videoPath }]
-      const concatFile = createConcatFile(singleSource, true)
-      tempFiles.push(concatFile)
-      inputArgs = [
-        '-re',
-        '-fflags', '+genpts+discardcorrupt+nobuffer',
-        '-f', 'concat',
-        '-safe', '0',
-        '-i', concatFile,
-      ]
-    } else {
-      inputArgs = [
-        '-re',
-        '-i', inputSource,
-      ]
-    }
-  }
-
   // Download remote overlay images to local temp files for FFmpeg
   if (overlays && overlays.length > 0) {
     console.log(`[2MStream] Processing ${overlays.length} overlay(s)...`)
@@ -703,22 +734,17 @@ app.post('/start', async (req, res) => {
       console.log(`[2MStream] Overlay ${overlay.id}: type=${overlay.type}, imagePath=${overlay.imagePath ? overlay.imagePath.slice(0, 80) : 'none'}, videoPath=${overlay.videoPath ? overlay.videoPath.slice(0, 80) : 'none'}`)
       try {
         if (overlay.imagePath && overlay.imagePath.startsWith('http')) {
-          console.log(`[2MStream] Downloading overlay image: ${overlay.imagePath.slice(0, 100)}...`)
           const localPath = await downloadToTemp(overlay.imagePath)
           tempFiles.push(localPath)
           overlay.imagePath = localPath
-          console.log(`[2MStream] Overlay image saved to: ${localPath}`)
         }
         if (overlay.videoPath && overlay.videoPath.startsWith('http')) {
-          console.log(`[2MStream] Downloading overlay video: ${overlay.videoPath.slice(0, 100)}...`)
           const localPath = await downloadToTemp(overlay.videoPath)
           tempFiles.push(localPath)
           overlay.videoPath = localPath
-          console.log(`[2MStream] Overlay video saved to: ${localPath}`)
         }
       } catch (dlErr) {
         console.error(`[2MStream] Overlay download failed for ${overlay.id}:`, dlErr.message)
-        // Null out the path so FFmpeg skips this overlay
         overlay.imagePath = null
         overlay.videoPath = null
       }
@@ -730,123 +756,94 @@ app.post('/start', async (req, res) => {
 
   const processes = []
   const errors = []
+  const playlistControllers = []
 
-  // Start one FFmpeg process per destination
+  // Determine if this is a playlist with multiple files
+  const isMultiFilePlaylist = isPlaylist && videoSources && videoSources.length >= 1
+
   for (const dest of destinations) {
     const rtmpTarget = `${dest.rtmpUrl}/${dest.streamKey}`
-    
-    let ffmpegArgs = [...inputArgs]
 
-    // Normalize video: scale to 1080p, pad to fit, but do NOT force fps (too CPU expensive)
-    const videoNorm = 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1'
+    if (isMultiFilePlaylist) {
+      // SEQUENTIAL PLAYLIST MODE: play one file at a time
+      // Each file gets a clean FFmpeg process. No concat demuxer. No H264 boundary errors.
+      console.log(`[2MStream] Starting sequential playlist for ${streamId} -> ${dest.name || rtmpTarget}`)
+      console.log(`[2MStream]   ${videoSources.length} videos, loop=${loop}`)
 
-    if (overlayResult) {
-      ffmpegArgs.push(...overlayResult.inputArgs)
-      const overlayChain = overlayResult.filterComplex.replace('[0:v]', '[norm]')
-      const combinedFilter = `[0:v]${videoNorm}[norm];${overlayChain}`
-      ffmpegArgs.push('-filter_complex', combinedFilter)
-      ffmpegArgs.push('-map', `[${overlayResult.outputLabel}]`)
-      ffmpegArgs.push('-map', '0:a?')
-    } else {
-      ffmpegArgs.push('-vf', videoNorm)
-    }
+      // Create a dummy proc entry for status tracking (will be updated by playlist controller)
+      const dummyProc = { killed: false, kill: () => {}, pid: null }
+      const procEntry = { proc: dummyProc, destId: dest.id, killed: false, restartCount: 0 }
+      processes.push(procEntry)
 
-    ffmpegArgs.push(
-      '-c:v', 'libx264',
-      '-preset', 'ultrafast',
-      '-tune', 'zerolatency',
-      '-b:v', '3000k',
-      '-maxrate', '3000k',
-      '-bufsize', '6000k',
-      '-pix_fmt', 'yuv420p',
-      '-g', '60',
-      '-keyint_min', '60',
-      '-sc_threshold', '0',
-      '-c:a', 'aac',
-      '-b:a', '128k',
-      '-ar', '44100',
-      '-ac', '2',
-      '-f', 'flv',
-      '-flvflags', 'no_duration_filesize',
-      rtmpTarget,
-    )
+      const controller = startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop, tempFiles)
+      playlistControllers.push(controller)
 
-    console.log(`[2MStream] Starting FFmpeg for stream ${streamId} -> ${dest.name || rtmpTarget}`)
-    console.log(`[2MStream] FFmpeg args: ffmpeg ${ffmpegArgs.join(' ')}`)
-    if (overlays?.length > 0) {
-      console.log(`[2MStream]   with ${overlays.length} overlay(s)`)
-    }
-    if (isPlaylist && videoSources?.length > 1) {
-      console.log(`[2MStream]   playlist mode: ${videoSources.length} videos, loop=${loop}`)
-    }
-    if (isRtmpPull) {
-      console.log(`[2MStream]   RTMP pull mode from: ${rtmpPullUrl}`)
-    }
-    
-    const proc = spawn('ffmpeg', ffmpegArgs, { stdio: ['pipe', 'pipe', 'pipe'] })
+    } else if (isRtmpPull && rtmpPullUrl) {
+      // RTMP PULL MODE
+      console.log(`[2MStream] Starting RTMP pull for ${streamId} -> ${dest.name || rtmpTarget}`)
+      console.log(`[2MStream]   RTMP pull from: ${rtmpPullUrl}`)
 
-    proc.stderr.on('data', (data) => {
-      const msg = data.toString()
-      if (msg.includes('Error') || msg.includes('error') || msg.includes('Opening') || msg.includes('No such file') || msg.includes('Invalid')) {
-        console.log(`[FFmpeg ${streamId}/${dest.id}] ${msg.trim()}`)
-      }
-    })
+      const inputArgs = ['-rw_timeout', '10000000', '-i', rtmpPullUrl]
+      const ffmpegArgs = buildFFmpegArgs(inputArgs, overlayResult, rtmpTarget)
 
-    // Recursive auto-restart function that keeps the stream alive
-    function setupAutoRestart(ffmpegProc, procEntry) {
-      ffmpegProc.on('close', (code) => {
-        console.log(`[2MStream] FFmpeg for ${streamId}/${dest.id} exited code=${code}`)
-        if (code !== 0) {
-          const lastLines = (procEntry._stderrBuf || '').slice(-500).trim()
-          if (lastLines) console.error(`[FFmpeg ${streamId}/${dest.id}] ${lastLines}`)
+      const proc = spawn('ffmpeg', ffmpegArgs, { stdio: ['pipe', 'pipe', 'pipe'] })
+      proc.stderr.on('data', (data) => {
+        const msg = data.toString()
+        if (msg.includes('Error') || msg.includes('error') || msg.includes('Opening')) {
+          console.log(`[FFmpeg ${streamId}/${dest.id}] ${msg.trim()}`)
         }
-        // Auto-restart if not manually stopped
-        const streamEntry = activeStreams.get(streamId)
-        if (!streamEntry || streamEntry.stopping || procEntry.killed) return
-        procEntry.restartCount = (procEntry.restartCount || 0) + 1
-        if (procEntry.restartCount > 100) {
-          console.error(`[2MStream] ${streamId}/${dest.id} exceeded 100 restarts, giving up`)
-          return
-        }
-        // Quick restart (2s) - the stream normalization handles file transitions
-        const delay = code === 0 ? 1000 : Math.min(3000 * procEntry.restartCount, 15000)
-        console.log(`[2MStream] Auto-restarting ${streamId}/${dest.id} in ${delay/1000}s (attempt ${procEntry.restartCount})`)
-        setTimeout(() => {
-          const current = activeStreams.get(streamId)
-          if (!current || current.stopping) return
-          try {
-            const newProc = spawn('ffmpeg', ffmpegArgs, { stdio: ['pipe', 'pipe', 'pipe'] })
-            procEntry._stderrBuf = ''
-            newProc.stderr.on('data', (d) => {
-              const m = d.toString()
-              procEntry._stderrBuf = (procEntry._stderrBuf || '').slice(-2000) + m
-              if (m.includes('Error') || m.includes('error') || m.includes('No such file')) {
-                console.log(`[FFmpeg ${streamId}/${dest.id}] ${m.trim()}`)
-              }
-            })
-            newProc.on('error', (err) => {
-              console.error(`[2MStream] FFmpeg spawn error: ${err.message}`)
-            })
-            procEntry.proc = newProc
-            procEntry.killed = false
-            // Recursively set up auto-restart for the new process
-            setupAutoRestart(newProc, procEntry)
-          } catch (e) {
-            console.error(`[2MStream] Restart failed: ${e.message}`)
-          }
-        }, delay)
       })
+
+      // Auto-restart for RTMP pull (source may disconnect temporarily)
+      const procEntry = { proc, destId: dest.id, killed: false, restartCount: 0 }
+      setupAutoRestart(streamId, dest.id, ffmpegArgs, procEntry)
+      proc.on('error', (err) => {
+        console.error(`[2MStream] FFmpeg spawn error: ${err.message}`)
+        errors.push({ destinationId: dest.id, error: err.message })
+      })
+      processes.push(procEntry)
+
+    } else {
+      // SINGLE VIDEO MODE
+      const source = videoSources?.[0]
+      const inputSource = source?.url || videoUrl || join(VIDEO_DIR, source?.path || videoPath || '')
+
+      if (!source?.url && !videoUrl) {
+        const localPath = join(VIDEO_DIR, source?.path || videoPath || '')
+        if (!existsSync(localPath)) {
+          errors.push({ destinationId: dest.id, error: `Video not found: ${localPath}` })
+          continue
+        }
+      }
+
+      console.log(`[2MStream] Starting single video for ${streamId} -> ${dest.name || rtmpTarget}`)
+
+      if (loop) {
+        // For single video loop, use sequential playlist with 1 video
+        const dummyProc = { killed: false, kill: () => {}, pid: null }
+        const procEntry = { proc: dummyProc, destId: dest.id, killed: false, restartCount: 0 }
+        processes.push(procEntry)
+
+        const singleSource = [source || { url: videoUrl, path: videoPath }]
+        const controller = startPlaylistForDest(streamId, dest, singleSource, overlayResult, true, tempFiles)
+        playlistControllers.push(controller)
+      } else {
+        const inputArgs = ['-re', '-i', inputSource]
+        const ffmpegArgs = buildFFmpegArgs(inputArgs, overlayResult, rtmpTarget)
+
+        const proc = spawn('ffmpeg', ffmpegArgs, { stdio: ['pipe', 'pipe', 'pipe'] })
+        proc.stderr.on('data', (data) => {
+          const msg = data.toString()
+          if (msg.includes('Error') || msg.includes('error')) {
+            console.log(`[FFmpeg ${streamId}/${dest.id}] ${msg.trim()}`)
+          }
+        })
+        proc.on('error', (err) => {
+          errors.push({ destinationId: dest.id, error: err.message })
+        })
+        processes.push({ proc, destId: dest.id, killed: false, restartCount: 0 })
+      }
     }
-
-    const procEntry = { proc, destId: dest.id, killed: false, restartCount: 0, _stderrBuf: '' }
-    setupAutoRestart(proc, procEntry)
-
-    proc.on('error', (err) => {
-      console.error(`[2MStream] FFmpeg spawn error for ${streamId}/${dest.id}:`, err.message)
-      errors.push({ destinationId: dest.id, error: err.message })
-    })
-
-    processes.push(procEntry)
   }
 
   activeStreams.set(streamId, { 
@@ -856,7 +853,7 @@ app.post('/start', async (req, res) => {
     isPlaylist,
     isRtmpPull,
     overlayCount: overlays?.length || 0,
-    // Store full config for restart/overlay updates
+    playlistControllers,
     config: {
       streamId,
       videoSources,
@@ -875,9 +872,9 @@ app.post('/start', async (req, res) => {
   setTimeout(() => {
     const stream = activeStreams.get(streamId)
     if (!stream) return
-    const running = stream.processes.filter(p => !p.proc.killed)
+    const running = stream.processes.filter(p => p.proc && !p.proc.killed)
     console.log(`[2MStream] Stream ${streamId}: ${running.length}/${stream.processes.length} destinations connected`)
-  }, 2000)
+  }, 3000)
 
   res.json({ 
     success: true, 
@@ -891,9 +888,46 @@ app.post('/start', async (req, res) => {
   })
 })
 
+
+/**
+ * Auto-restart for non-playlist streams (RTMP pull, single video no-loop).
+ * For playlists, the sequential player handles its own restarts.
+ */
+function setupAutoRestart(streamId, destId, ffmpegArgs, procEntry) {
+  procEntry.proc.on('close', (code) => {
+    console.log(`[2MStream] FFmpeg for ${streamId}/${destId} exited code=${code}`)
+    const streamEntry = activeStreams.get(streamId)
+    if (!streamEntry || streamEntry.stopping || procEntry.killed) return
+    procEntry.restartCount = (procEntry.restartCount || 0) + 1
+    if (procEntry.restartCount > 100) {
+      console.error(`[2MStream] ${streamId}/${destId} exceeded 100 restarts, giving up`)
+      return
+    }
+    const delay = Math.min(3000 * procEntry.restartCount, 15000)
+    console.log(`[2MStream] Auto-restarting ${streamId}/${destId} in ${delay/1000}s (attempt ${procEntry.restartCount})`)
+    setTimeout(() => {
+      const current = activeStreams.get(streamId)
+      if (!current || current.stopping) return
+      try {
+        const newProc = spawn('ffmpeg', ffmpegArgs, { stdio: ['pipe', 'pipe', 'pipe'] })
+        newProc.stderr.on('data', (d) => {
+          const m = d.toString()
+          if (m.includes('Error') || m.includes('error')) console.log(`[FFmpeg ${streamId}/${destId}] ${m.trim()}`)
+        })
+        newProc.on('error', (err) => console.error(`[2MStream] FFmpeg spawn error: ${err.message}`))
+        procEntry.proc = newProc
+        procEntry.killed = false
+        setupAutoRestart(streamId, destId, ffmpegArgs, procEntry)
+      } catch (e) {
+        console.error(`[2MStream] Restart failed: ${e.message}`)
+      }
+    }, delay)
+  })
+}
+
+
 /**
  * POST /stop
- * Body: { streamId: "uuid" }
  */
 app.post('/stop', (req, res) => {
   const { streamId } = req.body
@@ -919,8 +953,8 @@ app.get('/status/:streamId', (req, res) => {
 
   const destStatuses = stream.processes.map(p => ({
     destinationId: p.destId,
-    running: !p.proc.killed,
-    pid: p.proc.pid,
+    running: p.proc && !p.proc.killed,
+    pid: p.proc?.pid,
   }))
 
   res.json({
@@ -934,9 +968,6 @@ app.get('/status/:streamId', (req, res) => {
 
 /**
  * POST /preview
- * Body: { videoSource, overlays, isPlaylist, videoSources }
- * Generates a 5-second preview clip with overlays applied.
- * Returns the clip as an MP4 file for browser playback.
  */
 app.post('/preview', async (req, res) => {
   const { videoSource, videoSources, overlays, isPlaylist } = req.body
@@ -945,16 +976,15 @@ app.post('/preview', async (req, res) => {
   const outputFile = join(tmpdir(), `${previewId}.mp4`)
   const tempFiles = [outputFile]
 
-  // Build input args
   let inputArgs = []
   if (isPlaylist && videoSources?.length > 1) {
-    const concatFile = createConcatFile(videoSources, false)
-    tempFiles.push(concatFile)
-    inputArgs = ['-re', '-f', 'concat', '-safe', '0', '-i', concatFile]
+    // For preview, just use the first video
+    const source = videoSources[0]
+    const inputSource = source.url || join(VIDEO_DIR, source.path || '')
+    inputArgs = ['-i', inputSource]
   } else {
     const source = videoSources?.[0] || {}
     const inputSource = source.url || videoSource || join(VIDEO_DIR, source.path || '')
-    // Check if it's RTMP (don't use -re for live sources)
     if (inputSource.startsWith('rtmp://') || inputSource.startsWith('rtmps://')) {
       inputArgs = ['-rw_timeout', '10000000', '-i', inputSource]
     } else {
@@ -972,7 +1002,6 @@ app.post('/preview', async (req, res) => {
     ffmpegArgs.push('-map', '0:a?')
   }
 
-  // Output 5 seconds as MP4
   ffmpegArgs.push(
     '-t', '5',
     '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23',
@@ -995,10 +1024,9 @@ app.post('/preview', async (req, res) => {
       const stat = statSync(outputFile)
       res.setHeader('Content-Length', stat.size)
 
-      const stream = require('fs').createReadStream(outputFile)
+      const stream = createReadStream(outputFile)
       stream.pipe(res)
       stream.on('end', () => {
-        // Clean up temp files
         tempFiles.forEach(f => { try { unlinkSync(f) } catch {} })
       })
     } else {
@@ -1016,7 +1044,6 @@ app.post('/preview', async (req, res) => {
 
 /**
  * POST /restart
- * Body: { streamId: "uuid", overlays: [...] }
  * Restarts a running stream with updated overlays.
  * Reuses the same video source and destinations.
  */
@@ -1043,103 +1070,76 @@ app.post('/restart', async (req, res) => {
   // Brief delay to let FFmpeg fully stop
   await new Promise(r => setTimeout(r, 500))
 
-  // Re-build using the same logic as /start -- simulate a POST to /start
-  // We do this by building the request internally
+  // Download overlay images if needed
   const tempFiles = []
-  let inputArgs = []
-
-  if (updatedConfig.isRtmpPull && updatedConfig.rtmpPullUrl) {
-    inputArgs = [
-      '-rw_timeout', '10000000',
-      '-i', updatedConfig.rtmpPullUrl,
-    ]
-  } else if (updatedConfig.isPlaylist && updatedConfig.videoSources?.length >= 1) {
-    const concatFile = createConcatFile(updatedConfig.videoSources, updatedConfig.loop)
-    tempFiles.push(concatFile)
-    inputArgs = ['-re', '-fflags', '+genpts+discardcorrupt+nobuffer', '-f', 'concat', '-safe', '0', '-i', concatFile]
-  } else {
-    const source = updatedConfig.videoSources?.[0]
-    const inputSource = source?.url || updatedConfig.videoUrl || join(VIDEO_DIR, source?.path || updatedConfig.videoPath || '')
-    if (updatedConfig.loop) {
-      const singleSource = [{ url: source?.url, path: source?.path || updatedConfig.videoPath }]
-      const concatFile = createConcatFile(singleSource, true)
-      tempFiles.push(concatFile)
-      inputArgs = ['-re', '-fflags', '+genpts+discardcorrupt+nobuffer', '-f', 'concat', '-safe', '0', '-i', concatFile]
-    } else {
-      inputArgs = ['-re', '-i', inputSource]
+  if (updatedConfig.overlays && updatedConfig.overlays.length > 0) {
+    for (const overlay of updatedConfig.overlays) {
+      try {
+        if (overlay.imagePath && overlay.imagePath.startsWith('http')) {
+          const localPath = await downloadToTemp(overlay.imagePath)
+          tempFiles.push(localPath)
+          overlay.imagePath = localPath
+        }
+        if (overlay.videoPath && overlay.videoPath.startsWith('http')) {
+          const localPath = await downloadToTemp(overlay.videoPath)
+          tempFiles.push(localPath)
+          overlay.videoPath = localPath
+        }
+      } catch (dlErr) {
+        console.error(`[2MStream] Overlay download failed:`, dlErr.message)
+        overlay.imagePath = null
+        overlay.videoPath = null
+      }
     }
   }
 
   const overlayResult = buildOverlayFilters(updatedConfig.overlays)
   const processes = []
+  const playlistControllers = []
+
+  const isMultiFilePlaylist = updatedConfig.isPlaylist && updatedConfig.videoSources?.length >= 1
 
   for (const dest of updatedConfig.destinations) {
     const rtmpTarget = `${dest.rtmpUrl}/${dest.streamKey}`
-    let ffmpegArgs = [...inputArgs]
 
-    const videoNorm = 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1'
+    if (isMultiFilePlaylist || (updatedConfig.loop && !updatedConfig.isRtmpPull)) {
+      // Sequential playlist mode (includes single video loop)
+      const sources = isMultiFilePlaylist ? updatedConfig.videoSources : [updatedConfig.videoSources?.[0] || { url: updatedConfig.videoUrl, path: updatedConfig.videoPath }]
+      
+      const dummyProc = { killed: false, kill: () => {}, pid: null }
+      const procEntry = { proc: dummyProc, destId: dest.id, killed: false, restartCount: 0 }
+      processes.push(procEntry)
 
-    if (overlayResult) {
-      ffmpegArgs.push(...overlayResult.inputArgs)
-      const overlayChain = overlayResult.filterComplex.replace('[0:v]', '[norm]')
-      const combinedFilter = `[0:v]${videoNorm}[norm];${overlayChain}`
-      ffmpegArgs.push('-filter_complex', combinedFilter)
-      ffmpegArgs.push('-map', `[${overlayResult.outputLabel}]`)
-      ffmpegArgs.push('-map', '0:a?')
-    } else {
-      ffmpegArgs.push('-vf', videoNorm)
-    }
+      const controller = startPlaylistForDest(streamId, dest, sources, overlayResult, updatedConfig.loop, tempFiles)
+      playlistControllers.push(controller)
 
-    ffmpegArgs.push(
-      '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency',
-      '-b:v', '3000k', '-maxrate', '3000k', '-bufsize', '6000k',
-      '-pix_fmt', 'yuv420p', '-g', '60', '-keyint_min', '60', '-sc_threshold', '0',
-      '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2',
-      '-f', 'flv', '-flvflags', 'no_duration_filesize',
-      rtmpTarget,
-    )
+    } else if (updatedConfig.isRtmpPull && updatedConfig.rtmpPullUrl) {
+      const inputArgs = ['-rw_timeout', '10000000', '-i', updatedConfig.rtmpPullUrl]
+      const ffmpegArgs = buildFFmpegArgs(inputArgs, overlayResult, rtmpTarget)
 
-    const proc = spawn('ffmpeg', ffmpegArgs, { stdio: ['pipe', 'pipe', 'pipe'] })
-    proc.stderr.on('data', (data) => {
-      const msg = data.toString()
-      if (msg.includes('Error') || msg.includes('error') || msg.includes('Opening')) {
-        console.log(`[FFmpeg ${streamId}/${dest.id}] ${msg.trim()}`)
-      }
-    })
-
-    // Auto-restart for restarted processes too
-    function setupRestartAutoRestart(ffmpegProc, procEntry) {
-      ffmpegProc.on('close', (code) => {
-        console.log(`[2MStream] FFmpeg for ${streamId}/${dest.id} exited code=${code}`)
-        const streamEntry = activeStreams.get(streamId)
-        if (!streamEntry || streamEntry.stopping || procEntry.killed) return
-        procEntry.restartCount = (procEntry.restartCount || 0) + 1
-        if (procEntry.restartCount > 100) return
-        const delay = code === 0 ? 1000 : Math.min(3000 * procEntry.restartCount, 15000)
-        console.log(`[2MStream] Auto-restarting ${streamId}/${dest.id} in ${delay/1000}s (attempt ${procEntry.restartCount})`)
-        setTimeout(() => {
-          const current = activeStreams.get(streamId)
-          if (!current || current.stopping) return
-          try {
-            const newProc = spawn('ffmpeg', ffmpegArgs, { stdio: ['pipe', 'pipe', 'pipe'] })
-            newProc.stderr.on('data', (d) => {
-              const m = d.toString()
-              if (m.includes('Error') || m.includes('error')) console.log(`[FFmpeg ${streamId}/${dest.id}] ${m.trim()}`)
-            })
-            newProc.on('error', (err) => console.error(`[2MStream] FFmpeg spawn error: ${err.message}`))
-            procEntry.proc = newProc
-            procEntry.killed = false
-            setupRestartAutoRestart(newProc, procEntry)
-          } catch (e) {
-            console.error(`[2MStream] Restart failed: ${e.message}`)
-          }
-        }, delay)
+      const proc = spawn('ffmpeg', ffmpegArgs, { stdio: ['pipe', 'pipe', 'pipe'] })
+      proc.stderr.on('data', (data) => {
+        const msg = data.toString()
+        if (msg.includes('Error') || msg.includes('error')) console.log(`[FFmpeg ${streamId}/${dest.id}] ${msg.trim()}`)
       })
-    }
 
-    const procEntry = { proc, destId: dest.id, killed: false, restartCount: 0 }
-    setupRestartAutoRestart(proc, procEntry)
-    processes.push(procEntry)
+      const procEntry = { proc, destId: dest.id, killed: false, restartCount: 0 }
+      setupAutoRestart(streamId, dest.id, ffmpegArgs, procEntry)
+      processes.push(procEntry)
+
+    } else {
+      const source = updatedConfig.videoSources?.[0]
+      const inputSource = source?.url || updatedConfig.videoUrl || join(VIDEO_DIR, source?.path || updatedConfig.videoPath || '')
+      const inputArgs = ['-re', '-i', inputSource]
+      const ffmpegArgs = buildFFmpegArgs(inputArgs, overlayResult, rtmpTarget)
+
+      const proc = spawn('ffmpeg', ffmpegArgs, { stdio: ['pipe', 'pipe', 'pipe'] })
+      proc.stderr.on('data', (data) => {
+        const msg = data.toString()
+        if (msg.includes('Error') || msg.includes('error')) console.log(`[FFmpeg ${streamId}/${dest.id}] ${msg.trim()}`)
+      })
+      processes.push({ proc, destId: dest.id, killed: false, restartCount: 0 })
+    }
   }
 
   activeStreams.set(streamId, {
@@ -1149,6 +1149,7 @@ app.post('/restart', async (req, res) => {
     isPlaylist: updatedConfig.isPlaylist,
     isRtmpPull: updatedConfig.isRtmpPull,
     overlayCount: updatedConfig.overlays?.length || 0,
+    playlistControllers,
     config: updatedConfig,
   })
 
@@ -1164,22 +1165,29 @@ function stopStream(streamId) {
   const stream = activeStreams.get(streamId)
   if (!stream) return false
   
-  // Mark as stopping so auto-restart doesn't trigger
+  // Mark as stopping so auto-restart / playlist controller don't trigger
   stream.stopping = true
   console.log(`[2MStream] Stopping stream ${streamId}`)
   
-  for (const p of stream.processes) {
-    if (!p.proc.killed) {
-      p.proc.kill('SIGTERM')
-      setTimeout(() => {
-        if (!p.proc.killed) {
-          p.proc.kill('SIGKILL')
-        }
-      }, 5000)
+  // Stop playlist controllers
+  if (stream.playlistControllers) {
+    for (const controller of stream.playlistControllers) {
+      controller.stop()
     }
   }
 
-  // Clean up temp files (concat files)
+  // Kill any remaining FFmpeg processes
+  for (const p of stream.processes) {
+    if (p.proc && !p.proc.killed) {
+      try { p.proc.kill('SIGTERM') } catch {}
+      setTimeout(() => {
+        try { if (p.proc && !p.proc.killed) p.proc.kill('SIGKILL') } catch {}
+      }, 3000)
+    }
+    p.killed = true
+  }
+
+  // Clean up temp files
   if (stream.tempFiles) {
     for (const f of stream.tempFiles) {
       try { unlinkSync(f) } catch {}
@@ -1202,6 +1210,6 @@ process.on('SIGINT', () => {
 app.listen(PORT, () => {
   console.log(`[2MStream] Streaming engine listening on port ${PORT}`)
   console.log(`[2MStream] Video directory: ${VIDEO_DIR}`)
-  console.log(`[2MStream] Supports: playlists, overlays (image + text), multi-destination`)
+  console.log(`[2MStream] Supports: playlists (sequential), overlays (image + text), multi-destination`)
   console.log(`[2MStream] Waiting for stream commands...`)
 })
