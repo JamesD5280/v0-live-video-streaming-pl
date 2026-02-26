@@ -100,7 +100,7 @@ export function OverlayManager() {
   const [loopOverlay, setLoopOverlay] = useState(true)
   const [videoPath, setVideoPath] = useState("")
   const [uploadProgress, setUploadProgress] = useState(0)
-  const [scrollSpeed, setScrollSpeed] = useState(100)
+  const [scrollSpeed, setScrollSpeed] = useState(30)
 
   const isTextType = type === "text" || type === "lower_third" || type === "scrolling_text"
   const isVideoType = type === "video"
@@ -122,7 +122,7 @@ export function OverlayManager() {
     setLoopOverlay(true)
     setVideoPath("")
     setUploadProgress(0)
-    setScrollSpeed(100)
+    setScrollSpeed(30)
     setEditingId(null)
   }
 
@@ -534,9 +534,9 @@ export function OverlayManager() {
                       <Slider
                         value={[scrollSpeed]}
                         onValueChange={(v) => setScrollSpeed(v[0])}
-                        min={20}
-                        max={400}
-                        step={10}
+                        min={5}
+                        max={200}
+                        step={5}
                       />
                       <p className="text-xs text-muted-foreground">
                         Controls how fast text scrolls across the screen (left to right ticker style).

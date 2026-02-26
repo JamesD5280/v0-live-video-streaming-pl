@@ -132,7 +132,7 @@ function buildOverlayFilters(overlays) {
       const fontSize = overlay.fontSize || 24
       const fontColor = overlay.fontColor || 'white'
       const bgColor = overlay.bgColor || '0x00000080'
-      const speed = overlay.scrollSpeed || 100
+      const speed = overlay.scrollSpeed || 30
 
       let scrollY
       if (overlay.positionY !== undefined) {
