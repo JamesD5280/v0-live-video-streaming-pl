@@ -788,6 +788,8 @@ app.post('/start', async (req, res) => {
     return res.status(400).json({ error: 'Missing streamId or destinations' })
   }
 
+  console.log(`[2MStream] /start called: streamId=${streamId}, overlays=${overlays?.length || 0}, isPlaylist=${isPlaylist}`)
+
   // Stop existing stream if running
   if (activeStreams.has(streamId)) {
     stopStream(streamId)
