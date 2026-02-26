@@ -154,7 +154,8 @@ function buildOverlayFilters(overlays) {
       const fontSize = overlay.fontSize || 24
       const fontColor = overlay.fontColor || 'white'
       const bgColor = overlay.bgColor || '0x00000080'
-      const speed = overlay.scrollSpeed || 30
+      // Speed in px/sec: 5 = very slow (6+ min to cross), 200 = fast (10sec)
+      const speed = overlay.scrollSpeed || 20
       const { fontName, fontStyle } = getFontName(overlay.fontFamily, overlay.fontWeight)
       const fontParam = `font='${fontName}'${fontStyle ? `:${fontStyle}` : ''}`
 
@@ -669,9 +670,16 @@ function startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop,
     })
 
     proc.on('close', (code) => {
-      if (stopped) return
+      console.log(`[2MStream] FFmpeg close event: code=${code}, stopped=${stopped}`)
+      if (stopped) {
+        console.log(`[2MStream] Stopped flag is true, not restarting`)
+        return
+      }
       const entry = activeStreams.get(streamId)
-      if (!entry || entry.stopping) return
+      if (!entry || entry.stopping) {
+        console.log(`[2MStream] Stream entry not found or stopping, not restarting. entry=${!!entry}, stopping=${entry?.stopping}`)
+        return
+      }
 
       if (code === 0) {
         // File finished cleanly -- advance to next with small delay to let RTMP connection settle
