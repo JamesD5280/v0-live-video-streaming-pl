@@ -778,6 +778,7 @@ function startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop,
  * }
  */
 app.post('/start', async (req, res) => {
+  console.log('[2MStream] >>> /start endpoint hit <<<')
   const { 
     streamId, 
     videoSources, 
@@ -790,6 +791,8 @@ app.post('/start', async (req, res) => {
     isRtmpPull = false,
     rtmpPullUrl = null,
   } = req.body
+
+  console.log('[2MStream] Parsed body:', JSON.stringify({ streamId, overlaysCount: overlays?.length, isPlaylist }))
 
   if (!streamId || !destinations || destinations.length === 0) {
     return res.status(400).json({ error: 'Missing streamId or destinations' })
