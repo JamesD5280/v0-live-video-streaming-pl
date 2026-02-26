@@ -96,6 +96,28 @@ async function downloadToTemp(url) {
   return filePath
 }
 
+// Map font family names to fontconfig names available on Linux
+function getFontName(family, weight) {
+  const fontMap = {
+    'sans': 'DejaVu Sans',
+    'serif': 'DejaVu Serif',
+    'mono': 'DejaVu Sans Mono',
+    'arial': 'Liberation Sans',
+    'times': 'Liberation Serif',
+    'courier': 'Liberation Mono',
+    'georgia': 'DejaVu Serif',
+    'verdana': 'DejaVu Sans',
+    'impact': 'Impact',
+  }
+  const baseName = fontMap[family] || fontMap['sans']
+  // Map weight to fontconfig style
+  const weightSuffix = weight === 'bold' ? ':style=Bold' 
+    : weight === 'italic' ? ':style=Italic'
+    : weight === 'bold-italic' ? ':style=Bold Italic'
+    : ''
+  return { fontName: baseName, fontStyle: weightSuffix }
+}
+
 function buildOverlayFilters(overlays) {
   if (!overlays || overlays.length === 0) return null
 
@@ -133,6 +155,8 @@ function buildOverlayFilters(overlays) {
       const fontColor = overlay.fontColor || 'white'
       const bgColor = overlay.bgColor || '0x00000080'
       const speed = overlay.scrollSpeed || 30
+      const { fontName, fontStyle } = getFontName(overlay.fontFamily, overlay.fontWeight)
+      const fontParam = `font='${fontName}'${fontStyle ? `:${fontStyle}` : ''}`
 
       let scrollY
       if (overlay.positionY !== undefined) {
@@ -144,12 +168,12 @@ function buildOverlayFilters(overlays) {
       const barHeight = fontSize + 16
       if (bgColor === 'transparent' || bgColor === 'none') {
         filters.push(
-          `[${currentLabel}]drawtext=text='${escapedText}':fontsize=${fontSize}:fontcolor=${fontColor}:y=${scrollY}:x='W-mod(t*${speed}\\,W+tw)'[${outputLabel}]`
+          `[${currentLabel}]drawtext=text='${escapedText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=${scrollY}:x='W-mod(t*${speed}\\,W+tw)'[${outputLabel}]`
         )
       } else {
         filters.push(
           `[${currentLabel}]drawbox=x=0:y=${scrollY}-8:w=iw:h=${barHeight}:color=${bgColor}@0.7:t=fill[tickbg${i}]`,
-          `[tickbg${i}]drawtext=text='${escapedText}':fontsize=${fontSize}:fontcolor=${fontColor}:y=${scrollY}:x='W-mod(t*${speed}\\,W+tw)'[${outputLabel}]`
+          `[tickbg${i}]drawtext=text='${escapedText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=${scrollY}:x='W-mod(t*${speed}\\,W+tw)'[${outputLabel}]`
         )
       }
 
@@ -158,6 +182,8 @@ function buildOverlayFilters(overlays) {
       const escapedText = (overlay.textContent || '').replace(/'/g, "'\\''").replace(/:/g, '\\:')
       const fontSize = overlay.fontSize || 24
       const fontColor = overlay.fontColor || 'white'
+      const { fontName: txtFontName, fontStyle: txtFontStyle } = getFontName(overlay.fontFamily, overlay.fontWeight)
+      const txtFontParam = `font='${txtFontName}'${txtFontStyle ? `:${txtFontStyle}` : ''}`
       
       if (overlay.type === 'lower_third') {
         const bgColor = overlay.bgColor || '0x00000080'
@@ -172,7 +198,7 @@ function buildOverlayFilters(overlays) {
         const ltX = overlay.positionX !== undefined ? `iw*${overlay.positionX / 100}-iw/2` : '0'
         filters.push(
           `[${currentLabel}]drawbox=x=${ltX}:y=${ltY}:w=iw:h=${fontSize + 30}:color=${bgColor}@0.7:t=fill[bg${i}]`,
-          `[bg${i}]drawtext=text='${escapedText}':fontsize=${fontSize}:fontcolor=${fontColor}:x=20:y=${ltTextY}[${outputLabel}]`
+          `[bg${i}]drawtext=text='${escapedText}':${txtFontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:x=20:y=${ltTextY}[${outputLabel}]`
         )
       } else {
         let textX, textY
@@ -184,7 +210,7 @@ function buildOverlayFilters(overlays) {
           textY = posCoords.split(':')[1]?.replace('y=', '').replace('H', 'h') || '10'
         }
         filters.push(
-          `[${currentLabel}]drawtext=text='${escapedText}':fontsize=${fontSize}:fontcolor=${fontColor}:x=${textX}:y=${textY}[${outputLabel}]`
+          `[${currentLabel}]drawtext=text='${escapedText}':${txtFontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:x=${textX}:y=${textY}[${outputLabel}]`
         )
       }
       currentLabel = outputLabel

@@ -125,6 +125,8 @@ export async function POST(req: NextRequest) {
           size_percent: number;
           opacity: number;
           scroll_speed?: number;
+          font_family?: string;
+          font_weight?: string;
         }}) => ({
           id: so.overlay.id,
           type: so.overlay.type,
@@ -134,6 +136,8 @@ export async function POST(req: NextRequest) {
           textContent: so.overlay.text_content || null,
           fontSize: so.overlay.font_size,
           fontColor: so.overlay.font_color,
+          fontFamily: so.overlay.font_family || 'sans',
+          fontWeight: so.overlay.font_weight || 'normal',
           bgColor: so.overlay.bg_color,
           position: so.overlay.position,
           positionX: so.overlay.position_x ?? undefined,
@@ -281,6 +285,8 @@ export async function POST(req: NextRequest) {
           size_percent: number;
           opacity: number;
           scroll_speed?: number;
+          font_family?: string;
+          font_weight?: string;
         }) => ({
           id: o.id,
           type: o.type,
@@ -290,6 +296,8 @@ export async function POST(req: NextRequest) {
           textContent: o.text_content || null,
           fontSize: o.font_size,
           fontColor: o.font_color,
+          fontFamily: o.font_family || 'sans',
+          fontWeight: o.font_weight || 'normal',
           bgColor: o.bg_color,
           position: o.position,
           positionX: o.position_x ?? undefined,

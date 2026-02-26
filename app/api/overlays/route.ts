@@ -39,6 +39,8 @@ export async function POST(req: NextRequest) {
         text_content: body.text_content || null,
         font_size: body.font_size || 24,
         font_color: body.font_color || "#ffffff",
+        font_family: body.font_family || "sans",
+        font_weight: body.font_weight || "normal",
         bg_color: body.bg_color || "#00000080",
         position: body.position || "top-left",
         position_x: body.position_x ?? 0,
