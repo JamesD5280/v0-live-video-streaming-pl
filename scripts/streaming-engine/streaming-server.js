@@ -97,6 +97,7 @@ async function downloadToTemp(url) {
 }
 
 // Map font family names to fontconfig names available on Linux
+// FFmpeg 4.2 doesn't support :style=, so embed weight in font name
 function getFontName(family, weight) {
   const fontMap = {
     'sans': 'DejaVu Sans',
@@ -110,12 +111,12 @@ function getFontName(family, weight) {
     'impact': 'Impact',
   }
   const baseName = fontMap[family] || fontMap['sans']
-  // Map weight to fontconfig style
-  const weightSuffix = weight === 'bold' ? ':style=Bold' 
-    : weight === 'italic' ? ':style=Italic'
-    : weight === 'bold-italic' ? ':style=Bold Italic'
+  // Append weight to font name for fontconfig lookup
+  const weightSuffix = weight === 'bold' ? ' Bold' 
+    : weight === 'italic' ? ' Italic'
+    : weight === 'bold-italic' ? ' Bold Italic'
     : ''
-  return { fontName: baseName, fontStyle: weightSuffix }
+  return baseName + weightSuffix
 }
 
 function buildOverlayFilters(overlays) {
@@ -156,8 +157,8 @@ function buildOverlayFilters(overlays) {
       const bgColor = overlay.bgColor || '0x00000080'
       // Speed in px/sec: 5 = very slow (6+ min to cross), 200 = fast (10sec)
       const speed = overlay.scrollSpeed || 20
-      const { fontName, fontStyle } = getFontName(overlay.fontFamily, overlay.fontWeight)
-      const fontParam = `font='${fontName}'${fontStyle ? `:${fontStyle}` : ''}`
+      const fontName = getFontName(overlay.fontFamily, overlay.fontWeight)
+      const fontParam = `font='${fontName}'`
 
       let scrollY
       if (overlay.positionY !== undefined) {
@@ -183,8 +184,8 @@ function buildOverlayFilters(overlays) {
       const escapedText = (overlay.textContent || '').replace(/'/g, "'\\''").replace(/:/g, '\\:')
       const fontSize = overlay.fontSize || 24
       const fontColor = overlay.fontColor || 'white'
-      const { fontName: txtFontName, fontStyle: txtFontStyle } = getFontName(overlay.fontFamily, overlay.fontWeight)
-      const txtFontParam = `font='${txtFontName}'${txtFontStyle ? `:${txtFontStyle}` : ''}`
+      const txtFontName = getFontName(overlay.fontFamily, overlay.fontWeight)
+      const txtFontParam = `font='${txtFontName}'`
       
       if (overlay.type === 'lower_third') {
         const bgColor = overlay.bgColor || '0x00000080'
