@@ -196,8 +196,10 @@ function buildOverlayFilters(overlays) {
       
       const scalePercent = overlay.sizePercent || 20
       const opacityValue = (overlay.opacity || 100) / 100
+      // Scale relative to output resolution (1920x1080), not overlay's original size
+      const targetWidth = Math.round(1920 * scalePercent / 100)
 
-      const scaleFilter = `[${inputIndex}:v]scale=iw*${scalePercent}/100:-1,format=rgba,colorchannelmixer=aa=${opacityValue}[vid${i}]`
+      const scaleFilter = `[${inputIndex}:v]scale=${targetWidth}:-1,format=rgba,colorchannelmixer=aa=${opacityValue}[vid${i}]`
       filters.push(scaleFilter)
       filters.push(`[${currentLabel}][vid${i}]overlay=${posCoords}:shortest=0[${outputLabel}]`)
       
@@ -208,8 +210,10 @@ function buildOverlayFilters(overlays) {
       
       const scalePercent = overlay.sizePercent || 20
       const opacityValue = (overlay.opacity || 100) / 100
+      // Scale relative to output resolution (1920x1080), not overlay's original size
+      const targetWidth = Math.round(1920 * scalePercent / 100)
 
-      const scaleFilter = `[${inputIndex}:v]scale=iw*${scalePercent}/100:-1,format=rgba,colorchannelmixer=aa=${opacityValue}[img${i}]`
+      const scaleFilter = `[${inputIndex}:v]scale=${targetWidth}:-1,format=rgba,colorchannelmixer=aa=${opacityValue}[img${i}]`
       filters.push(scaleFilter)
       filters.push(`[${currentLabel}][img${i}]overlay=${posCoords}[${outputLabel}]`)
       
@@ -644,20 +648,20 @@ function startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop,
       if (!entry || entry.stopping) return
 
       if (code === 0) {
-        // File finished cleanly -- play next file immediately
-        console.log(`[2MStream] File finished cleanly, advancing to next`)
-        restartCount = 0 // reset on clean finish
-        advanceToNext()
+        // File finished cleanly -- advance to next with small delay to let RTMP connection settle
+        console.log(`[2MStream] File finished cleanly, advancing to next in 2s`)
+        restartCount = 0
+        setTimeout(advanceToNext, 2000)
       } else {
-        // FFmpeg crashed -- retry same file with short delay, then skip if persistent
+        // FFmpeg crashed -- retry same file, skip after 10 failures
         restartCount++
-        if (restartCount > 3) {
-          console.error(`[2MStream] ${streamId}/${dest.id} file failed 3 times, skipping to next`)
+        if (restartCount > 10) {
+          console.error(`[2MStream] ${streamId}/${dest.id} file failed 10 times, skipping to next`)
           restartCount = 0
-          advanceToNext()
+          setTimeout(advanceToNext, 2000)
           return
         }
-        const delay = 1000
+        const delay = Math.min(2000 * restartCount, 10000)
         console.log(`[2MStream] FFmpeg crashed (code ${code}), retrying in ${delay/1000}s (attempt ${restartCount})`)
         setTimeout(playCurrentFile, delay)
       }
@@ -675,7 +679,6 @@ function startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop,
         return
       }
     }
-    // Start next file immediately -- no gap means YouTube/RTMP won't disconnect
     playCurrentFile()
   }
 
