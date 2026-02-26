@@ -16,7 +16,7 @@ export async function GET() {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json(data)
   } catch (e) {
-    console.error("[v0] Videos GET crash:", e)
+    console.error("Videos GET error:", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json(data)
   } catch (e) {
-    console.error("[v0] Videos POST crash:", e)
+    console.error("Videos POST error:", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
@@ -95,7 +95,7 @@ export async function DELETE(req: NextRequest) {
 
     return NextResponse.json({ success: true })
   } catch (e) {
-    console.error("[v0] Videos DELETE crash:", e)
+    console.error("Videos DELETE error:", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

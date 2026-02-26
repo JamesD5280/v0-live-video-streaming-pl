@@ -78,7 +78,7 @@ export default function InvitePage() {
       email: invitation.email,
       password,
       options: {
-        emailRedirectTo: `${window.location.origin}/invite/${token}/accept`,
+        emailRedirectTo: `${window.location.origin}/auth/confirm?next=/invite/${token}/accept`,
         data: {
           display_name: displayName,
           invitation_token: token,

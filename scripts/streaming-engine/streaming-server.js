@@ -589,15 +589,11 @@ function startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop,
 
     const streamEntry = activeStreams.get(streamId)
     if (!streamEntry || streamEntry.stopping) {
-      console.log(`[2MStream] playCurrentFile: stream ${streamId} not found in activeStreams or stopping, will retry in 500ms`)
-      // Retry once -- the stream may not be registered yet
+      // Retry -- the stream may not be registered yet
       setTimeout(() => {
         const retry = activeStreams.get(streamId)
         if (retry && !retry.stopping) {
-          console.log(`[2MStream] playCurrentFile: retry succeeded, stream found`)
           playCurrentFile()
-        } else {
-          console.log(`[2MStream] playCurrentFile: retry failed, stream still not found`)
         }
       }, 500)
       return
@@ -653,15 +649,15 @@ function startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop,
         restartCount = 0 // reset on clean finish
         advanceToNext()
       } else {
-        // FFmpeg crashed -- retry the same file after a delay
+        // FFmpeg crashed -- retry same file with short delay, then skip if persistent
         restartCount++
-        if (restartCount > 50) {
-          console.error(`[2MStream] ${streamId}/${dest.id} exceeded 50 retries, skipping file`)
+        if (restartCount > 3) {
+          console.error(`[2MStream] ${streamId}/${dest.id} file failed 3 times, skipping to next`)
           restartCount = 0
           advanceToNext()
           return
         }
-        const delay = Math.min(2000 * restartCount, 10000)
+        const delay = 1000
         console.log(`[2MStream] FFmpeg crashed (code ${code}), retrying in ${delay/1000}s (attempt ${restartCount})`)
         setTimeout(playCurrentFile, delay)
       }
@@ -679,8 +675,8 @@ function startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop,
         return
       }
     }
-    // Small delay between files to let YouTube settle
-    setTimeout(playCurrentFile, 500)
+    // Start next file immediately -- no gap means YouTube/RTMP won't disconnect
+    playCurrentFile()
   }
 
   function stop() {
