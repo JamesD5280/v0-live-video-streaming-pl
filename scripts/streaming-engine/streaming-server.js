@@ -126,6 +126,7 @@ function getFontName(family, weight) {
 }
 
 function buildOverlayFilters(overlays) {
+  console.log(`[2MStream] buildOverlayFilters called with ${overlays?.length || 0} overlays`)
   if (!overlays || overlays.length === 0) return null
 
   const inputArgs = []
@@ -135,6 +136,7 @@ function buildOverlayFilters(overlays) {
 
   for (let i = 0; i < overlays.length; i++) {
     const overlay = overlays[i]
+    console.log(`[2MStream] Overlay ${i}: type=${overlay.type}, posX=${overlay.positionX}, posY=${overlay.positionY}`)
     const outputLabel = `ov${i}`
 
     // Map position to FFmpeg overlay coordinates
