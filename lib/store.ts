@@ -128,6 +128,8 @@ export interface Overlay {
   size_percent: number
   opacity: number
   scroll_speed: number | null
+  scroll_start_x: number | null
+  scroll_end_x: number | null
   enabled: boolean
   created_at: string
   updated_at: string

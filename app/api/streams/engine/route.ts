@@ -125,6 +125,8 @@ export async function POST(req: NextRequest) {
           size_percent: number;
           opacity: number;
           scroll_speed?: number;
+          scroll_start_x?: number;
+          scroll_end_x?: number;
           font_family?: string;
           font_weight?: string;
         }}) => ({
@@ -145,6 +147,8 @@ export async function POST(req: NextRequest) {
           sizePercent: so.overlay.size_percent,
           opacity: so.overlay.opacity,
           scrollSpeed: so.overlay.scroll_speed ?? undefined,
+          scrollStartX: so.overlay.scroll_start_x ?? 0,
+          scrollEndX: so.overlay.scroll_end_x ?? 100,
         }))
 
       let result
@@ -285,6 +289,8 @@ export async function POST(req: NextRequest) {
           size_percent: number;
           opacity: number;
           scroll_speed?: number;
+          scroll_start_x?: number;
+          scroll_end_x?: number;
           font_family?: string;
           font_weight?: string;
         }) => ({
@@ -305,6 +311,8 @@ export async function POST(req: NextRequest) {
           sizePercent: o.size_percent,
           opacity: o.opacity,
           scrollSpeed: o.scroll_speed ?? undefined,
+          scrollStartX: o.scroll_start_x ?? 0,
+          scrollEndX: o.scroll_end_x ?? 100,
         }))
       }
 

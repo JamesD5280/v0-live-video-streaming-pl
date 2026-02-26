@@ -101,6 +101,8 @@ export function OverlayManager() {
   const [videoPath, setVideoPath] = useState("")
   const [uploadProgress, setUploadProgress] = useState(0)
   const [scrollSpeed, setScrollSpeed] = useState(20)
+  const [scrollStartX, setScrollStartX] = useState(0)
+  const [scrollEndX, setScrollEndX] = useState(100)
   const [fontFamily, setFontFamily] = useState("sans")
   const [fontWeight, setFontWeight] = useState("normal")
 
@@ -125,6 +127,8 @@ export function OverlayManager() {
     setVideoPath("")
     setUploadProgress(0)
     setScrollSpeed(20)
+    setScrollStartX(0)
+    setScrollEndX(100)
     setFontFamily("sans")
     setFontWeight("normal")
     setEditingId(null)
@@ -152,7 +156,9 @@ export function OverlayManager() {
     setBgColor(overlay.bg_color)
     setLoopOverlay(overlay.loop_overlay ?? true)
     setVideoPath(overlay.video_path || "")
-    setScrollSpeed(overlay.scroll_speed ?? 30)
+    setScrollSpeed(overlay.scroll_speed ?? 20)
+    setScrollStartX(overlay.scroll_start_x ?? 0)
+    setScrollEndX(overlay.scroll_end_x ?? 100)
     setFontFamily(overlay.font_family || "sans")
     setFontWeight(overlay.font_weight || "normal")
     setDialogOpen(true)
@@ -255,6 +261,8 @@ export function OverlayManager() {
   font_weight: fontWeight,
   bg_color: bgColor,
   scroll_speed: type === "scrolling_text" ? scrollSpeed : null,
+  scroll_start_x: type === "scrolling_text" ? scrollStartX : null,
+  scroll_end_x: type === "scrolling_text" ? scrollEndX : null,
       }
 
       const res = await fetch("/api/overlays", {
@@ -581,6 +589,38 @@ export function OverlayManager() {
                       />
                       <p className="text-xs text-muted-foreground">
                         5 = very slow (~6 min to cross), 20 = readable (~90 sec), 100 = fast (~20 sec)
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <Label>Scroll Zone Start (Left Edge)</Label>
+                        <span className="text-xs text-muted-foreground">{scrollStartX}%</span>
+                      </div>
+                      <Slider
+                        value={[scrollStartX]}
+                        onValueChange={(v) => setScrollStartX(v[0])}
+                        min={0}
+                        max={90}
+                        step={1}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Where text disappears (left boundary). Set to match your left logo edge.
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <Label>Scroll Zone End (Right Edge)</Label>
+                        <span className="text-xs text-muted-foreground">{scrollEndX}%</span>
+                      </div>
+                      <Slider
+                        value={[scrollEndX]}
+                        onValueChange={(v) => setScrollEndX(v[0])}
+                        min={10}
+                        max={100}
+                        step={1}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Where text appears (right boundary). Set to match your right logo edge.
                       </p>
                     </div>
                   )}
