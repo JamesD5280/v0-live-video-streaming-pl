@@ -163,7 +163,7 @@ function buildOverlayFilters(overlays) {
       const fontSize = overlay.fontSize || 24
       const fontColor = overlay.fontColor || 'white'
       const bgColor = overlay.bgColor || '0x00000080'
-      // Speed in px/sec: 5 = very slow (6+ min to cross), 100 = fast
+      // Speed in px/sec: 5 = very slow, 100 = fast
       const speed = overlay.scrollSpeed || 20
       const fontName = getFontName(overlay.fontFamily, overlay.fontWeight)
       const fontParam = `font='${fontName}'`
@@ -171,32 +171,39 @@ function buildOverlayFilters(overlays) {
       // For seamless loop, duplicate the text with separator
       const loopText = `${escapedText}          ${escapedText}          ${escapedText}`
 
-      // Position Y: use absolute pixel value from percentage of 1080p height
-      // positionY is 0-100 percentage, convert to pixels
+      // Position Y: percentage -> pixels (1080p output)
       let scrollY
       if (overlay.positionY !== undefined && overlay.positionY !== null) {
-        // Convert percentage to pixels (based on 1080p output)
         scrollY = Math.round(1080 * overlay.positionY / 100)
-        // Clamp to safe zone (avoid going off screen)
         scrollY = Math.max(fontSize, Math.min(1080 - fontSize - 10, scrollY))
       } else {
-        // Default: near bottom (90% = 972px)
         scrollY = 1080 - fontSize - 60
       }
       
-      console.log(`[2MStream] Scrolling text: positionY=${overlay.positionY}% -> ${scrollY}px, fontSize=${fontSize}, speed=${speed}`)
+      // Scroll zone boundaries: where text appears/disappears (percentage -> pixels)
+      // scrollStartX = left edge (where text exits), scrollEndX = right edge (where text enters)
+      const scrollStartX = Math.round(1920 * (overlay.scrollStartX ?? 0) / 100)
+      const scrollEndX = Math.round(1920 * (overlay.scrollEndX ?? 100) / 100)
+      const scrollZoneWidth = scrollEndX - scrollStartX
+      
+      console.log(`[2MStream] Scrolling text: Y=${scrollY}px, zone X=${scrollStartX}-${scrollEndX}px (width=${scrollZoneWidth}), speed=${speed}`)
 
       const barHeight = fontSize + 16
-      // Seamless scroll: text width (tw) includes all 3 copies, we scroll by 1/3 of that
-      // Formula: start at W (right edge), scroll left, mod by (tw/3 + some padding) for seamless loop
+      
+      // Text scrolls within the defined zone: starts at scrollEndX, exits at scrollStartX
+      // Formula: scrollEndX - mod(t*speed, zoneWidth + textWidth)
+      // This keeps text within the bounded area
+      const scrollFormula = `'${scrollEndX}-mod(t*${speed}\\,${scrollZoneWidth}+tw)'`
+      
       if (bgColor === 'transparent' || bgColor === 'none') {
         filters.push(
-          `[${currentLabel}]drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=${scrollY}:x='W-mod(t*${speed}\\,W+tw/3)'[${outputLabel}]`
+          `[${currentLabel}]drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=${scrollY}:x=${scrollFormula}[${outputLabel}]`
         )
       } else {
+        // Draw background bar only in the scroll zone area
         filters.push(
-          `[${currentLabel}]drawbox=x=0:y=${scrollY}-8:w=iw:h=${barHeight}:color=${bgColor}@0.7:t=fill[tickbg${i}]`,
-          `[tickbg${i}]drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=${scrollY}:x='W-mod(t*${speed}\\,W+tw/3)'[${outputLabel}]`
+          `[${currentLabel}]drawbox=x=${scrollStartX}:y=${scrollY}-8:w=${scrollZoneWidth}:h=${barHeight}:color=${bgColor}@0.7:t=fill[tickbg${i}]`,
+          `[tickbg${i}]drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=${scrollY}:x=${scrollFormula}[${outputLabel}]`
         )
       }
 

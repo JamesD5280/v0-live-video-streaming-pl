@@ -48,6 +48,8 @@ export async function POST(req: NextRequest) {
         size_percent: body.size_percent || 15,
         opacity: body.opacity ?? 100,
         scroll_speed: body.scroll_speed || null,
+        scroll_start_x: body.scroll_start_x ?? 0,
+        scroll_end_x: body.scroll_end_x ?? 100,
         enabled: body.enabled !== false,
       })
       .select()
