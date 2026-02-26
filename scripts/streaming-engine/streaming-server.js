@@ -170,14 +170,19 @@ function buildOverlayFilters(overlays) {
       const loopText = `${escapedText}          ${escapedText}          ${escapedText}`
 
       // Position Y: use absolute pixel value from percentage of 1080p height
+      // positionY is 0-100 percentage, convert to pixels
       let scrollY
-      if (overlay.positionY !== undefined && overlay.positionY > 0) {
+      if (overlay.positionY !== undefined && overlay.positionY !== null) {
         // Convert percentage to pixels (based on 1080p output)
         scrollY = Math.round(1080 * overlay.positionY / 100)
+        // Clamp to safe zone (avoid going off screen)
+        scrollY = Math.max(fontSize, Math.min(1080 - fontSize - 10, scrollY))
       } else {
-        // Default: near bottom
-        scrollY = 1080 - fontSize - 20
+        // Default: near bottom (90% = 972px)
+        scrollY = 1080 - fontSize - 60
       }
+      
+      console.log(`[2MStream] Scrolling text: positionY=${overlay.positionY}% -> ${scrollY}px, fontSize=${fontSize}, speed=${speed}`)
 
       const barHeight = fontSize + 16
       // Seamless scroll: text width (tw) includes all 3 copies, we scroll by 1/3 of that
