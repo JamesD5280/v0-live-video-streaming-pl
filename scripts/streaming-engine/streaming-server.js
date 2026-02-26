@@ -155,27 +155,35 @@ function buildOverlayFilters(overlays) {
       const fontSize = overlay.fontSize || 24
       const fontColor = overlay.fontColor || 'white'
       const bgColor = overlay.bgColor || '0x00000080'
-      // Speed in px/sec: 5 = very slow (6+ min to cross), 200 = fast (10sec)
+      // Speed in px/sec: 5 = very slow (6+ min to cross), 100 = fast
       const speed = overlay.scrollSpeed || 20
       const fontName = getFontName(overlay.fontFamily, overlay.fontWeight)
       const fontParam = `font='${fontName}'`
 
+      // For seamless loop, duplicate the text with separator
+      const loopText = `${escapedText}          ${escapedText}          ${escapedText}`
+
+      // Position Y: use absolute pixel value from percentage of 1080p height
       let scrollY
-      if (overlay.positionY !== undefined) {
-        scrollY = `h*${overlay.positionY / 100}-${fontSize / 2}`
+      if (overlay.positionY !== undefined && overlay.positionY > 0) {
+        // Convert percentage to pixels (based on 1080p output)
+        scrollY = Math.round(1080 * overlay.positionY / 100)
       } else {
-        scrollY = `h-${fontSize + 20}`
+        // Default: near bottom
+        scrollY = 1080 - fontSize - 20
       }
 
       const barHeight = fontSize + 16
+      // Seamless scroll: text width (tw) includes all 3 copies, we scroll by 1/3 of that
+      // Formula: start at W (right edge), scroll left, mod by (tw/3 + some padding) for seamless loop
       if (bgColor === 'transparent' || bgColor === 'none') {
         filters.push(
-          `[${currentLabel}]drawtext=text='${escapedText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=${scrollY}:x='W-mod(t*${speed}\\,W+tw)'[${outputLabel}]`
+          `[${currentLabel}]drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=${scrollY}:x='W-mod(t*${speed}\\,W+tw/3)'[${outputLabel}]`
         )
       } else {
         filters.push(
           `[${currentLabel}]drawbox=x=0:y=${scrollY}-8:w=iw:h=${barHeight}:color=${bgColor}@0.7:t=fill[tickbg${i}]`,
-          `[tickbg${i}]drawtext=text='${escapedText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=${scrollY}:x='W-mod(t*${speed}\\,W+tw)'[${outputLabel}]`
+          `[tickbg${i}]drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=${scrollY}:x='W-mod(t*${speed}\\,W+tw/3)'[${outputLabel}]`
         )
       }
 
