@@ -5,24 +5,37 @@ import { createClient } from '@/lib/supabase/server'
 /**
  * GET /auth/confirm
  * Handles Supabase email confirmation redirects.
- * Exchanges the auth code for a session, then redirects to the intended destination.
+ * Supports both PKCE flow (code param) and OTP flow (token_hash param).
  */
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const token_hash = searchParams.get('token_hash')
   const type = searchParams.get('type') as EmailOtpType | null
+  const code = searchParams.get('code')
   const next = searchParams.get('next') ?? '/'
 
-  if (token_hash && type) {
-    const supabase = await createClient()
+  const supabase = await createClient()
 
+  // PKCE flow: Supabase sends a code parameter
+  if (code) {
+    const { error } = await supabase.auth.exchangeCodeForSession(code)
+    if (!error) {
+      const redirectTo = request.nextUrl.clone()
+      redirectTo.pathname = next
+      redirectTo.searchParams.delete('code')
+      redirectTo.searchParams.delete('next')
+      return NextResponse.redirect(redirectTo)
+    }
+  }
+
+  // OTP flow: Supabase sends token_hash + type
+  if (token_hash && type) {
     const { error } = await supabase.auth.verifyOtp({
       type,
       token_hash,
     })
 
     if (!error) {
-      // Successful verification -- redirect to the intended page
       const redirectTo = request.nextUrl.clone()
       redirectTo.pathname = next
       redirectTo.searchParams.delete('token_hash')

@@ -119,6 +119,8 @@ export interface Overlay {
   text_content: string | null
   font_size: number
   font_color: string
+  font_family: string
+  font_weight: string
   bg_color: string
   position: OverlayPosition
   position_x: number

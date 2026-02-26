@@ -100,7 +100,9 @@ export function OverlayManager() {
   const [loopOverlay, setLoopOverlay] = useState(true)
   const [videoPath, setVideoPath] = useState("")
   const [uploadProgress, setUploadProgress] = useState(0)
-  const [scrollSpeed, setScrollSpeed] = useState(100)
+  const [scrollSpeed, setScrollSpeed] = useState(30)
+  const [fontFamily, setFontFamily] = useState("sans")
+  const [fontWeight, setFontWeight] = useState("normal")
 
   const isTextType = type === "text" || type === "lower_third" || type === "scrolling_text"
   const isVideoType = type === "video"
@@ -122,7 +124,9 @@ export function OverlayManager() {
     setLoopOverlay(true)
     setVideoPath("")
     setUploadProgress(0)
-    setScrollSpeed(100)
+    setScrollSpeed(30)
+    setFontFamily("sans")
+    setFontWeight("normal")
     setEditingId(null)
   }
 
@@ -148,7 +152,9 @@ export function OverlayManager() {
     setBgColor(overlay.bg_color)
     setLoopOverlay(overlay.loop_overlay ?? true)
     setVideoPath(overlay.video_path || "")
-    setScrollSpeed(overlay.scroll_speed ?? 100)
+    setScrollSpeed(overlay.scroll_speed ?? 30)
+    setFontFamily(overlay.font_family || "sans")
+    setFontWeight(overlay.font_weight || "normal")
     setDialogOpen(true)
   }
 
@@ -243,10 +249,12 @@ export function OverlayManager() {
         video_path: isVideoType ? (videoPath || null) : null,
         loop_overlay: isVideoType ? loopOverlay : true,
         text_content: textContent || null,
-        font_size: fontSize,
-        font_color: fontColor,
-        bg_color: bgColor,
-        scroll_speed: type === "scrolling_text" ? scrollSpeed : null,
+  font_size: fontSize,
+  font_color: fontColor,
+  font_family: fontFamily,
+  font_weight: fontWeight,
+  bg_color: bgColor,
+  scroll_speed: type === "scrolling_text" ? scrollSpeed : null,
       }
 
       const res = await fetch("/api/overlays", {
@@ -467,13 +475,45 @@ export function OverlayManager() {
                       onChange={(e) => setTextContent(e.target.value)}
                     />
                   </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <Label>Font Family</Label>
+                      <Select value={fontFamily} onValueChange={setFontFamily}>
+                        <SelectTrigger className="bg-secondary border-border text-foreground">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-card border-border">
+                          <SelectItem value="sans">Sans Serif (DejaVu Sans)</SelectItem>
+                          <SelectItem value="serif">Serif (DejaVu Serif)</SelectItem>
+                          <SelectItem value="mono">Monospace (DejaVu Mono)</SelectItem>
+                          <SelectItem value="arial">Arial (Liberation Sans)</SelectItem>
+                          <SelectItem value="times">Times (Liberation Serif)</SelectItem>
+                          <SelectItem value="courier">Courier (Liberation Mono)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Font Weight</Label>
+                      <Select value={fontWeight} onValueChange={setFontWeight}>
+                        <SelectTrigger className="bg-secondary border-border text-foreground">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-card border-border">
+                          <SelectItem value="normal">Normal</SelectItem>
+                          <SelectItem value="bold">Bold</SelectItem>
+                          <SelectItem value="italic">Italic</SelectItem>
+                          <SelectItem value="bold-italic">Bold Italic</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
                   <div className="grid grid-cols-3 gap-3">
                     <div className="space-y-2">
                       <Label>Font Size</Label>
                       <Input
                         type="number"
                         min={12}
-                        max={72}
+                        max={120}
                         value={fontSize}
                         onChange={(e) => setFontSize(Number(e.target.value))}
                       />
@@ -534,9 +574,9 @@ export function OverlayManager() {
                       <Slider
                         value={[scrollSpeed]}
                         onValueChange={(v) => setScrollSpeed(v[0])}
-                        min={20}
-                        max={400}
-                        step={10}
+                        min={5}
+                        max={200}
+                        step={5}
                       />
                       <p className="text-xs text-muted-foreground">
                         Controls how fast text scrolls across the screen (left to right ticker style).
