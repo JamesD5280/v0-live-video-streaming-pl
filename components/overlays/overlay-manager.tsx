@@ -483,6 +483,7 @@ export function OverlayManager() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent className="bg-card border-border">
+                          <SelectItem value="viga">Viga (Google Font)</SelectItem>
                           <SelectItem value="sans">Sans Serif (DejaVu Sans)</SelectItem>
                           <SelectItem value="serif">Serif (DejaVu Serif)</SelectItem>
                           <SelectItem value="mono">Monospace (DejaVu Mono)</SelectItem>

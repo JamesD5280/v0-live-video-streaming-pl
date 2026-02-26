@@ -109,13 +109,19 @@ function getFontName(family, weight) {
     'georgia': 'DejaVu Serif',
     'verdana': 'DejaVu Sans',
     'impact': 'Impact',
+    'viga': 'Viga',
   }
   const baseName = fontMap[family] || fontMap['sans']
+  // Viga only has regular weight, skip weight suffix for it
+  if (family === 'viga') {
+    return baseName
+  }
   // Append weight to font name for fontconfig lookup
   const weightSuffix = weight === 'bold' ? ' Bold' 
     : weight === 'italic' ? ' Italic'
     : weight === 'bold-italic' ? ' Bold Italic'
     : ''
+  console.log(`[2MStream] Font: family=${family}, weight=${weight} -> ${baseName}${weightSuffix}`)
   return baseName + weightSuffix
 }
 
