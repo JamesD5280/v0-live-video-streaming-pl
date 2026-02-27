@@ -129,13 +129,21 @@ function buildOverlayFilters(overlays) {
   console.log(`[2MStream] buildOverlayFilters called with ${overlays?.length || 0} overlays`)
   if (!overlays || overlays.length === 0) return null
 
+  // Sort overlays so images/logos are always on top (processed last)
+  // Order: scrolling_text, text -> image (image overlays rendered last = on top)
+  const sortedOverlays = [...overlays].sort((a, b) => {
+    const order = { 'scrolling_text': 0, 'text': 1, 'image': 2 }
+    return (order[a.type] ?? 1) - (order[b.type] ?? 1)
+  })
+  console.log(`[2MStream] Overlay render order: ${sortedOverlays.map(o => o.type).join(' -> ')}`)
+
   const inputArgs = []
   const filters = []
   let currentLabel = '0:v'
   let inputIndex = 1 // 0 is the main video input
 
-  for (let i = 0; i < overlays.length; i++) {
-    const overlay = overlays[i]
+  for (let i = 0; i < sortedOverlays.length; i++) {
+    const overlay = sortedOverlays[i]
     console.log(`[2MStream] Overlay ${i}: type=${overlay.type}, posX=${overlay.positionX}, posY=${overlay.positionY}`)
     const outputLabel = `ov${i}`
 
