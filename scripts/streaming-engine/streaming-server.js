@@ -129,10 +129,10 @@ function buildOverlayFilters(overlays) {
   console.log(`[2MStream] buildOverlayFilters called with ${overlays?.length || 0} overlays`)
   if (!overlays || overlays.length === 0) return null
 
-  // Sort overlays so images/logos are always on top (processed last)
-  // Order: scrolling_text, text -> image (image overlays rendered last = on top)
+  // Sort overlays for correct layer order (processed last = on top)
+  // Order: image (backgrounds) -> scrolling_text -> text -> video (logos on top)
   const sortedOverlays = [...overlays].sort((a, b) => {
-    const order = { 'scrolling_text': 0, 'text': 1, 'image': 2 }
+    const order = { 'image': 0, 'scrolling_text': 1, 'text': 2, 'video': 3 }
     return (order[a.type] ?? 1) - (order[b.type] ?? 1)
   })
   console.log(`[2MStream] Overlay render order: ${sortedOverlays.map(o => o.type).join(' -> ')}`)
