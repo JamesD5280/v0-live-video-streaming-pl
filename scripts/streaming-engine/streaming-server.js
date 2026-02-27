@@ -190,20 +190,31 @@ function buildOverlayFilters(overlays) {
 
       const barHeight = fontSize + 16
       
-      // Text scrolls within the defined zone: starts at scrollEndX, exits at scrollStartX
-      // Formula: scrollEndX - mod(t*speed, zoneWidth + textWidth)
-      // This keeps text within the bounded area
-      const scrollFormula = `'${scrollEndX}-mod(t*${speed}\\,${scrollZoneWidth}+tw)'`
+      // To properly clip text to the scroll zone, we:
+      // 1. Create a transparent layer the size of the scroll zone
+      // 2. Draw scrolling text on it (relative to zone, so x starts at zoneWidth)
+      // 3. Overlay this cropped layer at the correct position on the main video
+      // 
+      // Text scrolls from right (zoneWidth) to left (-textWidth), looping
+      const scrollFormula = `'w-mod(t*${speed}\\,w+tw)'`
+      
+      // Create transparent background for the scroll zone
+      const scrollLayerLabel = `scrollbg${i}`
+      const scrollTextLabel = `scrolltxt${i}`
       
       if (bgColor === 'transparent' || bgColor === 'none') {
+        // Create transparent layer, draw text, overlay at position
         filters.push(
-          `[${currentLabel}]drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=${scrollY}:x=${scrollFormula}[${outputLabel}]`
+          `color=c=black@0:s=${scrollZoneWidth}x${barHeight}:d=99999[${scrollLayerLabel}]`,
+          `[${scrollLayerLabel}]drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula}[${scrollTextLabel}]`,
+          `[${currentLabel}][${scrollTextLabel}]overlay=x=${scrollStartX}:y=${scrollY}-8[${outputLabel}]`
         )
       } else {
-        // Draw background bar only in the scroll zone area
+        // Create colored background layer, draw text, overlay at position
         filters.push(
-          `[${currentLabel}]drawbox=x=${scrollStartX}:y=${scrollY}-8:w=${scrollZoneWidth}:h=${barHeight}:color=${bgColor}@0.7:t=fill[tickbg${i}]`,
-          `[tickbg${i}]drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=${scrollY}:x=${scrollFormula}[${outputLabel}]`
+          `color=c=${bgColor}:s=${scrollZoneWidth}x${barHeight}:d=99999[${scrollLayerLabel}]`,
+          `[${scrollLayerLabel}]drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula}[${scrollTextLabel}]`,
+          `[${currentLabel}][${scrollTextLabel}]overlay=x=${scrollStartX}:y=${scrollY}-8[${outputLabel}]`
         )
       }
 
