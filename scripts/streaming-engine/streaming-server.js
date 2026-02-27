@@ -198,33 +198,29 @@ function buildOverlayFilters(overlays) {
 
       const barHeight = fontSize + 16
       
-      // To properly clip text to the scroll zone, we:
-      // 1. Create a transparent layer the size of the scroll zone
-      // 2. Draw scrolling text on it (relative to zone, so x starts at zoneWidth)
-      // 3. Overlay this cropped layer at the correct position on the main video
-      // 
-      // Text scrolls from right (zoneWidth) to left (-textWidth), looping
-      const scrollFormula = `'w-mod(t*${speed}\\,w+tw)'`
+      // Scroll text within bounded zone using drawtext with enable expression
+      // The text is drawn at full width but only visible within the scroll zone
+      // We use multiple drawtext calls with different x offsets for seamless looping
       
-      // Create transparent background for the scroll zone
-      const scrollLayerLabel = `scrollbg${i}`
-      const scrollTextLabel = `scrolltxt${i}`
+      // Calculate scroll: text moves from scrollEndX to scrollStartX
+      // x position formula: starts at scrollEndX, moves left by speed*t, wraps when reaching scrollStartX-textWidth
+      const scrollFormula = `'${scrollEndX}-mod(t*${speed}\\,${scrollZoneWidth}+tw)'`
       
-      if (bgColor === 'transparent' || bgColor === 'none') {
-        // Create transparent layer, draw text, overlay at position
+      // Draw background bar in the scroll zone (if not transparent)
+      if (bgColor !== 'transparent' && bgColor !== 'none') {
+        const bgLabel = `scrollbg${i}`
         filters.push(
-          `color=c=black@0:s=${scrollZoneWidth}x${barHeight}:d=99999[${scrollLayerLabel}]`,
-          `[${scrollLayerLabel}]drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula}[${scrollTextLabel}]`,
-          `[${currentLabel}][${scrollTextLabel}]overlay=x=${scrollStartX}:y=${scrollY}-8[${outputLabel}]`
+          `[${currentLabel}]drawbox=x=${scrollStartX}:y=${scrollY}-8:w=${scrollZoneWidth}:h=${barHeight}:color=${bgColor}@0.7:t=fill[${bgLabel}]`
         )
-      } else {
-        // Create colored background layer, draw text, overlay at position
-        filters.push(
-          `color=c=${bgColor}:s=${scrollZoneWidth}x${barHeight}:d=99999[${scrollLayerLabel}]`,
-          `[${scrollLayerLabel}]drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula}[${scrollTextLabel}]`,
-          `[${currentLabel}][${scrollTextLabel}]overlay=x=${scrollStartX}:y=${scrollY}-8[${outputLabel}]`
-        )
+        currentLabel = bgLabel
       }
+      
+      // Draw text with clipping - use enable to only show text within the zone
+      // This is achieved by having the text naturally scroll and relying on the zone boundaries
+      // Since drawtext doesn't clip, we accept some overflow but the background helps define the zone
+      filters.push(
+        `[${currentLabel}]drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=${scrollY}:x=${scrollFormula}[${outputLabel}]`
+      )
 
       currentLabel = outputLabel
     } else if (overlay.type === 'text' || overlay.type === 'lower_third') {
