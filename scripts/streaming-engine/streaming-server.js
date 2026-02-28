@@ -198,28 +198,43 @@ function buildOverlayFilters(overlays) {
 
       const barHeight = fontSize + 16
       
-      // Scroll text within bounded zone using drawtext with enable expression
-      // The text is drawn at full width but only visible within the scroll zone
-      // We use multiple drawtext calls with different x offsets for seamless looping
+      // To properly clip text within the scroll zone:
+      // 1. Split the video (need to use same source twice: for crop and for overlay base)
+      // 2. Crop out the scroll zone area, draw text on it
+      // 3. Overlay back onto the main video
       
-      // Calculate scroll: text moves from scrollEndX to scrollStartX
-      // x position formula: starts at scrollEndX, moves left by speed*t, wraps when reaching scrollStartX-textWidth
-      const scrollFormula = `'${scrollEndX}-mod(t*${speed}\\,${scrollZoneWidth}+tw)'`
+      // Text scrolls from right (zoneWidth) to left (-textWidth), looping seamlessly
+      const scrollFormula = `'w-mod(t*${speed}\\,w+tw)'`
       
-      // Draw background bar in the scroll zone (if not transparent)
+      const splitLabel1 = `scrollsplit${i}a`
+      const splitLabel2 = `scrollsplit${i}b`
+      const cropLabel = `scrollcrop${i}`
+      const scrollTextLabel = `scrolltxt${i}`
+      
+      // Split the video into two streams (one for base, one for cropping)
+      filters.push(
+        `[${currentLabel}]split=2[${splitLabel1}][${splitLabel2}]`
+      )
+      
+      // Crop the scroll zone area from one split
+      filters.push(
+        `[${splitLabel2}]crop=${scrollZoneWidth}:${barHeight}:${scrollStartX}:${scrollY}-8[${cropLabel}]`
+      )
+      
+      // Draw background and text on the cropped area
       if (bgColor !== 'transparent' && bgColor !== 'none') {
-        const bgLabel = `scrollbg${i}`
         filters.push(
-          `[${currentLabel}]drawbox=x=${scrollStartX}:y=${scrollY}-8:w=${scrollZoneWidth}:h=${barHeight}:color=${bgColor}@0.7:t=fill[${bgLabel}]`
+          `[${cropLabel}]drawbox=x=0:y=0:w=iw:h=ih:color=${bgColor}@0.7:t=fill,drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula}[${scrollTextLabel}]`
         )
-        currentLabel = bgLabel
+      } else {
+        filters.push(
+          `[${cropLabel}]drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula}[${scrollTextLabel}]`
+        )
       }
       
-      // Draw text with clipping - use enable to only show text within the zone
-      // This is achieved by having the text naturally scroll and relying on the zone boundaries
-      // Since drawtext doesn't clip, we accept some overflow but the background helps define the zone
+      // Overlay the scroll zone back onto the other split at the correct position
       filters.push(
-        `[${currentLabel}]drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=${scrollY}:x=${scrollFormula}[${outputLabel}]`
+        `[${splitLabel1}][${scrollTextLabel}]overlay=x=${scrollStartX}:y=${scrollY}-8[${outputLabel}]`
       )
 
       currentLabel = outputLabel
@@ -702,10 +717,17 @@ function startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop,
       }
     }
 
+    let fileFinishedNaturally = false
     proc.stderr.on('data', (data) => {
       const msg = data.toString()
       if (msg.includes('Error') || msg.includes('error') || msg.includes('No such file') || msg.includes('Invalid')) {
         console.log(`[FFmpeg ${streamId}/${dest.id}] ${msg.trim()}`)
+      }
+      // Detect when file has finished playing (frame count output at end)
+      // FFmpeg outputs "frame=XXXX fps=XX ... time=XX:XX:XX" lines, and at the end outputs total stats
+      if (msg.includes('video:') && msg.includes('audio:') && msg.includes('global headers:')) {
+        console.log(`[2MStream] Detected file finished (final stats output)`)
+        fileFinishedNaturally = true
       }
     })
 
@@ -725,13 +747,14 @@ function startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop,
         return
       }
 
-      if (code === 0) {
-        // File finished cleanly -- advance to next with small delay to let RTMP connection settle
-        console.log(`[2MStream] File finished cleanly, advancing to next in 2s`)
+      if (code === 0 || fileFinishedNaturally) {
+        // File finished (code 0 OR detected final stats output)
+        // Note: code can be 1 even when file finishes due to RTMP trailer write error
+        console.log(`[2MStream] File finished (code=${code}, detected=${fileFinishedNaturally}), advancing to next in 2s`)
         restartCount = 0
         setTimeout(advanceToNext, 2000)
       } else {
-        // FFmpeg crashed -- retry same file, skip after 10 failures
+        // FFmpeg crashed early -- retry same file, skip after 10 failures
         restartCount++
         if (restartCount > 10) {
           console.error(`[2MStream] ${streamId}/${dest.id} file failed 10 times, skipping to next`)
@@ -740,7 +763,7 @@ function startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop,
           return
         }
         const delay = Math.min(2000 * restartCount, 10000)
-        console.log(`[2MStream] FFmpeg crashed (code ${code}), retrying in ${delay/1000}s (attempt ${restartCount})`)
+        console.log(`[2MStream] FFmpeg crashed early (code ${code}), retrying in ${delay/1000}s (attempt ${restartCount})`)
         setTimeout(playCurrentFile, delay)
       }
     })
