@@ -190,52 +190,24 @@ function buildOverlayFilters(overlays) {
       
       // Scroll zone boundaries: where text appears/disappears (percentage -> pixels)
       // scrollStartX = left edge (where text exits), scrollEndX = right edge (where text enters)
-      const scrollStartX = Math.round(1920 * (overlay.scrollStartX ?? 0) / 100)
-      const scrollEndX = Math.round(1920 * (overlay.scrollEndX ?? 100) / 100)
-      const scrollZoneWidth = scrollEndX - scrollStartX
-      
-      console.log(`[2MStream] Scrolling text: Y=${scrollY}px, zone X=${scrollStartX}-${scrollEndX}px (width=${scrollZoneWidth}), speed=${speed}`)
+      console.log(`[2MStream] Scrolling text: Y=${scrollY}px, speed=${speed}`)
 
       const barHeight = fontSize + 16
       
-      // To properly clip text within the scroll zone:
-      // 1. Split the video (need to use same source twice: for crop and for overlay base)
-      // 2. Crop out the scroll zone area, draw text on it
-      // 3. Overlay back onto the main video
+      // Simple scroll: text moves from right edge (W) to left, loops seamlessly
+      // Using basic drawtext without complex clipping for stability
+      const scrollFormula = `'W-mod(t*${speed}\\,W+tw/3)'`
       
-      // Text scrolls from right (zoneWidth) to left (-textWidth), looping seamlessly
-      const scrollFormula = `'w-mod(t*${speed}\\,w+tw)'`
-      
-      const splitLabel1 = `scrollsplit${i}a`
-      const splitLabel2 = `scrollsplit${i}b`
-      const cropLabel = `scrollcrop${i}`
-      const scrollTextLabel = `scrolltxt${i}`
-      
-      // Split the video into two streams (one for base, one for cropping)
-      filters.push(
-        `[${currentLabel}]split=2[${splitLabel1}][${splitLabel2}]`
-      )
-      
-      // Crop the scroll zone area from one split
-      filters.push(
-        `[${splitLabel2}]crop=${scrollZoneWidth}:${barHeight}:${scrollStartX}:${scrollY}-8[${cropLabel}]`
-      )
-      
-      // Draw background and text on the cropped area
-      if (bgColor !== 'transparent' && bgColor !== 'none') {
+      if (bgColor === 'transparent' || bgColor === 'none') {
         filters.push(
-          `[${cropLabel}]drawbox=x=0:y=0:w=iw:h=ih:color=${bgColor}@0.7:t=fill,drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula}[${scrollTextLabel}]`
+          `[${currentLabel}]drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=${scrollY}:x=${scrollFormula}[${outputLabel}]`
         )
       } else {
         filters.push(
-          `[${cropLabel}]drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula}[${scrollTextLabel}]`
+          `[${currentLabel}]drawbox=x=0:y=${scrollY}-8:w=iw:h=${barHeight}:color=${bgColor}@0.7:t=fill[tickbg${i}]`,
+          `[tickbg${i}]drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=${scrollY}:x=${scrollFormula}[${outputLabel}]`
         )
       }
-      
-      // Overlay the scroll zone back onto the other split at the correct position
-      filters.push(
-        `[${splitLabel1}][${scrollTextLabel}]overlay=x=${scrollStartX}:y=${scrollY}-8[${outputLabel}]`
-      )
 
       currentLabel = outputLabel
     } else if (overlay.type === 'text' || overlay.type === 'lower_third') {
