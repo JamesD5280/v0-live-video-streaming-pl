@@ -614,6 +614,8 @@ function buildFFmpegArgs(inputArgs, overlayResult, rtmpTarget) {
     '-c:v', 'libx264',
     '-preset', 'ultrafast',
     '-tune', 'zerolatency',
+    '-r', '30',              // Force 30fps output - prevents runaway encoding
+    '-vsync', 'cfr',         // Constant frame rate - ensures steady output
     '-b:v', '3000k',
     '-maxrate', '3000k',
     '-bufsize', '6000k',
