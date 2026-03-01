@@ -76,6 +76,58 @@ export async function POST(req: NextRequest) {
   }
 }
 
+export async function PUT(req: NextRequest) {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+
+    const body = await req.json()
+    const { id, ...updates } = body
+    if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 })
+
+    // Update the event
+    const { error: eventError } = await supabase
+      .from("scheduled_events")
+      .update({
+        video_id: updates.source_type === "rtmp_pull" ? null : updates.video_id,
+        title: updates.title,
+        scheduled_at: updates.scheduled_at,
+        repeat_mode: updates.repeat_mode || "none",
+        source_type: updates.source_type || "video",
+        rtmp_pull_url: updates.source_type === "rtmp_pull" ? updates.rtmp_pull_url : null,
+        status: "pending", // Reset status when editing
+      })
+      .eq("id", id)
+
+    if (eventError) return NextResponse.json({ error: eventError.message }, { status: 500 })
+
+    // Update destinations: delete old ones and insert new ones
+    await supabase.from("event_destinations").delete().eq("event_id", id)
+    if (updates.destination_ids && updates.destination_ids.length > 0) {
+      const destRows = updates.destination_ids.map((destId: string) => ({
+        event_id: id,
+        destination_id: destId,
+      }))
+      await supabase.from("event_destinations").insert(destRows)
+    }
+
+    // Update overlays: delete old ones and insert new ones
+    await supabase.from("event_overlays").delete().eq("event_id", id)
+    if (updates.overlay_ids && updates.overlay_ids.length > 0) {
+      const overlayRows = updates.overlay_ids.map((overlayId: string) => ({
+        event_id: id,
+        overlay_id: overlayId,
+      }))
+      await supabase.from("event_overlays").insert(overlayRows)
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (e) {
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+  }
+}
+
 export async function DELETE(req: NextRequest) {
   try {
     const supabase = await createClient()

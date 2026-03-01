@@ -79,7 +79,7 @@ const roleConfig: Record<string, { label: string; icon: typeof Shield; color: st
 }
 
 export function TeamManager() {
-  const { data: team, error: teamError } = useSWR<TeamMember[]>("/api/team", fetcher)
+  const { data: team, error: teamError, mutate: mutateTeam } = useSWR<TeamMember[]>("/api/team", fetcher)
   const { data: invitations, mutate: mutateInvites } = useSWR<Invitation[]>("/api/invitations", fetcher)
   const [inviteOpen, setInviteOpen] = useState(false)
   const [inviteEmail, setInviteEmail] = useState("")
@@ -88,6 +88,8 @@ export function TeamManager() {
   const [inviteError, setInviteError] = useState<string | null>(null)
   const [inviteSuccess, setInviteSuccess] = useState(false)
   const [copiedToken, setCopiedToken] = useState<string | null>(null)
+  const [changingRole, setChangingRole] = useState<string | null>(null)
+  const [removingUser, setRemovingUser] = useState<string | null>(null)
 
   const handleInvite = async () => {
     setInviting(true)
@@ -127,6 +129,39 @@ export function TeamManager() {
     navigator.clipboard.writeText(link)
     setCopiedToken(token)
     setTimeout(() => setCopiedToken(null), 2000)
+  }
+
+  const handleRoleChange = async (userId: string, newRole: string) => {
+    setChangingRole(userId)
+    try {
+      const res = await fetch("/api/team", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, role: newRole }),
+      })
+      if (res.ok) {
+        mutateTeam()
+      }
+    } catch {
+      console.error("Failed to change role")
+    }
+    setChangingRole(null)
+  }
+
+  const handleRemoveUser = async (userId: string) => {
+    if (!confirm("Are you sure you want to remove this user? This action cannot be undone.")) {
+      return
+    }
+    setRemovingUser(userId)
+    try {
+      const res = await fetch(`/api/team?id=${userId}`, { method: "DELETE" })
+      if (res.ok) {
+        mutateTeam()
+      }
+    } catch {
+      console.error("Failed to remove user")
+    }
+    setRemovingUser(null)
   }
 
   const pendingInvitations = invitations?.filter((i) => i.status === "pending") || []
@@ -241,10 +276,44 @@ export function TeamManager() {
                         <p className="text-xs text-muted-foreground">{member.email}</p>
                       </div>
                     </div>
-                    <Badge variant="outline" className={cn("gap-1", role.color)}>
-                      <RoleIcon className="h-3 w-3" />
-                      {role.label}
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      <Select
+                        value={member.role}
+                        onValueChange={(newRole) => handleRoleChange(member.id, newRole)}
+                        disabled={changingRole === member.id}
+                      >
+                        <SelectTrigger className={cn("w-28 h-8 text-xs", role.color)}>
+                          {changingRole === member.id ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <SelectValue />
+                          )}
+                        </SelectTrigger>
+                        <SelectContent className="bg-card border-border">
+                          {Object.entries(roleConfig).map(([key, config]) => (
+                            <SelectItem key={key} value={key}>
+                              <div className="flex items-center gap-2">
+                                <config.icon className="h-3 w-3" />
+                                {config.label}
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                        onClick={() => handleRemoveUser(member.id)}
+                        disabled={removingUser === member.id}
+                      >
+                        {removingUser === member.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
                   </div>
                 )
               })}
