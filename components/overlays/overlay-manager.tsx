@@ -303,46 +303,70 @@ export function OverlayManager() {
   }
 
   const handleGraphicsSave = async (imageDataUrl: string, filename: string) => {
-    // Convert data URL to blob
-    const response = await fetch(imageDataUrl)
-    const blob = await response.blob()
-    
-    // Upload to Supabase storage
-    const supabase = createClient()
-    const filePath = `overlays/${Date.now()}-${filename}`
-    
-    const { error: uploadError } = await supabase.storage
-      .from("overlays")
-      .upload(filePath, blob, { contentType: "image/png" })
-    
-    if (uploadError) {
-      console.error("Upload error:", uploadError)
-      return
+    try {
+      // Convert data URL to blob
+      const response = await fetch(imageDataUrl)
+      const blob = await response.blob()
+      
+      // Upload to Supabase storage - use "videos" bucket which should exist
+      const supabase = createClient()
+      const filePath = `graphics/${Date.now()}-${filename}`
+      
+      const { error: uploadError } = await supabase.storage
+        .from("videos")
+        .upload(filePath, blob, { contentType: "image/png" })
+      
+      if (uploadError) {
+        console.error("Upload error:", uploadError)
+        // Fallback: try creating an overlay without storage
+        // This stores the data URL directly (works for small images)
+        const res = await fetch("/api/overlays", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: filename.replace(".png", ""),
+            type: "image",
+            position: "bottom-center",
+            position_x: 50,
+            position_y: 91.5,
+            size_percent: 70,
+            opacity: 100,
+            image_path: imageDataUrl,
+            enabled: false,
+          }),
+        })
+        if (res.ok) {
+          mutate()
+        }
+        return
+      }
+      
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from("videos")
+        .getPublicUrl(filePath)
+      
+      // Create overlay with the uploaded image
+      await fetch("/api/overlays", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: filename.replace(".png", ""),
+          type: "image",
+          position: "bottom-center",
+          position_x: 50,
+          position_y: 91.5,
+          size_percent: 70,
+          opacity: 100,
+          image_path: publicUrl,
+          enabled: false,
+        }),
+      })
+      
+      mutate()
+    } catch (err) {
+      console.error("Graphics save error:", err)
     }
-    
-    // Get public URL
-    const { data: { publicUrl } } = supabase.storage
-      .from("overlays")
-      .getPublicUrl(filePath)
-    
-    // Create overlay with the uploaded image
-    await fetch("/api/overlays", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: filename.replace(".png", ""),
-        type: "image",
-        position: "bottom-center",
-        position_x: 50,
-        position_y: 91.5,
-        size_percent: 70,
-        opacity: 100,
-        image_path: publicUrl,
-        enabled: false,
-      }),
-    })
-    
-    mutate()
   }
 
   if (error) {

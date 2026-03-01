@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/select"
 import { fetcher } from "@/lib/fetcher"
 import type { Video, Destination, ScheduledEvent, Overlay } from "@/lib/store"
-import { Calendar, Clock, Plus, Trash2, Video as VideoIcon, Radio, Repeat, Loader2, Rss, Film, Layers } from "lucide-react"
+import { Calendar, Clock, Plus, Trash2, Video as VideoIcon, Radio, Repeat, Loader2, Rss, Film, Layers, Pencil } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export function StreamScheduler() {
@@ -27,6 +27,7 @@ export function StreamScheduler() {
   const { data: events, error: eventsError, mutate } = useSWR<ScheduledEvent[]>("/api/schedule", fetcher)
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [newEvent, setNewEvent] = useState({
     title: "",
     videoId: "",
@@ -61,7 +62,30 @@ export function StreamScheduler() {
     }))
   }
 
-  const addEvent = async () => {
+  const resetForm = () => {
+    setNewEvent({ title: "", videoId: "", sourceType: "video", rtmpPullUrl: "", destinations: [], overlayIds: [], date: "", time: "", repeat: "none" })
+    setEditingId(null)
+    setShowForm(false)
+  }
+
+  const startEdit = (event: ScheduledEvent) => {
+    const scheduledDate = new Date(event.scheduled_at)
+    setNewEvent({
+      title: event.title,
+      videoId: event.video_id || "",
+      sourceType: event.source_type as "video" | "rtmp_pull",
+      rtmpPullUrl: event.rtmp_pull_url || "",
+      destinations: event.event_destinations?.map(ed => ed.destination_id) || [],
+      overlayIds: event.event_overlays?.map(eo => eo.overlay_id) || [],
+      date: scheduledDate.toISOString().split("T")[0],
+      time: scheduledDate.toTimeString().slice(0, 5),
+      repeat: event.repeat_mode || "none",
+    })
+    setEditingId(event.id)
+    setShowForm(true)
+  }
+
+  const saveEvent = async () => {
     setSaving(true)
     // Get the user's timezone offset and build the correct ISO string
     // so the scheduled time matches exactly what the user picked
@@ -72,22 +96,35 @@ export function StreamScheduler() {
     const tzHours = String(Math.floor(absOffset / 60)).padStart(2, '0')
     const tzMins = String(absOffset % 60).padStart(2, '0')
     const scheduledAt = `${newEvent.date}T${newEvent.time}:00${sign}${tzHours}:${tzMins}`
-    await fetch("/api/schedule", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: newEvent.title,
-        source_type: newEvent.sourceType,
-        video_id: newEvent.sourceType === "video" ? newEvent.videoId : undefined,
-        rtmp_pull_url: newEvent.sourceType === "rtmp_pull" ? newEvent.rtmpPullUrl : undefined,
-        scheduled_at: scheduledAt,
-        repeat_mode: newEvent.repeat,
-        destination_ids: newEvent.destinations,
-        overlay_ids: newEvent.overlayIds,
-      }),
-    })
-    setNewEvent({ title: "", videoId: "", sourceType: "video", rtmpPullUrl: "", destinations: [], overlayIds: [], date: "", time: "", repeat: "none" })
-    setShowForm(false)
+    
+    const body = {
+      title: newEvent.title,
+      source_type: newEvent.sourceType,
+      video_id: newEvent.sourceType === "video" ? newEvent.videoId : undefined,
+      rtmp_pull_url: newEvent.sourceType === "rtmp_pull" ? newEvent.rtmpPullUrl : undefined,
+      scheduled_at: scheduledAt,
+      repeat_mode: newEvent.repeat,
+      destination_ids: newEvent.destinations,
+      overlay_ids: newEvent.overlayIds,
+    }
+
+    if (editingId) {
+      // Update existing event
+      await fetch("/api/schedule", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: editingId, ...body }),
+      })
+    } else {
+      // Create new event
+      await fetch("/api/schedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+    }
+    
+    resetForm()
     setSaving(false)
     mutate()
   }
@@ -130,7 +167,9 @@ export function StreamScheduler() {
       {showForm && (
         <Card className="border-primary/20 bg-card">
           <CardHeader>
-            <CardTitle className="text-base font-semibold text-foreground">New Scheduled Stream</CardTitle>
+            <CardTitle className="text-base font-semibold text-foreground">
+              {editingId ? "Edit Scheduled Stream" : "New Scheduled Stream"}
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
@@ -263,11 +302,11 @@ export function StreamScheduler() {
               </div>
             )}
             <div className="flex gap-2">
-              <Button onClick={addEvent} disabled={!newEvent.title || (newEvent.sourceType === "video" ? !newEvent.videoId : !newEvent.rtmpPullUrl.trim()) || !newEvent.date || !newEvent.time || saving} className="bg-primary text-primary-foreground hover:bg-primary/90">
+              <Button onClick={saveEvent} disabled={!newEvent.title || (newEvent.sourceType === "video" ? !newEvent.videoId : !newEvent.rtmpPullUrl.trim()) || !newEvent.date || !newEvent.time || saving} className="bg-primary text-primary-foreground hover:bg-primary/90">
                 {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Schedule
+                {editingId ? "Update" : "Schedule"}
               </Button>
-              <Button variant="outline" className="border-border text-foreground" onClick={() => setShowForm(false)}>Cancel</Button>
+              <Button variant="outline" className="border-border text-foreground" onClick={resetForm}>Cancel</Button>
             </div>
           </CardContent>
         </Card>
@@ -325,6 +364,10 @@ export function StreamScheduler() {
                       </p>
                       <p className="text-xs text-muted-foreground">{getDaysUntil(event.scheduled_at)}</p>
                     </div>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => startEdit(event)}>
+                      <Pencil className="h-4 w-4" />
+                      <span className="sr-only">Edit schedule</span>
+                    </Button>
                     <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => removeEvent(event.id)}>
                       <Trash2 className="h-4 w-4" />
                       <span className="sr-only">Remove schedule</span>
