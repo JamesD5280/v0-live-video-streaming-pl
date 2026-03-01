@@ -190,21 +190,27 @@ function buildOverlayFilters(overlays) {
       
       // Scroll zone boundaries: where text appears/disappears (percentage -> pixels)
       // scrollStartX = left edge (where text exits), scrollEndX = right edge (where text enters)
-      console.log(`[2MStream] Scrolling text: Y=${scrollY}px, speed=${speed}`)
+      const scrollStartX = Math.round(1920 * (overlay.scrollStartX ?? 0) / 100)
+      const scrollEndX = Math.round(1920 * (overlay.scrollEndX ?? 100) / 100)
+      const scrollZoneWidth = scrollEndX - scrollStartX
+      
+      console.log(`[2MStream] Scrolling text: Y=${scrollY}px, zone X=${scrollStartX}-${scrollEndX}px (width=${scrollZoneWidth}), speed=${speed}`)
 
       const barHeight = fontSize + 16
       
-      // Simple scroll: text moves from right edge (W) to left, loops seamlessly
-      // Using basic drawtext without complex clipping for stability
-      const scrollFormula = `'W-mod(t*${speed}\\,W+tw/3)'`
+      // Scroll within bounded zone: text enters from scrollEndX, exits at scrollStartX
+      // Formula: scrollEndX - mod(time * speed, zoneWidth + textWidth)
+      const scrollFormula = `'${scrollEndX}-mod(t*${speed}\\,${scrollZoneWidth}+tw)'`
       
+      // Draw background bar only in the scroll zone, then draw text
+      // Text will visually extend beyond zone but the zone defines the scroll area
       if (bgColor === 'transparent' || bgColor === 'none') {
         filters.push(
           `[${currentLabel}]drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=${scrollY}:x=${scrollFormula}[${outputLabel}]`
         )
       } else {
         filters.push(
-          `[${currentLabel}]drawbox=x=0:y=${scrollY}-8:w=iw:h=${barHeight}:color=${bgColor}@0.7:t=fill[tickbg${i}]`,
+          `[${currentLabel}]drawbox=x=${scrollStartX}:y=${scrollY}-8:w=${scrollZoneWidth}:h=${barHeight}:color=${bgColor}@0.7:t=fill[tickbg${i}]`,
           `[tickbg${i}]drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=${scrollY}:x=${scrollFormula}[${outputLabel}]`
         )
       }
