@@ -259,7 +259,8 @@ function buildOverlayFilters(overlays) {
 
       const scaleFilter = `[${inputIndex}:v]scale=${targetWidth}:-1,format=rgba,colorchannelmixer=aa=${opacityValue}[vid${i}]`
       filters.push(scaleFilter)
-      filters.push(`[${currentLabel}][vid${i}]overlay=${posCoords}:shortest=0[${outputLabel}]`)
+      // eof_action=endall ensures FFmpeg exits cleanly when main video ends
+      filters.push(`[${currentLabel}][vid${i}]overlay=${posCoords}:eof_action=endall[${outputLabel}]`)
       
       currentLabel = outputLabel
       inputIndex++
@@ -273,7 +274,8 @@ function buildOverlayFilters(overlays) {
 
       const scaleFilter = `[${inputIndex}:v]scale=${targetWidth}:-1,format=rgba,colorchannelmixer=aa=${opacityValue}[img${i}]`
       filters.push(scaleFilter)
-      filters.push(`[${currentLabel}][img${i}]overlay=${posCoords}[${outputLabel}]`)
+      // eof_action=endall ensures FFmpeg exits cleanly when main video ends
+      filters.push(`[${currentLabel}][img${i}]overlay=${posCoords}:eof_action=endall[${outputLabel}]`)
       
       currentLabel = outputLabel
       inputIndex++
