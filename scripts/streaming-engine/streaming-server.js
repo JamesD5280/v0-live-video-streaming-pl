@@ -198,22 +198,36 @@ function buildOverlayFilters(overlays) {
 
       const barHeight = fontSize + 16
       
-      // Scroll within bounded zone: text enters from scrollEndX, exits at scrollStartX
-      // Formula: scrollEndX - mod(time * speed, zoneWidth + textWidth)
-      const scrollFormula = `'${scrollEndX}-mod(t*${speed}\\,${scrollZoneWidth}+tw)'`
+      // To properly clip text within the scroll zone, we:
+      // 1. Split video into two streams (both synced from same source)
+      // 2. Draw scrolling text on one stream (text extends full width)
+      // 3. Crop just the zone area (this clips the text)
+      // 4. Overlay the cropped area back onto the base stream
       
-      // Draw background bar only in the scroll zone, then draw text
-      // Text will visually extend beyond zone but the zone defines the scroll area
+      // Text scrolls from zoneWidth to -textWidth within the cropped area
+      const scrollFormula = `'w-mod(t*${speed}\\,w+tw)'`
+      
+      const splitBase = `splitbase${i}`
+      const splitText = `splittext${i}`
+      const textDrawn = `textdrawn${i}`
+      const textCropped = `textcrop${i}`
+      
+      // Split the current video into base and text layer
+      filters.push(`[${currentLabel}]split=2[${splitBase}][${splitText}]`)
+      
+      // Draw background and text on the text layer, then crop to zone
       if (bgColor === 'transparent' || bgColor === 'none') {
         filters.push(
-          `[${currentLabel}]drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=${scrollY}:x=${scrollFormula}[${outputLabel}]`
+          `[${splitText}]crop=${scrollZoneWidth}:${barHeight}:${scrollStartX}:${scrollY}-8,drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula}[${textCropped}]`
         )
       } else {
         filters.push(
-          `[${currentLabel}]drawbox=x=${scrollStartX}:y=${scrollY}-8:w=${scrollZoneWidth}:h=${barHeight}:color=${bgColor}@0.7:t=fill[tickbg${i}]`,
-          `[tickbg${i}]drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=${scrollY}:x=${scrollFormula}[${outputLabel}]`
+          `[${splitText}]crop=${scrollZoneWidth}:${barHeight}:${scrollStartX}:${scrollY}-8,drawbox=x=0:y=0:w=iw:h=ih:color=${bgColor}@0.7:t=fill,drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula}[${textCropped}]`
         )
       }
+      
+      // Overlay cropped text area back onto base at the zone position
+      filters.push(`[${splitBase}][${textCropped}]overlay=x=${scrollStartX}:y=${scrollY}-8[${outputLabel}]`)
 
       currentLabel = outputLabel
     } else if (overlay.type === 'text' || overlay.type === 'lower_third') {
