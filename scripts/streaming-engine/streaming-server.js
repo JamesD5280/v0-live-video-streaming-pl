@@ -636,6 +636,8 @@ function buildFFmpegArgs(inputArgs, overlayResult, rtmpTarget) {
     '-b:a', '128k',
     '-ar', '44100',
     '-ac', '2',
+    '-async', '1',           // Resync audio to timestamps - fixes drift between files
+    '-af', 'aresample=async=1:first_pts=0',  // Reset audio PTS at file start
     '-f', 'flv',
     '-flvflags', 'no_duration_filesize',
     rtmpTarget,
