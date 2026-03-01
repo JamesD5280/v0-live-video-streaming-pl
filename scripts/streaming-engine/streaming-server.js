@@ -265,13 +265,14 @@ function buildOverlayFilters(overlays) {
 
       const scaleFilter = `[${inputIndex}:v]scale=${targetWidth}:-1,format=rgba,colorchannelmixer=aa=${opacityValue}[vid${i}]`
       filters.push(scaleFilter)
-      // shortest=1 ends output when main video ends (overlay loops infinitely)
-      filters.push(`[${currentLabel}][vid${i}]overlay=${posCoords}:shortest=1[${outputLabel}]`)
+      // shortest=1 ends when main video ends, eof_action=pass prevents freeze
+      filters.push(`[${currentLabel}][vid${i}]overlay=${posCoords}:shortest=1:eof_action=pass[${outputLabel}]`)
       
       currentLabel = outputLabel
       inputIndex++
     } else if (overlay.imagePath) {
-      inputArgs.push('-i', overlay.imagePath)
+      // -loop 1 makes image repeat infinitely, -framerate matches output
+      inputArgs.push('-loop', '1', '-framerate', '30', '-i', overlay.imagePath)
       
       const scalePercent = overlay.sizePercent || 20
       const opacityValue = (overlay.opacity || 100) / 100
@@ -280,8 +281,8 @@ function buildOverlayFilters(overlays) {
 
       const scaleFilter = `[${inputIndex}:v]scale=${targetWidth}:-1,format=rgba,colorchannelmixer=aa=${opacityValue}[img${i}]`
       filters.push(scaleFilter)
-      // shortest=1 ends output when main video ends (image overlay loops infinitely)
-      filters.push(`[${currentLabel}][img${i}]overlay=${posCoords}:shortest=1[${outputLabel}]`)
+      // shortest=1 ends when main video ends, eof_action=pass prevents freeze
+      filters.push(`[${currentLabel}][img${i}]overlay=${posCoords}:shortest=1:eof_action=pass[${outputLabel}]`)
       
       currentLabel = outputLabel
       inputIndex++
