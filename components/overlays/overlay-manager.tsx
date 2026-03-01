@@ -42,6 +42,7 @@ import type { Overlay, OverlayType, OverlayPosition } from "@/lib/store"
 import { createClient } from "@/lib/supabase/client"
 import { OverlayPreview } from "./overlay-preview"
 import { OverlayPositionEditor } from "./overlay-position-editor"
+import { GraphicsEditor } from "./graphics-editor"
 
 const fetcher = (url: string) => fetch(url).then((r) => { if (!r.ok) throw new Error(); return r.json() })
 
@@ -301,6 +302,49 @@ export function OverlayManager() {
     mutate()
   }
 
+  const handleGraphicsSave = async (imageDataUrl: string, filename: string) => {
+    // Convert data URL to blob
+    const response = await fetch(imageDataUrl)
+    const blob = await response.blob()
+    
+    // Upload to Supabase storage
+    const supabase = createClient()
+    const filePath = `overlays/${Date.now()}-${filename}`
+    
+    const { error: uploadError } = await supabase.storage
+      .from("overlays")
+      .upload(filePath, blob, { contentType: "image/png" })
+    
+    if (uploadError) {
+      console.error("Upload error:", uploadError)
+      return
+    }
+    
+    // Get public URL
+    const { data: { publicUrl } } = supabase.storage
+      .from("overlays")
+      .getPublicUrl(filePath)
+    
+    // Create overlay with the uploaded image
+    await fetch("/api/overlays", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: filename.replace(".png", ""),
+        type: "image",
+        position: "bottom-center",
+        position_x: 50,
+        position_y: 91.5,
+        size_percent: 70,
+        opacity: 100,
+        image_path: publicUrl,
+        enabled: false,
+      }),
+    })
+    
+    mutate()
+  }
+
   if (error) {
     return (
       <Card className="border-border bg-card">
@@ -332,13 +376,15 @@ export function OverlayManager() {
             Add logos, bugs, lower thirds, and text overlays to your streams.
           </p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm" className="gap-1.5" onClick={openCreateDialog}>
-              <Plus className="h-3.5 w-3.5" />
-              New Overlay
-            </Button>
-          </DialogTrigger>
+        <div className="flex gap-2">
+          <GraphicsEditor onSave={handleGraphicsSave} />
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" className="gap-1.5" onClick={openCreateDialog}>
+                <Plus className="h-3.5 w-3.5" />
+                New Overlay
+              </Button>
+            </DialogTrigger>
           <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-4xl">
             <DialogHeader>
               <DialogTitle>{editingId ? "Edit Overlay" : "Create Overlay"}</DialogTitle>
@@ -689,7 +735,8 @@ export function OverlayManager() {
               </Button>
             </div>
           </DialogContent>
-        </Dialog>
+          </Dialog>
+        </div>
       </div>
 
       {/* Live Preview Canvas */}
