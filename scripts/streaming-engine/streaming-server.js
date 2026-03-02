@@ -817,14 +817,18 @@ function startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop,
 
   function getPosition() {
     // Calculate current position: seek time + elapsed time since playback started
+    let result
     if (playbackStartTime) {
       const elapsedSeconds = (Date.now() - playbackStartTime) / 1000
-      return {
+      result = {
         fileIndex: currentIndex,
         seekTime: currentSeekTime + elapsedSeconds
       }
+    } else {
+      result = { fileIndex: currentIndex, seekTime: currentSeekTime }
     }
-    return { fileIndex: currentIndex, seekTime: currentSeekTime }
+    console.log(`[2MStream] getPosition called: fileIndex=${result.fileIndex}, seekTime=${Math.floor(result.seekTime)}s, playbackStartTime=${playbackStartTime ? 'set' : 'null'}`)
+    return result
   }
 
   // Start playing the first file (delay to allow activeStreams.set() to complete first)
@@ -1215,12 +1219,16 @@ app.post('/restart', async (req, res) => {
 
   // Save current playback position before stopping
   let resumePosition = null
+  console.log(`[2MStream] Checking for playlistControllers: hasControllers=${!!existing.playlistControllers}, length=${existing.playlistControllers?.length || 0}`)
   if (existing.playlistControllers && existing.playlistControllers.length > 0) {
     const controller = existing.playlistControllers[0]
+    console.log(`[2MStream] Controller found, hasGetPosition=${typeof controller.getPosition}`)
     if (controller.getPosition) {
       resumePosition = controller.getPosition()
       console.log(`[2MStream] Saving position: file ${resumePosition.fileIndex + 1}, time ${Math.floor(resumePosition.seekTime)}s`)
     }
+  } else {
+    console.log(`[2MStream] No playlistControllers found, starting from beginning`)
   }
 
   // Build updated config with new overlays
