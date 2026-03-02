@@ -204,31 +204,30 @@ function buildOverlayFilters(overlays) {
       // 3. Crop just the zone area (this clips the text)
       // 4. Overlay the cropped area back onto the base stream
       
-      // Seamless loop: Draw the text twice with offset so when one exits, another enters
-      // This prevents the blank gap during loop reset
-      // Formula: text position cycles based on zone width only (not zone + text width)
-      // We draw text at x and at x + (zoneWidth), creating continuous flow
-      const scrollFormula = `'w-mod(t*${speed}\\,w)'`
+      // Seamless loop: Draw the text TWICE with offset so when one exits, another enters
+      // The key is both text instances move at same speed, separated by exactly tw (text width)
+      // First text: starts at right edge (w), moves left
+      // Second text: follows behind first text by exactly tw pixels
+      // When first text exits left, second text is exactly where first started
+      // Formula uses tw (text width) to create proper spacing
+      const scrollFormula1 = `'w-mod(t*${speed}\\,w+tw)'`
+      const scrollFormula2 = `'w+tw-mod(t*${speed}\\,w+tw)'`
       
       const splitBase = `splitbase${i}`
       const splitText = `splittext${i}`
-      const textDrawn = `textdrawn${i}`
       const textCropped = `textcrop${i}`
       
       // Split the current video into base and text layer
       filters.push(`[${currentLabel}]split=2[${splitBase}][${splitText}]`)
       
-      // Draw background and text on the text layer, then crop to zone
-      // Draw text twice at different positions for seamless looping (one at x, one at x+zoneWidth)
-      const scrollFormula2 = `'w-mod(t*${speed}\\,w)+w'`
-      
+      // Draw background and two text instances for seamless looping
       if (bgColor === 'transparent' || bgColor === 'none') {
         filters.push(
-          `[${splitText}]crop=${scrollZoneWidth}:${barHeight}:${scrollStartX}:${scrollY}-8,drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula},drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula2}[${textCropped}]`
+          `[${splitText}]crop=${scrollZoneWidth}:${barHeight}:${scrollStartX}:${scrollY}-8,drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula1},drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula2}[${textCropped}]`
         )
       } else {
         filters.push(
-          `[${splitText}]crop=${scrollZoneWidth}:${barHeight}:${scrollStartX}:${scrollY}-8,drawbox=x=0:y=0:w=iw:h=ih:color=${bgColor}@0.7:t=fill,drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula},drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula2}[${textCropped}]`
+          `[${splitText}]crop=${scrollZoneWidth}:${barHeight}:${scrollStartX}:${scrollY}-8,drawbox=x=0:y=0:w=iw:h=ih:color=${bgColor}@0.7:t=fill,drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula1},drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula2}[${textCropped}]`
         )
       }
       
