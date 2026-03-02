@@ -204,8 +204,11 @@ function buildOverlayFilters(overlays) {
       // 3. Crop just the zone area (this clips the text)
       // 4. Overlay the cropped area back onto the base stream
       
-      // Text scrolls from zoneWidth to -textWidth within the cropped area
-      const scrollFormula = `'w-mod(t*${speed}\\,w+tw)'`
+      // Seamless loop: Draw the text twice with offset so when one exits, another enters
+      // This prevents the blank gap during loop reset
+      // Formula: text position cycles based on zone width only (not zone + text width)
+      // We draw text at x and at x + (zoneWidth), creating continuous flow
+      const scrollFormula = `'w-mod(t*${speed}\\,w)'`
       
       const splitBase = `splitbase${i}`
       const splitText = `splittext${i}`
@@ -216,13 +219,16 @@ function buildOverlayFilters(overlays) {
       filters.push(`[${currentLabel}]split=2[${splitBase}][${splitText}]`)
       
       // Draw background and text on the text layer, then crop to zone
+      // Draw text twice at different positions for seamless looping (one at x, one at x+zoneWidth)
+      const scrollFormula2 = `'w-mod(t*${speed}\\,w)+w'`
+      
       if (bgColor === 'transparent' || bgColor === 'none') {
         filters.push(
-          `[${splitText}]crop=${scrollZoneWidth}:${barHeight}:${scrollStartX}:${scrollY}-8,drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula}[${textCropped}]`
+          `[${splitText}]crop=${scrollZoneWidth}:${barHeight}:${scrollStartX}:${scrollY}-8,drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula},drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula2}[${textCropped}]`
         )
       } else {
         filters.push(
-          `[${splitText}]crop=${scrollZoneWidth}:${barHeight}:${scrollStartX}:${scrollY}-8,drawbox=x=0:y=0:w=iw:h=ih:color=${bgColor}@0.7:t=fill,drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula}[${textCropped}]`
+          `[${splitText}]crop=${scrollZoneWidth}:${barHeight}:${scrollStartX}:${scrollY}-8,drawbox=x=0:y=0:w=iw:h=ih:color=${bgColor}@0.7:t=fill,drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula},drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula2}[${textCropped}]`
         )
       }
       
@@ -666,12 +672,19 @@ function buildFFmpegArgs(inputArgs, overlayResult, rtmpTarget) {
  * Plays one file at a time. When a file finishes (exit code 0), starts the next.
  * Each file gets a clean FFmpeg process -- no concat demuxer, no H264 boundary errors.
  */
-function startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop, tempFiles) {
+function startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop, tempFiles, resumePosition = null) {
   const rtmpTarget = `${dest.rtmpUrl}/${dest.streamKey}`
-  let currentIndex = 0
+  // Resume from saved position if available
+  let currentIndex = resumePosition?.fileIndex || 0
+  let currentSeekTime = resumePosition?.seekTime || 0
   let stopped = false
   let currentProc = null
   let restartCount = 0
+  let playbackStartTime = null  // Track when current file started playing
+  
+  if (resumePosition) {
+    console.log(`[2MStream] Resuming from file ${currentIndex + 1}, position ${currentSeekTime}s`)
+  }
 
   function playCurrentFile() {
     if (stopped) return
@@ -698,10 +711,19 @@ function startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop,
       return
     }
 
-    const inputArgs = ['-re', '-i', filePath]
+    // Build input args with seek position if resuming
+    const inputArgs = []
+    if (currentSeekTime > 0) {
+      inputArgs.push('-ss', String(Math.floor(currentSeekTime)))
+      console.log(`[2MStream] Seeking to ${Math.floor(currentSeekTime)}s`)
+    }
+    inputArgs.push('-re', '-i', filePath)
     const ffmpegArgs = buildFFmpegArgs(inputArgs, overlayResult, rtmpTarget)
+    
+    // Track playback start time for position calculation
+    playbackStartTime = Date.now()
 
-    console.log(`[2MStream] Playing file ${currentIndex + 1}/${videoSources.length}: ${source.title || source.path || source.url}`)
+    console.log(`[2MStream] Playing file ${currentIndex + 1}/${videoSources.length}: ${source.title || source.path || source.url}${currentSeekTime > 0 ? ` (from ${Math.floor(currentSeekTime)}s)` : ''}`)
 
     const proc = spawn('ffmpeg', ffmpegArgs, { stdio: ['pipe', 'pipe', 'pipe'] })
     currentProc = proc
@@ -770,6 +792,8 @@ function startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop,
 
   function advanceToNext() {
     currentIndex++
+    currentSeekTime = 0  // Reset seek time for new file
+    playbackStartTime = null
     if (currentIndex >= videoSources.length) {
       if (loop) {
         currentIndex = 0
@@ -792,10 +816,22 @@ function startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop,
     }
   }
 
+  function getPosition() {
+    // Calculate current position: seek time + elapsed time since playback started
+    if (playbackStartTime) {
+      const elapsedSeconds = (Date.now() - playbackStartTime) / 1000
+      return {
+        fileIndex: currentIndex,
+        seekTime: currentSeekTime + elapsedSeconds
+      }
+    }
+    return { fileIndex: currentIndex, seekTime: currentSeekTime }
+  }
+
   // Start playing the first file (delay to allow activeStreams.set() to complete first)
   setTimeout(playCurrentFile, 100)
 
-  return { stop, getCurrentIndex: () => currentIndex }
+  return { stop, getCurrentIndex: () => currentIndex, getPosition }
 }
 
 
@@ -1178,6 +1214,16 @@ app.post('/restart', async (req, res) => {
 
   console.log(`[2MStream] Restarting stream ${streamId} with ${overlays?.length || 0} overlay(s)`)
 
+  // Save current playback position before stopping
+  let resumePosition = null
+  if (existing.playlistControllers && existing.playlistControllers.length > 0) {
+    const controller = existing.playlistControllers[0]
+    if (controller.getPosition) {
+      resumePosition = controller.getPosition()
+      console.log(`[2MStream] Saving position: file ${resumePosition.fileIndex + 1}, time ${Math.floor(resumePosition.seekTime)}s`)
+    }
+  }
+
   // Build updated config with new overlays
   const updatedConfig = { ...existing.config, overlays: overlays || [] }
 
@@ -1227,7 +1273,7 @@ app.post('/restart', async (req, res) => {
       const procEntry = { proc: dummyProc, destId: dest.id, killed: false, restartCount: 0 }
       processes.push(procEntry)
 
-      const controller = startPlaylistForDest(streamId, dest, sources, overlayResult, updatedConfig.loop, tempFiles)
+      const controller = startPlaylistForDest(streamId, dest, sources, overlayResult, updatedConfig.loop, tempFiles, resumePosition)
       playlistControllers.push(controller)
 
     } else if (updatedConfig.isRtmpPull && updatedConfig.rtmpPullUrl) {
