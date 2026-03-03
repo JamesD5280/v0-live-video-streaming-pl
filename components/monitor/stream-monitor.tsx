@@ -94,13 +94,42 @@ export function StreamMonitor() {
     return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
   }
 
+  const [stopping, setStopping] = useState(false)
+  const [forceStoppingId, setForceStoppingId] = useState<string | null>(null)
+
   const handleStop = async (streamId: string) => {
+    setStopping(true)
     await fetch("/api/streams/engine", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "stop", streamId }),
     })
     mutate()
+    setStopping(false)
+  }
+
+  // Force stop: updates database status without calling the engine (for orphaned streams)
+  const handleForceStop = async (streamId: string) => {
+    if (!confirm("Force stop will mark this stream as stopped in the database. Use this only if the normal stop isn't working. Continue?")) {
+      return
+    }
+    setForceStoppingId(streamId)
+    try {
+      await fetch(`/api/streams/${streamId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "ended", ended_at: new Date().toISOString() }),
+      })
+      // Also try to stop the engine (it might work if there's a connection issue)
+      await fetch("/api/streams/engine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "stop", streamId }),
+      }).catch(() => {}) // Ignore errors
+    } finally {
+      setForceStoppingId(null)
+      mutate()
+    }
   }
 
   if (streamsError) {
@@ -158,10 +187,27 @@ export function StreamMonitor() {
                 <p className="text-sm text-muted-foreground">{liveStream.video?.title || "Unknown video"}</p>
               </div>
             </div>
-            <Button variant="outline" className="gap-2 border-destructive text-destructive hover:bg-destructive/10" onClick={() => handleStop(liveStream.id)}>
-              <StopCircle className="h-4 w-4" />
-              Stop Stream
-            </Button>
+            <div className="flex gap-2">
+              <Button 
+                variant="outline" 
+                className="gap-2 border-destructive text-destructive hover:bg-destructive/10" 
+                onClick={() => handleStop(liveStream.id)}
+                disabled={stopping}
+              >
+                {stopping ? <Loader2 className="h-4 w-4 animate-spin" /> : <StopCircle className="h-4 w-4" />}
+                Stop Stream
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="icon"
+                className="text-muted-foreground hover:text-destructive"
+                onClick={() => handleForceStop(liveStream.id)}
+                disabled={forceStoppingId === liveStream.id}
+                title="Force stop (use if normal stop fails)"
+              >
+                {forceStoppingId === liveStream.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>

@@ -627,20 +627,15 @@ function buildFFmpegArgs(inputArgs, overlayResult, rtmpTarget) {
   // Normalize video to 1080p
   const videoNorm = 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1'
 
-  // Audio normalization filter - ensures consistent audio at file boundaries
-  const audioNorm = 'aresample=async=1000:first_pts=0'
-
   if (overlayResult) {
     ffmpegArgs.push(...overlayResult.inputArgs)
     const overlayChain = overlayResult.filterComplex.replace('[0:v]', '[norm]')
-    // Include audio normalization in filter complex
-    const combinedFilter = `[0:v]${videoNorm}[norm];${overlayChain};[0:a]${audioNorm}[aout]`
+    const combinedFilter = `[0:v]${videoNorm}[norm];${overlayChain}`
     ffmpegArgs.push('-filter_complex', combinedFilter)
     ffmpegArgs.push('-map', `[${overlayResult.outputLabel}]`)
-    ffmpegArgs.push('-map', '[aout]')
+    ffmpegArgs.push('-map', '0:a?')  // Optional audio - use if exists
   } else {
     ffmpegArgs.push('-vf', videoNorm)
-    ffmpegArgs.push('-af', audioNorm)
   }
 
   ffmpegArgs.push(
