@@ -108,20 +108,41 @@ export function StreamScheduler() {
       overlay_ids: newEvent.overlayIds,
     }
 
-    if (editingId) {
-      // Update existing event
-      await fetch("/api/schedule", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: editingId, ...body }),
-      })
-    } else {
-      // Create new event
-      await fetch("/api/schedule", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      })
+    try {
+      if (editingId) {
+        // Update existing event
+        const res = await fetch("/api/schedule", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: editingId, ...body }),
+        })
+        if (!res.ok) {
+          const err = await res.json()
+          console.error("Schedule update failed:", err)
+          alert(`Failed to update schedule: ${err.error || 'Unknown error'}`)
+          setSaving(false)
+          return
+        }
+      } else {
+        // Create new event
+        const res = await fetch("/api/schedule", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        })
+        if (!res.ok) {
+          const err = await res.json()
+          console.error("Schedule create failed:", err)
+          alert(`Failed to create schedule: ${err.error || 'Unknown error'}`)
+          setSaving(false)
+          return
+        }
+      }
+    } catch (e) {
+      console.error("Schedule save error:", e)
+      alert("Failed to save schedule. Please try again.")
+      setSaving(false)
+      return
     }
     
     resetForm()
