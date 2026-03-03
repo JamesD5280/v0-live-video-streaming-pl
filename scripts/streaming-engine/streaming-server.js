@@ -627,15 +627,20 @@ function buildFFmpegArgs(inputArgs, overlayResult, rtmpTarget) {
   // Normalize video to 1080p
   const videoNorm = 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1'
 
+  // Audio normalization filter - ensures consistent audio at file boundaries
+  const audioNorm = 'aresample=async=1000:first_pts=0'
+
   if (overlayResult) {
     ffmpegArgs.push(...overlayResult.inputArgs)
     const overlayChain = overlayResult.filterComplex.replace('[0:v]', '[norm]')
-    const combinedFilter = `[0:v]${videoNorm}[norm];${overlayChain}`
+    // Include audio normalization in filter complex
+    const combinedFilter = `[0:v]${videoNorm}[norm];${overlayChain};[0:a]${audioNorm}[aout]`
     ffmpegArgs.push('-filter_complex', combinedFilter)
     ffmpegArgs.push('-map', `[${overlayResult.outputLabel}]`)
-    ffmpegArgs.push('-map', '0:a?')
+    ffmpegArgs.push('-map', '[aout]')
   } else {
     ffmpegArgs.push('-vf', videoNorm)
+    ffmpegArgs.push('-af', audioNorm)
   }
 
   ffmpegArgs.push(
@@ -655,8 +660,6 @@ function buildFFmpegArgs(inputArgs, overlayResult, rtmpTarget) {
     '-b:a', '128k',
     '-ar', '44100',
     '-ac', '2',
-    '-async', '1',           // Resync audio to timestamps - fixes drift between files
-    '-af', 'aresample=async=1:first_pts=0',  // Reset audio PTS at file start
     '-f', 'flv',
     '-flvflags', 'no_duration_filesize',
     rtmpTarget,
@@ -817,18 +820,14 @@ function startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop,
 
   function getPosition() {
     // Calculate current position: seek time + elapsed time since playback started
-    let result
     if (playbackStartTime) {
       const elapsedSeconds = (Date.now() - playbackStartTime) / 1000
-      result = {
+      return {
         fileIndex: currentIndex,
         seekTime: currentSeekTime + elapsedSeconds
       }
-    } else {
-      result = { fileIndex: currentIndex, seekTime: currentSeekTime }
     }
-    console.log(`[2MStream] getPosition called: fileIndex=${result.fileIndex}, seekTime=${Math.floor(result.seekTime)}s, playbackStartTime=${playbackStartTime ? 'set' : 'null'}`)
-    return result
+    return { fileIndex: currentIndex, seekTime: currentSeekTime }
   }
 
   // Start playing the first file (delay to allow activeStreams.set() to complete first)
@@ -1219,16 +1218,12 @@ app.post('/restart', async (req, res) => {
 
   // Save current playback position before stopping
   let resumePosition = null
-  console.log(`[2MStream] Checking for playlistControllers: hasControllers=${!!existing.playlistControllers}, length=${existing.playlistControllers?.length || 0}`)
   if (existing.playlistControllers && existing.playlistControllers.length > 0) {
     const controller = existing.playlistControllers[0]
-    console.log(`[2MStream] Controller found, hasGetPosition=${typeof controller.getPosition}`)
     if (controller.getPosition) {
       resumePosition = controller.getPosition()
       console.log(`[2MStream] Saving position: file ${resumePosition.fileIndex + 1}, time ${Math.floor(resumePosition.seekTime)}s`)
     }
-  } else {
-    console.log(`[2MStream] No playlistControllers found, starting from beginning`)
   }
 
   // Build updated config with new overlays
