@@ -96,7 +96,7 @@ export async function PUT(req: NextRequest) {
         repeat_mode: updates.repeat_mode || "none",
         source_type: updates.source_type || "video",
         rtmp_pull_url: updates.source_type === "rtmp_pull" ? updates.rtmp_pull_url : null,
-        status: "pending", // Reset status when editing
+        status: "scheduled", // Reset status when editing
       })
       .eq("id", id)
 

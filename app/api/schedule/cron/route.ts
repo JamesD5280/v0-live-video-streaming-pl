@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
   const { data: dueEvents, error } = await supabase
     .from("scheduled_events")
     .select("*, video:videos(*), event_destinations(*, destination:destinations(*)), event_overlays(*, overlay:overlays(*))")
-    .in("status", ["pending", "scheduled"])
+    .in("status", ["idle", "scheduled"])
     .lte("scheduled_at", now)
 
   if (error) {
@@ -57,10 +57,10 @@ export async function GET(req: NextRequest) {
 
   for (const event of dueEvents) {
     try {
-      // Mark event as running
+      // Mark event as live (in progress)
       await supabase
         .from("scheduled_events")
-        .update({ status: "running" })
+        .update({ status: "live" })
         .eq("id", event.id)
 
       // Build destinations
@@ -163,7 +163,7 @@ export async function GET(req: NextRequest) {
           title: event.title,
           video_id: isRtmpPull ? null : event.video_id,
           rtmp_pull_url: isRtmpPull ? event.rtmp_pull_url : null,
-          status: "pending",
+          status: "scheduled",
         })
         .select()
         .single()
@@ -249,7 +249,7 @@ export async function GET(req: NextRequest) {
             repeat_mode: event.repeat_mode,
             source_type: event.source_type,
             rtmp_pull_url: event.rtmp_pull_url,
-            status: "pending",
+            status: "scheduled",
           }).select().single().then(async ({ data: newEvent }) => {
             if (newEvent) {
               // Copy destinations to new event
