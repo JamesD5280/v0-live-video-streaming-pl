@@ -56,41 +56,44 @@ export async function uploadToBunny(
       throw new Error("BUNNY_STORAGE_PASSWORD not configured")
     }
 
+    const password = BUNNY_STORAGE_PASSWORD.trim()
     const path = `/${BUNNY_STORAGE_ZONE}/${directory}/${filename}`
     const url = `${BUNNY_STORAGE_BASE}${path}`
-    
-    // Trim the password to remove any whitespace
-    const password = BUNNY_STORAGE_PASSWORD.trim()
 
-    console.log("[v0] Bunny Upload:", {
+    console.log("[v0] Bunny Upload Starting:", {
       url,
       zone: BUNNY_STORAGE_ZONE,
       region: BUNNY_STORAGE_REGION,
       passwordLength: password.length,
+      firstChars: password.substring(0, 8),
+      bufferSize: fileBuffer.length,
     })
 
+    // Use only AccessKey header (simpler, more reliable)
     const response = await fetch(url, {
       method: "PUT",
       headers: {
-        AccessKey: password,
+        "AccessKey": password,
         "Content-Type": "application/octet-stream",
-        "Authorization": `Basic ${Buffer.from(`${BUNNY_STORAGE_ZONE}:${password}`).toString("base64")}`,
       },
       body: fileBuffer,
     })
 
+    console.log("[v0] Bunny Response Status:", response.status, response.statusText)
+
     if (!response.ok) {
       const responseText = await response.text()
-      console.error("[v0] Bunny Error:", {
+      console.error("[v0] Bunny Upload Failed:", {
         status: response.status,
         statusText: response.statusText,
-        body: responseText,
+        response: responseText.substring(0, 200),
       })
-      throw new Error(`Upload failed: ${response.status} ${response.statusText}`)
+      throw new Error(`Upload failed: ${response.status} ${response.statusText} - ${responseText}`)
     }
 
     // Return the CDN URL for accessing the file
     const cdnUrl = `https://${BUNNY_STORAGE_ZONE}.b-cdn.net/${directory}/${filename}`
+    console.log("[v0] Upload successful:", cdnUrl)
     return { success: true, url: cdnUrl }
   } catch (error) {
     console.error("[Bunny] Upload error:", error)
