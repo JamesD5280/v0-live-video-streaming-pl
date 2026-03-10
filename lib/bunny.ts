@@ -76,7 +76,7 @@ export async function uploadToBunny(
     const response = await fetch(url, {
       method: "PUT",
       headers: {
-        "AccessKey": password,
+        "Authorization": `Basic ${Buffer.from(`${BUNNY_STORAGE_ZONE}:${password}`).toString("base64")}`,
         "Content-Type": "application/octet-stream",
       },
       body: fileBuffer,
