@@ -52,42 +52,43 @@ export async function uploadToBunny(
   directory: string = "videos"
 ): Promise<{ success: boolean; url?: string; error?: string }> {
   try {
-    if (!BUNNY_API_KEY) {
-      throw new Error("BUNNY_API_KEY not configured")
+    if (!BUNNY_STORAGE_PASSWORD) {
+      throw new Error("BUNNY_STORAGE_PASSWORD not configured")
     }
 
-    const fullPath = `${directory}/${filename}`
-    const url = `https://api.bunnycdn.com/files/${BUNNY_STORAGE_ZONE}/${fullPath}`
+    const password = BUNNY_STORAGE_PASSWORD.trim()
+    const path = `/${BUNNY_STORAGE_ZONE}/${directory}/${filename}`
+    const url = `${BUNNY_STORAGE_BASE}${path}`
 
-    console.log("[v0] Bunny Upload via API:", {
+    console.log("[v0] Bunny Storage Upload:", {
       url,
       zone: BUNNY_STORAGE_ZONE,
+      region: BUNNY_STORAGE_REGION,
+      passwordSet: !!password,
       bufferSize: fileBuffer.length,
     })
 
-    // Use API Key header (more reliable than storage zone password)
     const response = await fetch(url, {
       method: "PUT",
       headers: {
-        "AccessKey": BUNNY_API_KEY,
+        "AccessKey": password,
         "Content-Type": "application/octet-stream",
       },
       body: fileBuffer,
     })
 
-    console.log("[v0] Bunny API Response:", response.status, response.statusText)
+    console.log("[v0] Bunny Response:", response.status, response.statusText)
 
     if (!response.ok) {
       const responseText = await response.text()
-      console.error("[v0] Bunny API Error:", {
+      console.error("[v0] Bunny Error:", {
         status: response.status,
         statusText: response.statusText,
-        response: responseText.substring(0, 300),
+        body: responseText.substring(0, 200),
       })
       throw new Error(`Upload failed: ${response.status} ${response.statusText}`)
     }
 
-    // Return the CDN URL for accessing the file
     const cdnUrl = `https://${BUNNY_STORAGE_ZONE}.b-cdn.net/${directory}/${filename}`
     console.log("[v0] Upload successful:", cdnUrl)
     return { success: true, url: cdnUrl }
