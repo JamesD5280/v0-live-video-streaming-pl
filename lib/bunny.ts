@@ -60,12 +60,17 @@ export async function uploadToBunny(
     const path = `/${BUNNY_STORAGE_ZONE}/${directory}/${filename}`
     const url = `${BUNNY_STORAGE_BASE}${path}`
 
-    console.log("[v0] Bunny Storage Upload:", {
+    console.log("[v0] Bunny Storage Upload - Request Details:", {
       url,
+      method: "PUT",
       zone: BUNNY_STORAGE_ZONE,
       region: BUNNY_STORAGE_REGION,
-      passwordSet: !!password,
       bufferSize: fileBuffer.length,
+      bufferType: fileBuffer.constructor.name,
+      headers: {
+        AccessKey: `${password.substring(0, 8)}...${password.substring(-8)}`,
+        "Content-Type": "application/octet-stream",
+      },
     })
 
     const response = await fetch(url, {
@@ -77,20 +82,26 @@ export async function uploadToBunny(
       body: fileBuffer,
     })
 
-    console.log("[v0] Bunny Response:", response.status, response.statusText)
+    const responseText = await response.text()
+    console.log("[v0] Bunny Storage Response:", {
+      status: response.status,
+      statusText: response.statusText,
+      contentType: response.headers.get("content-type"),
+      body: responseText,
+    })
 
     if (!response.ok) {
-      const responseText = await response.text()
-      console.error("[v0] Bunny Error:", {
+      console.error("[v0] Bunny Upload Failed - Details:", {
         status: response.status,
         statusText: response.statusText,
-        body: responseText.substring(0, 200),
+        url,
+        responseBody: responseText,
       })
       throw new Error(`Upload failed: ${response.status} ${response.statusText}`)
     }
 
     const cdnUrl = `https://${BUNNY_STORAGE_ZONE}.b-cdn.net/${directory}/${filename}`
-    console.log("[v0] Upload successful:", cdnUrl)
+    console.log("[v0] Upload successful:", { cdnUrl, responseBody: responseText })
     return { success: true, url: cdnUrl }
   } catch (error) {
     console.error("[Bunny] Upload error:", error)
