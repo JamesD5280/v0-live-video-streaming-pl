@@ -72,7 +72,7 @@ export function VideoUpload({ onUploadComplete }: { onUploadComplete?: () => voi
         formData.append("chunkIndex", String(i))
         formData.append("totalChunks", String(totalChunks))
 
-        const chunkRes = await fetch("/api/videos/upload/chunk", {
+        const chunkRes = await fetch("/api/videos/upload-bunny", {
           method: "POST",
           body: formData,
           signal: abortController.signal,
@@ -93,26 +93,27 @@ export function VideoUpload({ onUploadComplete }: { onUploadComplete?: () => voi
         )
       }
 
-      // Step 3: Save metadata to database
+      // Step 3: Finalize upload and save metadata to database
       setUploads((prev) =>
         prev.map((f) => (f.id === id ? { ...f, progress: 100, status: "saving" } : f))
       )
 
       const format = file.name.split(".").pop()?.toUpperCase() || "MP4"
-      const metaRes = await fetch("/api/videos/upload", {
-        method: "POST",
+      const finalRes = await fetch("/api/videos/upload-bunny", {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title: file.name.replace(/\.[^/.]+$/, ""),
+          uploadId: id,
           filename: file.name,
+          title: file.name.replace(/\.[^/.]+$/, ""),
           file_size: file.size,
           format,
         }),
       })
 
-      if (!metaRes.ok) {
-        const err = await metaRes.json()
-        throw new Error(err.error || "Failed to save video metadata")
+      if (!finalRes.ok) {
+        const err = await finalRes.json()
+        throw new Error(err.error || "Failed to finalize upload")
       }
 
       setUploads((prev) =>
@@ -195,7 +196,7 @@ export function VideoUpload({ onUploadComplete }: { onUploadComplete?: () => voi
               Drop your video files here, or click to browse
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Supports MP4, MKV, MOV, AVI, FLV up to 10 GB -- uploads directly to your streaming server
+              Supports MP4, MKV, MOV, AVI, FLV up to 10 GB -- uploads directly to Bunny CDN storage
             </p>
           </div>
         </div>
