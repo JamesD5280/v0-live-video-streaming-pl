@@ -52,43 +52,39 @@ export async function uploadToBunny(
   directory: string = "videos"
 ): Promise<{ success: boolean; url?: string; error?: string }> {
   try {
-    if (!BUNNY_STORAGE_PASSWORD) {
-      throw new Error("BUNNY_STORAGE_PASSWORD not configured")
+    if (!BUNNY_API_KEY) {
+      throw new Error("BUNNY_API_KEY not configured")
     }
 
-    const password = BUNNY_STORAGE_PASSWORD.trim()
-    const path = `/${BUNNY_STORAGE_ZONE}/${directory}/${filename}`
-    const url = `${BUNNY_STORAGE_BASE}${path}`
+    const fullPath = `${directory}/${filename}`
+    const url = `https://api.bunnycdn.com/files/${BUNNY_STORAGE_ZONE}/${fullPath}`
 
-    console.log("[v0] Bunny Upload Starting:", {
+    console.log("[v0] Bunny Upload via API:", {
       url,
       zone: BUNNY_STORAGE_ZONE,
-      region: BUNNY_STORAGE_REGION,
-      passwordLength: password.length,
-      firstChars: password.substring(0, 8),
       bufferSize: fileBuffer.length,
     })
 
-    // Use only AccessKey header (simpler, more reliable)
+    // Use API Key header (more reliable than storage zone password)
     const response = await fetch(url, {
       method: "PUT",
       headers: {
-        "AccessKey": password,
+        "AccessKey": BUNNY_API_KEY,
         "Content-Type": "application/octet-stream",
       },
       body: fileBuffer,
     })
 
-    console.log("[v0] Bunny Response Status:", response.status, response.statusText)
+    console.log("[v0] Bunny API Response:", response.status, response.statusText)
 
     if (!response.ok) {
       const responseText = await response.text()
-      console.error("[v0] Bunny Upload Failed:", {
+      console.error("[v0] Bunny API Error:", {
         status: response.status,
         statusText: response.statusText,
-        response: responseText.substring(0, 200),
+        response: responseText.substring(0, 300),
       })
-      throw new Error(`Upload failed: ${response.status} ${response.statusText} - ${responseText}`)
+      throw new Error(`Upload failed: ${response.status} ${response.statusText}`)
     }
 
     // Return the CDN URL for accessing the file
