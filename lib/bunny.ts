@@ -74,6 +74,7 @@ export async function uploadToBunny(
       headers: {
         AccessKey: password,
         "Content-Type": "application/octet-stream",
+        "Authorization": `Basic ${Buffer.from(`${BUNNY_STORAGE_ZONE}:${password}`).toString("base64")}`,
       },
       body: fileBuffer,
     })
