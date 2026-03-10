@@ -59,6 +59,14 @@ export async function uploadToBunny(
     const path = `/${BUNNY_STORAGE_ZONE}/${directory}/${filename}`
     const url = `${BUNNY_STORAGE_BASE}${path}`
 
+    console.log("[v0] Bunny Upload Debug:", {
+      zone: BUNNY_STORAGE_ZONE,
+      region: BUNNY_STORAGE_REGION,
+      url,
+      passwordLength: BUNNY_STORAGE_PASSWORD?.length,
+      passwordFirst10: BUNNY_STORAGE_PASSWORD?.substring(0, 10),
+    })
+
     const response = await fetch(url, {
       method: "PUT",
       headers: {
@@ -68,7 +76,14 @@ export async function uploadToBunny(
       body: fileBuffer,
     })
 
+    console.log("[v0] Bunny Response:", {
+      status: response.status,
+      statusText: response.statusText,
+    })
+
     if (!response.ok) {
+      const responseText = await response.text()
+      console.log("[v0] Bunny Error Response:", responseText)
       throw new Error(`Upload failed: ${response.status} ${response.statusText}`)
     }
 
