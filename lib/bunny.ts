@@ -6,7 +6,29 @@
 const BUNNY_API_KEY = process.env.BUNNY_API_KEY
 const BUNNY_STORAGE_ZONE = process.env.BUNNY_STORAGE_ZONE || "2mstreamsn"
 const BUNNY_STORAGE_PASSWORD = process.env.BUNNY_STORAGE_PASSWORD
-const BUNNY_STORAGE_REGION = process.env.BUNNY_STORAGE_REGION || "ny"
+// Map region names to Bunny storage region codes
+const regionMap: Record<string, string> = {
+  "new york": "ny",
+  "newyork": "ny",
+  "ny": "ny",
+  "los angeles": "la",
+  "losangeles": "la",
+  "la": "la",
+  "singapore": "sg",
+  "sg": "sg",
+  "sydney": "syd",
+  "syd": "syd",
+  "johannesburg": "jh",
+  "jh": "jh",
+  "frankfurt": "de",
+  "de": "de",
+  "london": "uk",
+  "uk": "uk",
+  "stockholm": "se",
+  "se": "se",
+}
+const rawRegion = (process.env.BUNNY_STORAGE_REGION || "ny").toLowerCase()
+const BUNNY_STORAGE_REGION = regionMap[rawRegion] || "ny"
 
 const BUNNY_API_BASE = "https://api.bunnycdn.com"
 const BUNNY_STORAGE_BASE = `https://${BUNNY_STORAGE_REGION}.storage.bunnycdn.com`
