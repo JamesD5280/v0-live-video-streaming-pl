@@ -68,6 +68,17 @@ export async function POST(req: NextRequest) {
       let loop = true
       const isRtmpPull = !!stream.rtmp_pull_url
 
+      // Helper to get the correct video URL (Bunny CDN or Supabase or local)
+      const getVideoUrl = (video: { storage_path?: string; filename?: string }) => {
+        if (!video.storage_path) return undefined
+        // If storage_path is already a full URL (Bunny CDN), use it directly
+        if (video.storage_path.startsWith("http://") || video.storage_path.startsWith("https://")) {
+          return video.storage_path
+        }
+        // Otherwise, it's a Supabase storage path
+        return `${supabaseStorageBase}/videos/${video.storage_path}`
+      }
+
       if (isRtmpPull) {
         // RTMP Pull mode: no video files needed, stream from RTMP URL
         videoSources = [{
@@ -83,9 +94,7 @@ export async function POST(req: NextRequest) {
         videoSources = items
           .filter((item: { video: unknown }) => item.video)
           .map((item: { video: { storage_path?: string; filename?: string; title?: string } }) => ({
-            url: item.video.storage_path
-              ? `${supabaseStorageBase}/videos/${item.video.storage_path}`
-              : undefined,
+            url: getVideoUrl(item.video),
             path: item.video.filename,
             title: item.video.title,
           }))
@@ -94,9 +103,7 @@ export async function POST(req: NextRequest) {
       } else if (stream.video) {
         // Single video mode
         videoSources = [{
-          url: stream.video.storage_path
-            ? `${supabaseStorageBase}/videos/${stream.video.storage_path}`
-            : undefined,
+          url: getVideoUrl(stream.video),
           path: stream.video.filename,
           title: stream.video.title,
         }]
