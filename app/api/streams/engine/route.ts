@@ -71,8 +71,17 @@ export async function POST(req: NextRequest) {
       // Helper to get the correct video URL (Bunny CDN or Supabase or local)
       const getVideoUrl = (video: { storage_path?: string; filename?: string }) => {
         if (!video.storage_path) return undefined
-        // If storage_path is already a full URL (Bunny CDN), use it directly
+        // If storage_path is already a full URL (Bunny CDN), encode it properly
         if (video.storage_path.startsWith("http://") || video.storage_path.startsWith("https://")) {
+          // For Bunny CDN URLs, extract the path and re-encode it
+          if (video.storage_path.includes("b-cdn.net")) {
+            const url = new URL(video.storage_path)
+            const pathSegments = url.pathname.split('/').map(segment => 
+              segment ? encodeURIComponent(decodeURIComponent(segment)) : segment
+            )
+            url.pathname = pathSegments.join('/')
+            return url.toString()
+          }
           return video.storage_path
         }
         // Otherwise, it's a Supabase storage path

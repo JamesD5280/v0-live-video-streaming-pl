@@ -80,8 +80,9 @@ export async function uploadToBunny(
       throw new Error(`Upload failed: ${response.status} ${response.statusText}`)
     }
 
-    // Return the Pull Zone URL for public CDN access
-    const cdnUrl = `https://${BUNNY_STORAGE_ZONE}.b-cdn.net/${directory}/${filename}`
+    // Return the Pull Zone URL for public CDN access (URL-encode the filename)
+    const encodedFilename = encodeURIComponent(filename)
+    const cdnUrl = `https://${BUNNY_STORAGE_ZONE}.b-cdn.net/${directory}/${encodedFilename}`
     return { success: true, url: cdnUrl }
   } catch (error) {
     console.error("[Bunny] Upload error:", error)
