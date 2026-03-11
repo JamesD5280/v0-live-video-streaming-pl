@@ -6,6 +6,16 @@
 const BUNNY_API_KEY = process.env.BUNNY_API_KEY
 const BUNNY_STORAGE_ZONE = process.env.BUNNY_STORAGE_ZONE || "2mstreamsn"
 const BUNNY_STORAGE_PASSWORD = process.env.BUNNY_STORAGE_PASSWORD
+
+// Debug: Log if password is loaded
+if (typeof window === "undefined") {
+  console.log("[v0] Bunny Config Loaded:", {
+    zone: BUNNY_STORAGE_ZONE,
+    passwordLoaded: !!BUNNY_STORAGE_PASSWORD,
+    passwordLength: BUNNY_STORAGE_PASSWORD?.length,
+    apiKeyLoaded: !!BUNNY_API_KEY,
+  })
+}
 // Map region names to Bunny storage region codes
 const regionMap: Record<string, string> = {
   "new york": "ny",
