@@ -35,6 +35,16 @@ const BUNNY_STORAGE_REGION = regionMap[rawRegion] || "ny"
 const BUNNY_API_BASE = "https://api.bunnycdn.com"
 const BUNNY_STORAGE_BASE = `https://${BUNNY_STORAGE_REGION}.storage.bunnycdn.com`
 
+// Bunny API returns these field names
+interface BunnyApiFile {
+  ObjectName: string
+  Path: string
+  Length: number
+  LastChanged: string
+  ContentType?: string
+  IsDirectory: boolean
+}
+
 export interface BunnyFile {
   name: string
   path: string
@@ -42,6 +52,18 @@ export interface BunnyFile {
   dateModified: string
   contentType?: string
   isDirectory: boolean
+}
+
+// Transform Bunny API response to our interface
+function transformBunnyFile(apiFile: BunnyApiFile): BunnyFile {
+  return {
+    name: apiFile.ObjectName,
+    path: apiFile.Path,
+    size: apiFile.Length,
+    dateModified: apiFile.LastChanged,
+    contentType: apiFile.ContentType,
+    isDirectory: apiFile.IsDirectory,
+  }
 }
 
 /**
@@ -117,7 +139,8 @@ export async function listBunnyFiles(directory: string = "videos"): Promise<Bunn
       throw new Error(`List failed: ${response.status}`)
     }
 
-    const files = (await response.json()) as BunnyFile[]
+    const apiFiles = (await response.json()) as BunnyApiFile[]
+    const files = apiFiles.map(transformBunnyFile)
     return files.filter((f) => !f.isDirectory)
   } catch (error) {
     console.error("[Bunny] List error:", error)
