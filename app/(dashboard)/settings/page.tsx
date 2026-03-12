@@ -18,7 +18,7 @@ import {
 import { Separator } from "@/components/ui/separator"
 import { fetcher } from "@/lib/fetcher"
 import type { UserSettings } from "@/lib/store"
-import { Loader2, CheckCircle2, Server, Wifi, WifiOff, RefreshCw } from "lucide-react"
+import { Loader2, CheckCircle2, Server, Wifi, WifiOff, RefreshCw, Trash2, HardDrive } from "lucide-react"
 import { TeamManager } from "@/components/team/team-manager"
 
 export default function SettingsPage() {
@@ -38,10 +38,45 @@ export default function SettingsPage() {
   const [localSettings, setLocalSettings] = useState<Partial<UserSettings>>({})
   const [diagnosing, setDiagnosing] = useState(false)
   const [diagResult, setDiagResult] = useState<string | null>(null)
+  const [cleaningUp, setCleaningUp] = useState(false)
+  const [cleanupResult, setCleanupResult] = useState<{ deleted?: number; total?: number; error?: string } | null>(null)
+  const [tempFileCount, setTempFileCount] = useState<number | null>(null)
 
   useEffect(() => {
     if (settings) setLocalSettings(settings)
   }, [settings])
+
+  useEffect(() => {
+    checkTempFiles()
+  }, [])
+
+  const checkTempFiles = async () => {
+    try {
+      const res = await fetch("/api/admin/cleanup-temp")
+      const data = await res.json()
+      setTempFileCount(data.count || 0)
+    } catch {
+      setTempFileCount(null)
+    }
+  }
+
+  const cleanupTempFiles = async () => {
+    setCleaningUp(true)
+    setCleanupResult(null)
+    try {
+      const res = await fetch("/api/admin/cleanup-temp", { method: "DELETE" })
+      const data = await res.json()
+      if (data.success) {
+        setCleanupResult({ deleted: data.deleted, total: data.total })
+        setTempFileCount(0)
+      } else {
+        setCleanupResult({ error: data.error || "Cleanup failed" })
+      }
+    } catch (err) {
+      setCleanupResult({ error: err instanceof Error ? err.message : "Cleanup failed" })
+    }
+    setCleaningUp(false)
+  }
 
   const runDiagnostics = async () => {
     setDiagnosing(true)
@@ -254,6 +289,59 @@ pm2 restart streaming-server || node streaming-server.js`}
                 <pre className="max-h-64 overflow-auto rounded-md bg-secondary p-3 text-xs text-foreground font-mono leading-relaxed whitespace-pre-wrap">
                   {diagResult}
                 </pre>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border bg-card">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base font-semibold text-foreground">
+              <HardDrive className="h-4 w-4" />
+              Bunny CDN Storage
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm font-medium text-foreground">Cleanup Temporary Uploads</p>
+                <p className="text-xs text-muted-foreground">
+                  Delete incomplete upload chunks from Bunny storage. This won&apos;t affect completed videos.
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                {tempFileCount !== null && tempFileCount > 0 && (
+                  <span className="text-xs text-muted-foreground">
+                    {tempFileCount} temp file(s) found
+                  </span>
+                )}
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={cleanupTempFiles} 
+                  disabled={cleaningUp || tempFileCount === 0}
+                >
+                  {cleaningUp ? (
+                    <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                  ) : (
+                    <Trash2 className="mr-2 h-3 w-3" />
+                  )}
+                  {cleaningUp ? "Deleting..." : "Delete All Temp Files"}
+                </Button>
+                <Button variant="ghost" size="sm" onClick={checkTempFiles}>
+                  <RefreshCw className="h-3 w-3" />
+                </Button>
+              </div>
+              {cleanupResult && (
+                <div className={`rounded-md p-3 ${cleanupResult.error ? "bg-destructive/10" : "bg-primary/10"}`}>
+                  {cleanupResult.error ? (
+                    <p className="text-xs text-destructive">{cleanupResult.error}</p>
+                  ) : (
+                    <p className="text-xs text-primary">
+                      Successfully deleted {cleanupResult.deleted} of {cleanupResult.total} temp files
+                    </p>
+                  )}
+                </div>
               )}
             </div>
           </CardContent>
