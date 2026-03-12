@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextRequest, NextResponse } from "next/server"
-import { uploadToBunny, getBunnyCDNUrl } from "@/lib/bunny"
+import { uploadToBunny, getBunnyCDNUrl, downloadFromBunny, deleteFromBunny } from "@/lib/bunny"
 
 /**
  * POST /api/videos/upload-bunny
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
 }
 
 /**
- * POST /api/videos/upload-bunny/finalize
+ * PUT /api/videos/upload-bunny
  * Called after all chunks are uploaded to combine them and save metadata
  */
 export async function PUT(req: NextRequest) {
@@ -67,11 +67,41 @@ export async function PUT(req: NextRequest) {
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     const body = await req.json()
-    const { uploadId, filename, title, duration_seconds, resolution, format, file_size } = body
+    const { uploadId, filename, title, duration_seconds, resolution, format, file_size, totalChunks } = body
 
-    if (!uploadId || !filename) {
+    if (!uploadId || !filename || !totalChunks) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
+
+    console.log(`[Bunny Finalize] Assembling ${totalChunks} chunks for ${filename}`)
+
+    // Download and combine all chunks
+    const chunks: Buffer[] = []
+    for (let i = 0; i < totalChunks; i++) {
+      const chunkFilename = `${uploadId}-chunk-${i}`
+      const chunkData = await downloadFromBunny(chunkFilename, "temp-uploads")
+      if (!chunkData) {
+        return NextResponse.json({ error: `Failed to download chunk ${i}` }, { status: 500 })
+      }
+      chunks.push(chunkData)
+    }
+
+    // Combine all chunks into one buffer
+    const completeFile = Buffer.concat(chunks)
+    console.log(`[Bunny Finalize] Combined file size: ${completeFile.length} bytes`)
+
+    // Upload the complete file to the videos folder
+    const uploadResult = await uploadToBunny(filename, completeFile, "videos")
+    if (!uploadResult.success) {
+      return NextResponse.json({ error: uploadResult.error }, { status: 500 })
+    }
+
+    // Clean up temp chunks (don't wait for this)
+    Promise.all(
+      Array.from({ length: totalChunks }, (_, i) => 
+        deleteFromBunny(`${uploadId}-chunk-${i}`, "temp-uploads")
+      )
+    ).catch(err => console.error("[Bunny Finalize] Cleanup error:", err))
 
     // Get CDN URL for the uploaded file
     const cdnUrl = getBunnyCDNUrl(filename, "videos")
@@ -83,7 +113,7 @@ export async function PUT(req: NextRequest) {
         user_id: user.id,
         title: title || filename,
         filename,
-        file_size: file_size || 0,
+        file_size: file_size || completeFile.length,
         duration_seconds: duration_seconds || null,
         resolution: resolution || null,
         format: format || null,
@@ -94,6 +124,8 @@ export async function PUT(req: NextRequest) {
       .single()
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    console.log(`[Bunny Finalize] Video saved: ${cdnUrl}`)
 
     return NextResponse.json({
       success: true,

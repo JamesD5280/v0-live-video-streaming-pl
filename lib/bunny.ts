@@ -126,6 +126,38 @@ export async function listBunnyFiles(directory: string = "videos"): Promise<Bunn
 }
 
 /**
+ * Download file from Bunny Storage
+ */
+export async function downloadFromBunny(filename: string, directory: string = "videos"): Promise<Buffer | null> {
+  try {
+    if (!BUNNY_STORAGE_PASSWORD) {
+      throw new Error("BUNNY_STORAGE_PASSWORD not configured")
+    }
+
+    const path = `/${BUNNY_STORAGE_ZONE}/${directory}/${filename}`
+    const url = `${BUNNY_STORAGE_BASE}${path}`
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        AccessKey: BUNNY_STORAGE_PASSWORD,
+      },
+    })
+
+    if (!response.ok) {
+      console.error(`[Bunny] Download failed: ${response.status} ${response.statusText}`)
+      return null
+    }
+
+    const arrayBuffer = await response.arrayBuffer()
+    return Buffer.from(arrayBuffer)
+  } catch (error) {
+    console.error("[Bunny] Download error:", error)
+    return null
+  }
+}
+
+/**
  * Delete file from Bunny Storage
  */
 export async function deleteFromBunny(filename: string, directory: string = "videos"): Promise<boolean> {

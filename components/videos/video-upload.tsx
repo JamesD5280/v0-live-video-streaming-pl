@@ -108,6 +108,7 @@ export function VideoUpload({ onUploadComplete }: { onUploadComplete?: () => voi
           title: file.name.replace(/\.[^/.]+$/, ""),
           file_size: file.size,
           format,
+          totalChunks, // Required for chunk assembly
         }),
       })
 
