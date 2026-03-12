@@ -124,13 +124,14 @@ export async function listBunnyFiles(directory: string = "videos"): Promise<Bunn
       throw new Error("BUNNY_STORAGE_PASSWORD not configured")
     }
 
+    const password = BUNNY_STORAGE_PASSWORD.trim()
     const path = `/${BUNNY_STORAGE_ZONE}/${directory}/`
     const url = `${BUNNY_STORAGE_BASE}${path}`
 
     const response = await fetch(url, {
       method: "GET",
       headers: {
-        AccessKey: BUNNY_STORAGE_PASSWORD,
+        AccessKey: password,
       },
     })
 
@@ -157,22 +158,26 @@ export async function downloadFromBunny(filename: string, directory: string = "v
       throw new Error("BUNNY_STORAGE_PASSWORD not configured")
     }
 
+    const password = BUNNY_STORAGE_PASSWORD.trim()
     const path = `/${BUNNY_STORAGE_ZONE}/${directory}/${filename}`
     const url = `${BUNNY_STORAGE_BASE}${path}`
+
+    console.log(`[Bunny] Downloading ${filename} from ${directory}`)
 
     const response = await fetch(url, {
       method: "GET",
       headers: {
-        AccessKey: BUNNY_STORAGE_PASSWORD,
+        AccessKey: password,
       },
     })
 
     if (!response.ok) {
-      console.error(`[Bunny] Download failed: ${response.status} ${response.statusText}`)
+      console.error(`[Bunny] Download failed for ${filename}: ${response.status} ${response.statusText}`)
       return null
     }
 
     const arrayBuffer = await response.arrayBuffer()
+    console.log(`[Bunny] Downloaded ${filename}: ${arrayBuffer.byteLength} bytes`)
     return Buffer.from(arrayBuffer)
   } catch (error) {
     console.error("[Bunny] Download error:", error)
