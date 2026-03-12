@@ -41,6 +41,9 @@ export default function SettingsPage() {
   const [cleaningUp, setCleaningUp] = useState(false)
   const [cleanupResult, setCleanupResult] = useState<{ deleted?: number; total?: number; error?: string } | null>(null)
   const [tempFileCount, setTempFileCount] = useState<number | null>(null)
+  const [deletingVideos, setDeletingVideos] = useState(false)
+  const [deleteVideosResult, setDeleteVideosResult] = useState<{ deleted?: number; error?: string } | null>(null)
+  const [videoCount, setVideoCount] = useState<number | null>(null)
 
   useEffect(() => {
     if (settings) setLocalSettings(settings)
@@ -48,6 +51,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     checkTempFiles()
+    checkVideoCount()
   }, [])
 
   const checkTempFiles = async () => {
@@ -76,6 +80,36 @@ export default function SettingsPage() {
       setCleanupResult({ error: err instanceof Error ? err.message : "Cleanup failed" })
     }
     setCleaningUp(false)
+  }
+
+  const checkVideoCount = async () => {
+    try {
+      const res = await fetch("/api/admin/delete-all-videos")
+      const data = await res.json()
+      setVideoCount(data.count || 0)
+    } catch {
+      setVideoCount(null)
+    }
+  }
+
+  const deleteAllVideos = async () => {
+    if (!confirm("Are you sure you want to delete ALL videos? This cannot be undone.")) return
+    
+    setDeletingVideos(true)
+    setDeleteVideosResult(null)
+    try {
+      const res = await fetch("/api/admin/delete-all-videos", { method: "DELETE" })
+      const data = await res.json()
+      if (data.success) {
+        setDeleteVideosResult({ deleted: data.deleted })
+        setVideoCount(0)
+      } else {
+        setDeleteVideosResult({ error: data.error || "Delete failed" })
+      }
+    } catch (err) {
+      setDeleteVideosResult({ error: err instanceof Error ? err.message : "Delete failed" })
+    }
+    setDeletingVideos(false)
   }
 
   const runDiagnostics = async () => {
@@ -339,6 +373,59 @@ pm2 restart streaming-server || node streaming-server.js`}
                   ) : (
                     <p className="text-xs text-primary">
                       Successfully deleted {cleanupResult.deleted} of {cleanupResult.total} temp files
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border bg-card">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base font-semibold text-foreground">
+              <Trash2 className="h-4 w-4" />
+              Delete All Videos
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm font-medium text-foreground">Remove All Videos</p>
+                <p className="text-xs text-muted-foreground">
+                  This will delete all video records from your database. Use this to clean up incomplete uploads or unwanted videos.
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                {videoCount !== null && videoCount > 0 && (
+                  <span className="text-xs text-muted-foreground">
+                    {videoCount} video(s) found
+                  </span>
+                )}
+                <Button 
+                  variant="destructive" 
+                  size="sm" 
+                  onClick={deleteAllVideos} 
+                  disabled={deletingVideos || videoCount === 0}
+                >
+                  {deletingVideos ? (
+                    <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                  ) : (
+                    <Trash2 className="mr-2 h-3 w-3" />
+                  )}
+                  {deletingVideos ? "Deleting..." : "Delete All Videos"}
+                </Button>
+                <Button variant="ghost" size="sm" onClick={checkVideoCount}>
+                  <RefreshCw className="h-3 w-3" />
+                </Button>
+              </div>
+              {deleteVideosResult && (
+                <div className={`rounded-md p-3 ${deleteVideosResult.error ? "bg-destructive/10" : "bg-primary/10"}`}>
+                  {deleteVideosResult.error ? (
+                    <p className="text-xs text-destructive">{deleteVideosResult.error}</p>
+                  ) : (
+                    <p className="text-xs text-primary">
+                      Successfully deleted {deleteVideosResult.deleted} video(s)
                     </p>
                   )}
                 </div>

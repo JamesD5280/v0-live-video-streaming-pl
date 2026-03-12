@@ -172,9 +172,13 @@ export async function deleteFromBunny(filename: string, directory: string = "vid
     const response = await fetch(url, {
       method: "DELETE",
       headers: {
-        AccessKey: BUNNY_STORAGE_PASSWORD,
+        AccessKey: BUNNY_STORAGE_PASSWORD.trim(),
       },
     })
+
+    if (!response.ok) {
+      console.error(`[Bunny] Delete failed for ${filename}: ${response.status} ${response.statusText}`)
+    }
 
     return response.ok
   } catch (error) {
