@@ -35,6 +35,16 @@ const BUNNY_STORAGE_REGION = regionMap[rawRegion] || "ny"
 const BUNNY_API_BASE = "https://api.bunnycdn.com"
 const BUNNY_STORAGE_BASE = `https://${BUNNY_STORAGE_REGION}.storage.bunnycdn.com`
 
+// Bunny API returns these field names
+interface BunnyApiFile {
+  ObjectName: string
+  Path: string
+  Length: number
+  LastChanged: string
+  ContentType?: string
+  IsDirectory: boolean
+}
+
 export interface BunnyFile {
   name: string
   path: string
@@ -42,6 +52,18 @@ export interface BunnyFile {
   dateModified: string
   contentType?: string
   isDirectory: boolean
+}
+
+// Transform Bunny API response to our interface
+function transformBunnyFile(apiFile: BunnyApiFile): BunnyFile {
+  return {
+    name: apiFile.ObjectName,
+    path: apiFile.Path,
+    size: apiFile.Length,
+    dateModified: apiFile.LastChanged,
+    contentType: apiFile.ContentType,
+    isDirectory: apiFile.IsDirectory,
+  }
 }
 
 /**
@@ -102,13 +124,14 @@ export async function listBunnyFiles(directory: string = "videos"): Promise<Bunn
       throw new Error("BUNNY_STORAGE_PASSWORD not configured")
     }
 
+    const password = BUNNY_STORAGE_PASSWORD.trim()
     const path = `/${BUNNY_STORAGE_ZONE}/${directory}/`
     const url = `${BUNNY_STORAGE_BASE}${path}`
 
     const response = await fetch(url, {
       method: "GET",
       headers: {
-        AccessKey: BUNNY_STORAGE_PASSWORD,
+        AccessKey: password,
       },
     })
 
@@ -117,7 +140,8 @@ export async function listBunnyFiles(directory: string = "videos"): Promise<Bunn
       throw new Error(`List failed: ${response.status}`)
     }
 
-    const files = (await response.json()) as BunnyFile[]
+    const apiFiles = (await response.json()) as BunnyApiFile[]
+    const files = apiFiles.map(transformBunnyFile)
     return files.filter((f) => !f.isDirectory)
   } catch (error) {
     console.error("[Bunny] List error:", error)
@@ -134,22 +158,26 @@ export async function downloadFromBunny(filename: string, directory: string = "v
       throw new Error("BUNNY_STORAGE_PASSWORD not configured")
     }
 
+    const password = BUNNY_STORAGE_PASSWORD.trim()
     const path = `/${BUNNY_STORAGE_ZONE}/${directory}/${filename}`
     const url = `${BUNNY_STORAGE_BASE}${path}`
+
+    console.log(`[Bunny] Downloading ${filename} from ${directory}`)
 
     const response = await fetch(url, {
       method: "GET",
       headers: {
-        AccessKey: BUNNY_STORAGE_PASSWORD,
+        AccessKey: password,
       },
     })
 
     if (!response.ok) {
-      console.error(`[Bunny] Download failed: ${response.status} ${response.statusText}`)
+      console.error(`[Bunny] Download failed for ${filename}: ${response.status} ${response.statusText}`)
       return null
     }
 
     const arrayBuffer = await response.arrayBuffer()
+    console.log(`[Bunny] Downloaded ${filename}: ${arrayBuffer.byteLength} bytes`)
     return Buffer.from(arrayBuffer)
   } catch (error) {
     console.error("[Bunny] Download error:", error)
