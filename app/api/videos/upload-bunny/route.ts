@@ -117,13 +117,21 @@ export async function PUT(req: NextRequest) {
         duration_seconds: duration_seconds || null,
         resolution: resolution || null,
         format: format || null,
-        storage_path: cdnUrl, // Store the CDN URL
+        storage_path: cdnUrl,
         status: "ready",
       })
       .select()
       .single()
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) {
+      console.error("[Bunny Finalize] Supabase insert error:", {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+      })
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
 
     console.log(`[Bunny Finalize] Video saved: ${cdnUrl}`)
 
@@ -134,6 +142,10 @@ export async function PUT(req: NextRequest) {
     })
   } catch (error) {
     console.error("[Bunny Finalize] Error:", error)
+    if (error instanceof Error) {
+      console.error("[Bunny Finalize] Error message:", error.message)
+      console.error("[Bunny Finalize] Error stack:", error.stack)
+    }
     return NextResponse.json({ error: "Finalization failed" }, { status: 500 })
   }
 }
