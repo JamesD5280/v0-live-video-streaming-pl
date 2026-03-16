@@ -2,6 +2,13 @@ import { createClient } from "@/lib/supabase/server"
 import { NextRequest, NextResponse } from "next/server"
 import { uploadToBunny, getBunnyCDNUrl, downloadFromBunny, deleteFromBunny } from "@/lib/bunny"
 
+// Sanitize strings to remove special characters that might violate database constraints
+function sanitizeString(str: string): string {
+  if (!str) return str
+  // Remove non-ASCII characters and keep only alphanumeric, spaces, hyphens, underscores, dots
+  return str.replace(/[^\w\s\-\.]/gu, "").trim()
+}
+
 /**
  * POST /api/videos/upload-bunny
  * Handles chunked uploads directly to Bunny CDN Storage
@@ -133,11 +140,15 @@ export async function PUT(req: NextRequest) {
     const cdnUrl = getBunnyCDNUrl(filename, "videos")
 
     // Save video metadata to database
+    // Sanitize title and filename to remove special characters that might violate constraints
+    const sanitizedTitle = sanitizeString(title || filename)
+    const sanitizedFilename = sanitizeString(filename)
+    
     // Log all fields before insert
     console.log("[Bunny Finalize] Inserting with fields:", {
       user_id: user.id,
-      title: title || filename,
-      filename,
+      title: sanitizedTitle,
+      filename: sanitizedFilename,
       file_size: file_size || 0,
       duration_seconds: duration_seconds || null,
       resolution: resolution || null,
@@ -150,8 +161,8 @@ export async function PUT(req: NextRequest) {
       .from("videos")
       .insert({
         user_id: user.id,
-        title: title || filename,
-        filename,
+        title: sanitizedTitle,
+        filename: sanitizedFilename,
         file_size: file_size || 0,
         duration_seconds: duration_seconds || null,
         resolution: resolution || null,
