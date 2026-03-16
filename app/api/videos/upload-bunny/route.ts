@@ -138,11 +138,12 @@ export async function PUT(req: NextRequest) {
       user_id: user.id,
       title: title || filename,
       filename,
-      file_size: file_size || completeFile.length,
+      file_size: file_size || 0,
       duration_seconds: duration_seconds || null,
       resolution: resolution || null,
       format: format || null,
       storage_path: cdnUrl,
+      status: "ready",
     })
 
     const { data, error } = await supabase
@@ -151,11 +152,12 @@ export async function PUT(req: NextRequest) {
         user_id: user.id,
         title: title || filename,
         filename,
-        file_size: file_size || completeFile.length,
+        file_size: file_size || 0,
         duration_seconds: duration_seconds || null,
         resolution: resolution || null,
         format: format || null,
         storage_path: cdnUrl,
+        status: "ready",
       })
       .select()
       .single()
