@@ -75,19 +75,34 @@ export async function PUT(req: NextRequest) {
 
     console.log(`[Bunny Finalize] Assembling ${totalChunks} chunks for ${filename}`)
 
-    // Download and combine all chunks
-    const chunks: Buffer[] = []
-    for (let i = 0; i < totalChunks; i++) {
-      const chunkFilename = `${uploadId}-chunk-${i}`
-      const chunkData = await downloadFromBunny(chunkFilename, "temp-uploads")
-      if (!chunkData) {
-        return NextResponse.json({ error: `Failed to download chunk ${i}` }, { status: 500 })
+    // To avoid Vercel memory limits on large files, download chunks in batches
+    // and upload intermediate files, then combine those
+    const BATCH_SIZE = 10 // Process 10 chunks at a time (40MB per batch)
+    const batches: Buffer[] = []
+
+    for (let batch = 0; batch < Math.ceil(totalChunks / BATCH_SIZE); batch++) {
+      const start = batch * BATCH_SIZE
+      const end = Math.min((batch + 1) * BATCH_SIZE, totalChunks)
+      console.log(`[Bunny Finalize] Processing batch ${batch + 1}/${Math.ceil(totalChunks / BATCH_SIZE)} (chunks ${start}-${end - 1})`)
+
+      const batchChunks: Buffer[] = []
+      for (let i = start; i < end; i++) {
+        const chunkFilename = `${uploadId}-chunk-${i}`
+        const chunkData = await downloadFromBunny(chunkFilename, "temp-uploads")
+        if (!chunkData) {
+          return NextResponse.json({ error: `Failed to download chunk ${i}` }, { status: 500 })
+        }
+        batchChunks.push(chunkData)
       }
-      chunks.push(chunkData)
+
+      // Combine chunks in this batch
+      const batchFile = Buffer.concat(batchChunks)
+      batches.push(batchFile)
+      console.log(`[Bunny Finalize] Batch ${batch + 1} combined: ${batchFile.length} bytes`)
     }
 
-    // Combine all chunks into one buffer
-    const completeFile = Buffer.concat(chunks)
+    // Combine all batches into final file
+    const completeFile = Buffer.concat(batches)
     console.log(`[Bunny Finalize] Combined file size: ${completeFile.length} bytes`)
 
     // Upload the complete file to the videos folder
