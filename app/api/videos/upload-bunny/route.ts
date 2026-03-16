@@ -118,7 +118,6 @@ export async function PUT(req: NextRequest) {
         resolution: resolution || null,
         format: format || null,
         storage_path: cdnUrl,
-        status: "ready",
       })
       .select()
       .single()
