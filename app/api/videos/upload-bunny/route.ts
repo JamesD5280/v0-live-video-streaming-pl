@@ -75,41 +75,52 @@ export async function PUT(req: NextRequest) {
 
     console.log(`[Bunny Finalize] Assembling ${totalChunks} chunks for ${filename}`)
 
-    // To avoid Vercel memory limits on large files, download chunks in batches
-    // and upload intermediate files, then combine those
-    const BATCH_SIZE = 10 // Process 10 chunks at a time (40MB per batch)
-    const batches: Buffer[] = []
+    // Download first chunk as the base file, then append others
+    // This way we never load the entire file into memory at once
+    console.log("[Bunny Finalize] Downloading first chunk...")
+    const firstChunkData = await downloadFromBunny(`${uploadId}-chunk-0`, "temp-uploads")
+    if (!firstChunkData) {
+      return NextResponse.json({ error: "Failed to download first chunk" }, { status: 500 })
+    }
 
-    for (let batch = 0; batch < Math.ceil(totalChunks / BATCH_SIZE); batch++) {
-      const start = batch * BATCH_SIZE
-      const end = Math.min((batch + 1) * BATCH_SIZE, totalChunks)
-      console.log(`[Bunny Finalize] Processing batch ${batch + 1}/${Math.ceil(totalChunks / BATCH_SIZE)} (chunks ${start}-${end - 1})`)
+    // Upload first chunk as the base file in videos folder
+    let uploadResult = await uploadToBunny(filename, firstChunkData, "videos")
+    if (!uploadResult.success) {
+      return NextResponse.json({ error: `Failed to upload first chunk: ${uploadResult.error}` }, { status: 500 })
+    }
+    console.log("[Bunny Finalize] Uploaded first chunk as base file")
 
-      const batchChunks: Buffer[] = []
-      for (let i = start; i < end; i++) {
-        const chunkFilename = `${uploadId}-chunk-${i}`
-        const chunkData = await downloadFromBunny(chunkFilename, "temp-uploads")
-        if (!chunkData) {
-          return NextResponse.json({ error: `Failed to download chunk ${i}` }, { status: 500 })
-        }
-        batchChunks.push(chunkData)
+    // For remaining chunks, download them one at a time and re-upload the combined file
+    // This is inefficient but necessary to stay within memory limits
+    console.log(`[Bunny Finalize] Appending ${totalChunks - 1} additional chunks...`)
+    for (let i = 1; i < totalChunks; i++) {
+      console.log(`[Bunny Finalize] Processing chunk ${i}/${totalChunks - 1}`)
+      
+      // Download current chunk
+      const chunkData = await downloadFromBunny(`${uploadId}-chunk-${i}`, "temp-uploads")
+      if (!chunkData) {
+        return NextResponse.json({ error: `Failed to download chunk ${i}` }, { status: 500 })
       }
 
-      // Combine chunks in this batch
-      const batchFile = Buffer.concat(batchChunks)
-      batches.push(batchFile)
-      console.log(`[Bunny Finalize] Batch ${batch + 1} combined: ${batchFile.length} bytes`)
+      // Download the current file from Bunny
+      const currentFile = await downloadFromBunny(filename, "videos")
+      if (!currentFile) {
+        return NextResponse.json({ error: `Failed to download current file from videos` }, { status: 500 })
+      }
+
+      // Append the new chunk
+      const combinedFile = Buffer.concat([currentFile, chunkData])
+      
+      // Re-upload the combined file
+      uploadResult = await uploadToBunny(filename, combinedFile, "videos")
+      if (!uploadResult.success) {
+        return NextResponse.json({ error: `Failed to append chunk ${i}: ${uploadResult.error}` }, { status: 500 })
+      }
+      
+      console.log(`[Bunny Finalize] Appended chunk ${i}, file size now: ${combinedFile.length} bytes`)
     }
 
-    // Combine all batches into final file
-    const completeFile = Buffer.concat(batches)
-    console.log(`[Bunny Finalize] Combined file size: ${completeFile.length} bytes`)
-
-    // Upload the complete file to the videos folder
-    const uploadResult = await uploadToBunny(filename, completeFile, "videos")
-    if (!uploadResult.success) {
-      return NextResponse.json({ error: uploadResult.error }, { status: 500 })
-    }
+    console.log("[Bunny Finalize] Assembly complete")
 
     // Clean up temp chunks (don't wait for this)
     Promise.all(
