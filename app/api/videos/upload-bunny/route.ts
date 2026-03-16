@@ -140,17 +140,15 @@ export async function PUT(req: NextRequest) {
     const cdnUrl = getBunnyCDNUrl(filename, "videos")
 
     // Save video metadata to database
-    // Sanitize title and filename to remove special characters that might violate constraints
-    const sanitizedTitle = sanitizeString(title || filename)
-    const sanitizedFilename = sanitizeString(filename)
+    // Sanitize name to remove special characters that might violate constraints
+    const sanitizedName = sanitizeString(title || filename)
     
-    // Log all fields before insert
+    // Log all fields before insert (using actual DB column names)
     console.log("[Bunny Finalize] Inserting with fields:", {
       user_id: user.id,
-      title: sanitizedTitle,
-      filename: sanitizedFilename,
-      file_size: file_size || 0,
-      duration_seconds: duration_seconds || null,
+      name: sanitizedName,
+      size_bytes: file_size || 0,
+      duration: duration_seconds ? String(duration_seconds) : null,
       resolution: resolution || null,
       format: format || null,
       storage_path: cdnUrl,
@@ -161,10 +159,9 @@ export async function PUT(req: NextRequest) {
       .from("videos")
       .insert({
         user_id: user.id,
-        title: sanitizedTitle,
-        filename: sanitizedFilename,
-        file_size: file_size || 0,
-        duration_seconds: duration_seconds || null,
+        name: sanitizedName,
+        size_bytes: file_size || 0,
+        duration: duration_seconds ? String(duration_seconds) : null,
         resolution: resolution || null,
         format: format || null,
         storage_path: cdnUrl,
