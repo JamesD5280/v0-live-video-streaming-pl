@@ -107,6 +107,18 @@ export async function PUT(req: NextRequest) {
     const cdnUrl = getBunnyCDNUrl(filename, "videos")
 
     // Save video metadata to database
+    // Log all fields before insert
+    console.log("[Bunny Finalize] Inserting with fields:", {
+      user_id: user.id,
+      title: title || filename,
+      filename,
+      file_size: file_size || completeFile.length,
+      duration_seconds: duration_seconds || null,
+      resolution: resolution || null,
+      format: format || null,
+      storage_path: cdnUrl,
+    })
+
     const { data, error } = await supabase
       .from("videos")
       .insert({
