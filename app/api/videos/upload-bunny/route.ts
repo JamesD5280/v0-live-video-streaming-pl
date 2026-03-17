@@ -140,14 +140,15 @@ export async function PUT(req: NextRequest) {
     const cdnUrl = getBunnyCDNUrl(filename, "videos")
 
     // Save video metadata to database
-    // Sanitize title to remove special characters that might violate constraints
+    // Sanitize title and filename to remove special characters that might violate constraints
     const sanitizedTitle = sanitizeString(title || filename)
+    const sanitizedFilename = sanitizeString(filename)
     
     // Log all fields before insert (using actual DB column names from Supabase)
     console.log("[Bunny Finalize] Inserting with fields:", {
       user_id: user.id,
       title: sanitizedTitle,
-      filename: filename,
+      filename: sanitizedFilename,
       file_size: file_size || 0,
       duration_seconds: duration_seconds || null,
       resolution: resolution || null,
@@ -156,16 +157,13 @@ export async function PUT(req: NextRequest) {
       status: "ready",
     })
 
+    // Try minimal insert first - only required fields
     const { data, error } = await supabase
       .from("videos")
       .insert({
         user_id: user.id,
         title: sanitizedTitle,
-        filename: filename,
-        file_size: file_size || 0,
-        duration_seconds: duration_seconds || null,
-        resolution: resolution || null,
-        format: format || null,
+        filename: sanitizedFilename,
         storage_path: cdnUrl,
         status: "ready",
       })
