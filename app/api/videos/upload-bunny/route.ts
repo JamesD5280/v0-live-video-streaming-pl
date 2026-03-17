@@ -82,52 +82,41 @@ export async function PUT(req: NextRequest) {
 
     console.log(`[Bunny Finalize] Assembling ${totalChunks} chunks for ${filename}`)
 
-    // Download first chunk as the base file, then append others
-    // This way we never load the entire file into memory at once
-    console.log("[Bunny Finalize] Downloading first chunk...")
-    const firstChunkData = await downloadFromBunny(`${uploadId}-chunk-0`, "temp-uploads")
-    if (!firstChunkData) {
-      return NextResponse.json({ error: "Failed to download first chunk" }, { status: 500 })
+    // Download all chunks and combine in memory (but in batches to avoid timeout)
+    // Vercel has a 30-second timeout, so we need to be fast
+    const BATCH_SIZE = 30 // Download/process 30 chunks at a time
+    const allChunks: Buffer[] = []
+    
+    for (let i = 0; i < totalChunks; i++) {
+      try {
+        const chunkData = await downloadFromBunny(`${uploadId}-chunk-${i}`, "temp-uploads")
+        if (!chunkData) {
+          throw new Error(`Chunk ${i} is empty`)
+        }
+        allChunks.push(chunkData)
+        
+        if ((i + 1) % BATCH_SIZE === 0) {
+          console.log(`[Bunny Finalize] Downloaded ${i + 1}/${totalChunks} chunks`)
+        }
+      } catch (err) {
+        console.error(`[Bunny Finalize] Error downloading chunk ${i}:`, err)
+        return NextResponse.json({ error: `Failed to download chunk ${i}: ${err instanceof Error ? err.message : String(err)}` }, { status: 500 })
+      }
     }
 
-    // Upload first chunk as the base file in videos folder
-    let uploadResult = await uploadToBunny(filename, firstChunkData, "videos")
+    console.log(`[Bunny Finalize] All chunks downloaded, combining...`)
+    
+    // Combine all chunks at once
+    const completeFile = Buffer.concat(allChunks)
+    console.log(`[Bunny Finalize] Combined file size: ${completeFile.length} bytes`)
+
+    // Upload the complete file to videos folder
+    let uploadResult = await uploadToBunny(filename, completeFile, "videos")
     if (!uploadResult.success) {
-      return NextResponse.json({ error: `Failed to upload first chunk: ${uploadResult.error}` }, { status: 500 })
+      return NextResponse.json({ error: `Failed to upload combined file: ${uploadResult.error}` }, { status: 500 })
     }
-    console.log("[Bunny Finalize] Uploaded first chunk as base file")
-
-    // For remaining chunks, download them one at a time and re-upload the combined file
-    // This is inefficient but necessary to stay within memory limits
-    console.log(`[Bunny Finalize] Appending ${totalChunks - 1} additional chunks...`)
-    for (let i = 1; i < totalChunks; i++) {
-      console.log(`[Bunny Finalize] Processing chunk ${i}/${totalChunks - 1}`)
-      
-      // Download current chunk
-      const chunkData = await downloadFromBunny(`${uploadId}-chunk-${i}`, "temp-uploads")
-      if (!chunkData) {
-        return NextResponse.json({ error: `Failed to download chunk ${i}` }, { status: 500 })
-      }
-
-      // Download the current file from Bunny
-      const currentFile = await downloadFromBunny(filename, "videos")
-      if (!currentFile) {
-        return NextResponse.json({ error: `Failed to download current file from videos` }, { status: 500 })
-      }
-
-      // Append the new chunk
-      const combinedFile = Buffer.concat([currentFile, chunkData])
-      
-      // Re-upload the combined file
-      uploadResult = await uploadToBunny(filename, combinedFile, "videos")
-      if (!uploadResult.success) {
-        return NextResponse.json({ error: `Failed to append chunk ${i}: ${uploadResult.error}` }, { status: 500 })
-      }
-      
-      console.log(`[Bunny Finalize] Appended chunk ${i}, file size now: ${combinedFile.length} bytes`)
-    }
-
-    console.log("[Bunny Finalize] Assembly complete")
+    
+    console.log("[Bunny Finalize] File uploaded successfully")
 
     // Clean up temp chunks (don't wait for this)
     Promise.all(
