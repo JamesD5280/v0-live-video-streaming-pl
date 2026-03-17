@@ -80,82 +80,35 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
 
-    console.log(`[Bunny Finalize] Assembling ${totalChunks} chunks for ${filename}`)
+    console.log(`[Bunny Finalize] Saving video metadata with upload_id for later assembly by VPS`)
+    console.log(`[Bunny Finalize] Video will be assembled by VPS: uploadId=${uploadId}, filename=${filename}, totalChunks=${totalChunks}`)
 
-    // Download all chunks and combine in memory (but in batches to avoid timeout)
-    // Vercel has a 30-second timeout, so we need to be fast
-    const BATCH_SIZE = 30 // Download/process 30 chunks at a time
-    const allChunks: Buffer[] = []
-    
-    for (let i = 0; i < totalChunks; i++) {
-      try {
-        const chunkData = await downloadFromBunny(`${uploadId}-chunk-${i}`, "temp-uploads")
-        if (!chunkData) {
-          throw new Error(`Chunk ${i} is empty`)
-        }
-        allChunks.push(chunkData)
-        
-        if ((i + 1) % BATCH_SIZE === 0) {
-          console.log(`[Bunny Finalize] Downloaded ${i + 1}/${totalChunks} chunks`)
-        }
-      } catch (err) {
-        console.error(`[Bunny Finalize] Error downloading chunk ${i}:`, err)
-        return NextResponse.json({ error: `Failed to download chunk ${i}: ${err instanceof Error ? err.message : String(err)}` }, { status: 500 })
-      }
-    }
-
-    console.log(`[Bunny Finalize] All chunks downloaded, combining...`)
-    
-    // Combine all chunks at once
-    const completeFile = Buffer.concat(allChunks)
-    console.log(`[Bunny Finalize] Combined file size: ${completeFile.length} bytes`)
-
-    // Upload the complete file to videos folder
-    let uploadResult = await uploadToBunny(filename, completeFile, "videos")
-    if (!uploadResult.success) {
-      return NextResponse.json({ error: `Failed to upload combined file: ${uploadResult.error}` }, { status: 500 })
-    }
-    
-    console.log("[Bunny Finalize] File uploaded successfully")
-
-    // Clean up temp chunks (don't wait for this)
-    Promise.all(
-      Array.from({ length: totalChunks }, (_, i) => 
-        deleteFromBunny(`${uploadId}-chunk-${i}`, "temp-uploads")
-      )
-    ).catch(err => console.error("[Bunny Finalize] Cleanup error:", err))
-
-    // Get CDN URL for the uploaded file
-    const cdnUrl = getBunnyCDNUrl(filename, "videos")
-
-    // Save video metadata to database
-    // Sanitize title and filename to remove special characters that might violate constraints
+    // Save video metadata to database with status 'uploading'
+    // The actual assembly will be done by the VPS where it has unlimited resources
     const sanitizedTitle = sanitizeString(title || filename)
-    const sanitizedFilename = sanitizeString(filename)
     
-    // Log all fields before insert (using actual DB column names from Supabase)
-    console.log("[Bunny Finalize] Inserting with fields:", {
+    console.log("[Bunny Finalize] Inserting video record with fields:", {
       user_id: user.id,
       title: sanitizedTitle,
-      filename: sanitizedFilename,
+      filename,
       file_size: file_size || 0,
-      duration_seconds: duration_seconds || null,
-      resolution: resolution || null,
-      format: format || null,
-      storage_path: cdnUrl,
-      status: "ready",
+      storage_path: `bunny://temp-uploads/${uploadId}`,
+      status: "uploading",
+      upload_id: uploadId,
+      total_chunks: totalChunks,
     })
 
-    // Insert video record with all required fields
     const { data, error } = await supabase
       .from("videos")
       .insert({
         user_id: user.id,
         title: sanitizedTitle,
-        filename: sanitizedFilename,
+        filename,
         file_size: file_size || 0,
-        storage_path: cdnUrl,
-        status: "ready",
+        storage_path: `bunny://temp-uploads/${uploadId}`,
+        status: "uploading",
+        upload_id: uploadId,
+        total_chunks: totalChunks,
       })
       .select()
       .single()
@@ -172,12 +125,15 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: errorMsg }, { status: 400 })
     }
 
-    console.log(`[Bunny Finalize] Video saved: ${cdnUrl}`)
+    console.log(`[Bunny Finalize] Video saved with ID: ${data.id}`)
+    console.log(`[Bunny Finalize] VPS should now call /api/videos/finalize-assembly with upload_id=${uploadId} and video_id=${data.id}`)
 
     return NextResponse.json({
       success: true,
       video: data,
-      cdnUrl,
+      message: "Video metadata saved. Chunks uploaded to Bunny. Waiting for VPS to assemble.",
+      uploadId,
+      totalChunks,
     })
   } catch (error) {
     console.error("[Bunny Finalize] Catch block error:", error)
