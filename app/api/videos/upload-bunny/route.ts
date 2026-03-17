@@ -178,7 +178,9 @@ export async function PUT(req: NextRequest) {
         details: error.details,
         hint: error.hint,
       })
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      const errorMsg = `Database error: ${error.message}`
+      console.error("[Bunny Finalize] Returning error response:", errorMsg)
+      return NextResponse.json({ error: errorMsg }, { status: 400 })
     }
 
     console.log(`[Bunny Finalize] Video saved: ${cdnUrl}`)
@@ -189,11 +191,12 @@ export async function PUT(req: NextRequest) {
       cdnUrl,
     })
   } catch (error) {
-    console.error("[Bunny Finalize] Error:", error)
+    console.error("[Bunny Finalize] Catch block error:", error)
     if (error instanceof Error) {
       console.error("[Bunny Finalize] Error message:", error.message)
       console.error("[Bunny Finalize] Error stack:", error.stack)
     }
-    return NextResponse.json({ error: "Finalization failed" }, { status: 500 })
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    return NextResponse.json({ error: `Finalization failed: ${errorMsg}` }, { status: 500 })
   }
 }
