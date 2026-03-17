@@ -157,18 +157,17 @@ export async function PUT(req: NextRequest) {
       status: "ready",
     })
 
-    // Try minimal insert first - only required fields
+    // Insert video record with all required fields
     const { data, error } = await supabase
       .from("videos")
       .insert({
         user_id: user.id,
         title: sanitizedTitle,
         filename: sanitizedFilename,
+        file_size: file_size || 0,
         storage_path: cdnUrl,
         status: "ready",
       })
-      .select()
-      .single()
 
     if (error) {
       console.error("[Bunny Finalize] Supabase insert error:", {
