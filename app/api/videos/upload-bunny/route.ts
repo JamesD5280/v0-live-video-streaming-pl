@@ -94,8 +94,6 @@ export async function PUT(req: NextRequest) {
       file_size: file_size || 0,
       storage_path: `bunny://temp-uploads/${uploadId}`,
       status: "uploading",
-      upload_id: uploadId,
-      total_chunks: totalChunks,
     })
 
     const { data, error } = await supabase
@@ -107,8 +105,6 @@ export async function PUT(req: NextRequest) {
         file_size: file_size || 0,
         storage_path: `bunny://temp-uploads/${uploadId}`,
         status: "uploading",
-        upload_id: uploadId,
-        total_chunks: totalChunks,
       })
       .select()
       .single()
