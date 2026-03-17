@@ -113,8 +113,16 @@ export function VideoUpload({ onUploadComplete }: { onUploadComplete?: () => voi
       })
 
       if (!finalRes.ok) {
-        const err = await finalRes.json()
-        throw new Error(err.error || "Failed to finalize upload")
+        let errMsg = "Failed to finalize upload"
+        try {
+          const errBody = await finalRes.text()
+          console.log("[v0] Finalize error response:", errBody)
+          const err = JSON.parse(errBody)
+          errMsg = err.error || errMsg
+        } catch (parseErr) {
+          console.log("[v0] Failed to parse error response:", parseErr)
+        }
+        throw new Error(errMsg)
       }
 
       setUploads((prev) =>

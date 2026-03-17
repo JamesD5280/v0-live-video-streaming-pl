@@ -168,6 +168,8 @@ export async function PUT(req: NextRequest) {
         storage_path: cdnUrl,
         status: "ready",
       })
+      .select()
+      .single()
 
     if (error) {
       console.error("[Bunny Finalize] Supabase insert error:", {
