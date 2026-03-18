@@ -2,10 +2,11 @@ import { updateSession } from '@/lib/supabase/middleware'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
-  // Skip auth for download, preview, and cron endpoints
+  // Skip auth for download, preview, cron, and VPS assembly endpoints
   if (
     request.nextUrl.pathname.startsWith('/api/download-server') ||
     request.nextUrl.pathname.startsWith('/api/videos/preview') ||
+    request.nextUrl.pathname.startsWith('/api/videos/finalize-assembly') ||
     request.nextUrl.pathname.startsWith('/api/streams/preview') ||
     request.nextUrl.pathname.startsWith('/api/schedule/cron') ||
     request.nextUrl.pathname.startsWith('/api/notifications')
