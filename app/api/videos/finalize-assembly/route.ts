@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@supabase/supabase-js"
 import { NextRequest, NextResponse } from "next/server"
 import { getBunnyCDNUrl } from "@/lib/bunny"
 
@@ -6,39 +6,47 @@ import { getBunnyCDNUrl } from "@/lib/bunny"
  * POST /api/videos/finalize-assembly
  * Called by VPS after it has assembled chunks and uploaded to Bunny
  * Updates video status from 'uploading' to 'ready'
+ * 
+ * This endpoint uses service role credentials (server-side only)
+ * so it can be called from the VPS without user authentication
  */
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { upload_id, video_id, filename, file_size } = body
+    const { video_id, cdn_url } = body
 
-    if (!upload_id || !video_id || !filename) {
+    if (!video_id || !cdn_url) {
       return NextResponse.json(
-        { error: "Missing required fields: upload_id, video_id, filename" },
+        { error: "Missing required fields: video_id, cdn_url" },
         { status: 400 }
       )
     }
 
     console.log("[Assembly Finalize] Finalizing assembly for:", {
-      upload_id,
       video_id,
-      filename,
-      file_size,
+      cdn_url,
     })
 
-    // Get CDN URL for the final file
-    const cdnUrl = getBunnyCDNUrl(filename, "videos")
+    // Create Supabase client with service role (admin) key for server-side operations
+    // This bypasses authentication and RLS policies
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
-    // Update video record: mark as 'ready' and update storage_path
-    const supabase = await createClient()
+    if (!supabaseUrl || !serviceRoleKey) {
+      console.error("[Assembly Finalize] Missing Supabase credentials")
+      return NextResponse.json(
+        { error: "Server configuration error" },
+        { status: 500 }
+      )
+    }
+
+    const supabase = createClient(supabaseUrl, serviceRoleKey)
 
     const { data, error } = await supabase
       .from("videos")
       .update({
         status: "ready",
-        storage_path: cdnUrl,
-        file_size: file_size || undefined,
-        upload_id: null, // Clear the upload_id since assembly is complete
+        storage_path: cdn_url,
       })
       .eq("id", video_id)
       .select()
