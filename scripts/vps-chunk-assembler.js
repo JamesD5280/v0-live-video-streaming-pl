@@ -22,16 +22,13 @@
 
 // Load .env file if it exists (install dotenv: npm install dotenv)
 try {
-  require('dotenv').config();
-} catch (e) {
-  // dotenv not installed, will use system environment variables
-  console.log('Note: dotenv not installed, using system environment variables');
-}
+require('dotenv').config();
 
 const https = require('https');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const { createClient } = require('@supabase/supabase-js');
 
 // Configuration - set these environment variables on your VPS
 const BUNNY_STORAGE_ZONE = process.env.BUNNY_STORAGE_ZONE || '2mstreamsn';
@@ -75,23 +72,18 @@ function makeRequest(options, postData = null) {
 
 // Get videos with status 'uploading' from Supabase
 async function getUploadingVideos() {
-  const url = new URL(`${SUPABASE_URL}/rest/v1/videos`);
-  url.searchParams.set('status', 'eq.uploading');
-  url.searchParams.set('select', '*');
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
   
-  const options = {
-    hostname: url.hostname,
-    path: url.pathname + url.search,
-    method: 'GET',
-    headers: {
-      'apikey': SUPABASE_SERVICE_ROLE_KEY,
-      'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-      'Content-Type': 'application/json',
-    }
-  };
+  const { data, error } = await supabase
+    .from('videos')
+    .select('*')
+    .eq('status', 'uploading');
   
-  const { body } = await makeRequest(options);
-  return JSON.parse(body.toString());
+  if (error) {
+    throw new Error(`Failed to fetch videos: ${error.message}`);
+  }
+  
+  return data || [];
 }
 
 // List files in Bunny temp-uploads folder
@@ -188,38 +180,24 @@ async function finalizeAssembly(videoId, cdnUrl) {
   }
 }
 
-// Update video status directly in Supabase (fallback)
+// Update video status directly in Supabase
 async function updateVideoStatus(videoId, status, storagePath) {
-  const url = new URL(`${SUPABASE_URL}/rest/v1/videos`);
-  url.searchParams.set('id', `eq.${videoId}`);
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
   
-  const postData = JSON.stringify({ status, storage_path: storagePath });
+  console.log(`    Updating video ${videoId} to status '${status}'...`);
   
-  const options = {
-    hostname: url.hostname,
-    path: url.pathname + url.search,
-    method: 'PATCH',
-    headers: {
-      'apikey': SUPABASE_ANON_KEY,
-      'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-      'Content-Type': 'application/json',
-      'Content-Length': Buffer.byteLength(postData),
-      'Prefer': 'return=representation',
-    }
-  };
+  const { data, error } = await supabase
+    .from('videos')
+    .update({ status, storage_path: storagePath })
+    .eq('id', videoId)
+    .select()
+    .single();
   
-  console.log(`    [DEBUG] Updating video ${videoId} in Supabase`);
-  console.log(`    [DEBUG] URL: ${url.toString()}`);
-  console.log(`    [DEBUG] Status: ${status}, Storage Path: ${storagePath}`);
-  
-  try {
-    const { body, status: statusCode } = await makeRequest(options, postData);
-    console.log(`    [DEBUG] Supabase response status: ${statusCode}`);
-    return JSON.parse(body.toString());
-  } catch (err) {
-    console.error(`    [DEBUG] Supabase error: ${err.message}`);
-    throw err;
+  if (error) {
+    throw new Error(`Failed to update video: ${error.message}`);
   }
+  
+  return data;
 }
 
 // Extract upload ID from storage_path
