@@ -220,6 +220,84 @@ async function assembleVideo(video) {
   console.log(`    Upload ID: ${uploadId}`);
   console.log(`    Filename: ${video.filename}`);
   
+  // We'll try to download chunks starting from 0 and count up until we get a 404
+  // This avoids needing to list the bucket
+  const chunks = [];
+  let chunkIndex = 0;
+  let totalSize = 0;
+  
+  console.log(`    Discovering and downloading chunks...`);
+  
+  // Try downloading chunks until we get a 404 or error
+  while (true) {
+    const chunkName = `${uploadId}-chunk-${chunkIndex}`;
+    try {
+      process.stdout.write(`\r    Downloading chunk ${chunkIndex}...`);
+      const data = await downloadChunk(chunkName);
+      chunks.push(data);
+      totalSize += data.length;
+      chunkIndex++;
+    } catch (err) {
+      // If chunk doesn't exist, we've reached the end
+      if (err.message.includes('404') || err.message.includes('404')) {
+        console.log(`\n    Found ${chunkIndex} chunks`);
+        break;
+      }
+      // For other errors, still try to continue
+      if (chunkIndex === 0) {
+        console.log(`\n    ERROR: Could not download first chunk: ${err.message}`);
+        return false;
+      }
+      console.log(`\n    Stopped at chunk ${chunkIndex}: ${err.message}`);
+      break;
+    }
+  }
+  
+  if (chunks.length === 0) {
+    console.log(`    ERROR: No chunks found for upload ID ${uploadId}`);
+    return false;
+  }
+  
+  console.log(`    Downloaded ${totalSize} bytes total from ${chunks.length} chunks`);
+  
+  // Combine all chunks
+  console.log(`    Combining chunks...`);
+  const completeFile = Buffer.concat(chunks);
+  console.log(`    Combined file size: ${completeFile.length} bytes`);
+  
+  // Upload to videos folder
+  console.log(`    Uploading to Bunny videos folder...`);
+  const cdnUrl = await uploadToBunny(video.filename, completeFile);
+  console.log(`    Uploaded: ${cdnUrl}`);
+  
+  // Update video status in database
+  console.log(`    Updating database status to 'ready'...`);
+  try {
+    await updateVideoStatus(video.id, 'ready', cdnUrl);
+    console.log(`    Database updated successfully`);
+  } catch (err) {
+    console.error(`    ERROR updating database: ${err.message}`);
+    throw err;
+  }
+  
+  // Clean up temp chunks (best effort)
+  console.log(`    Cleaning up ${chunks.length} temp chunks...`);
+  for (let i = 0; i < chunks.length; i++) {
+    try {
+      await deleteChunk(`${uploadId}-chunk-${i}`);
+    } catch (err) {
+      console.log(`    Note: Could not delete chunk ${i}: ${err.message}`);
+    }
+  }
+  
+  console.log(`    Done!`);
+  return true;
+}
+  
+  console.log(`  Processing video: ${video.title}`);
+  console.log(`    Upload ID: ${uploadId}`);
+  console.log(`    Filename: ${video.filename}`);
+  
   // List all files in temp-uploads
   const allFiles = await listBunnyTempFiles();
   
