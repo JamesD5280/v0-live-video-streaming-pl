@@ -158,7 +158,7 @@ async function deleteChunk(chunkFilename) {
   }
 }
 
-// Call the finalize-assembly API
+// Call the finalize-assembly API with fallback to direct database update
 async function finalizeAssembly(videoId, cdnUrl) {
   const appUrl = new URL(`${APP_URL}/api/videos/finalize-assembly`);
   const postData = JSON.stringify({ video_id: videoId, cdn_url: cdnUrl });
@@ -173,8 +173,17 @@ async function finalizeAssembly(videoId, cdnUrl) {
     }
   };
   
-  const { body } = await makeRequest(options, postData);
-  return JSON.parse(body.toString());
+  try {
+    console.log(`  Calling API endpoint: ${APP_URL}/api/videos/finalize-assembly`);
+    const { body } = await makeRequest(options, postData);
+    const result = JSON.parse(body.toString());
+    console.log(`  API call succeeded`);
+    return result;
+  } catch (err) {
+    // If API call fails, fall back to direct database update
+    console.log(`  API call failed (${err.message}), updating database directly...`);
+    return await updateVideoStatus(videoId, 'ready', cdnUrl);
+  }
 }
 
 // Update video status directly in Supabase (fallback)
