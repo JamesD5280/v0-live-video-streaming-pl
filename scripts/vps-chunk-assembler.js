@@ -58,6 +58,7 @@ function makeRequest(options, postData = null) {
       res.on('data', chunk => chunks.push(chunk));
       res.on('end', () => {
         const body = Buffer.concat(chunks);
+        console.log(`    [DEBUG] HTTP ${res.statusCode}: ${body.toString().substring(0, 200)}`);
         if (res.statusCode >= 200 && res.statusCode < 300) {
           resolve({ status: res.statusCode, body });
         } else {
@@ -206,8 +207,18 @@ async function updateVideoStatus(videoId, status, storagePath) {
     }
   };
   
-  const { body } = await makeRequest(options, postData);
-  return JSON.parse(body.toString());
+  console.log(`    [DEBUG] Updating video ${videoId} in Supabase`);
+  console.log(`    [DEBUG] URL: ${url.toString()}`);
+  console.log(`    [DEBUG] Status: ${status}, Storage Path: ${storagePath}`);
+  
+  try {
+    const { body, status: statusCode } = await makeRequest(options, postData);
+    console.log(`    [DEBUG] Supabase response status: ${statusCode}`);
+    return JSON.parse(body.toString());
+  } catch (err) {
+    console.error(`    [DEBUG] Supabase error: ${err.message}`);
+    throw err;
+  }
 }
 
 // Extract upload ID from storage_path
