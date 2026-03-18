@@ -121,11 +121,11 @@ async function downloadChunk(chunkFilename) {
   return body;
 }
 
-// Upload assembled video to Bunny videos folder
+// Upload assembled video to Bunny
 async function uploadToBunny(filename, buffer) {
   const options = {
-    hostname: BUNNY_CDN_HOSTNAME,
-    path: `/videos/${encodeURIComponent(filename)}`,
+    hostname: 'storage.bunnycdn.com',
+    path: `/${BUNNY_STORAGE_ZONE}/videos/${encodeURIComponent(filename)}`,
     method: 'PUT',
     headers: {
       'AccessKey': BUNNY_STORAGE_API_KEY,
@@ -134,7 +134,11 @@ async function uploadToBunny(filename, buffer) {
     }
   };
   
+  console.log(`    [DEBUG] Uploading via storage API: storage.bunnycdn.com${options.path}`);
+  
   await makeRequest(options, buffer);
+  
+  // Return the CDN URL
   return `https://${BUNNY_CDN_HOSTNAME}/videos/${encodeURIComponent(filename)}`;
 }
 
