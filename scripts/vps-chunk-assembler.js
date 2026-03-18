@@ -5,17 +5,28 @@
  * This script runs on your VPS to assemble video chunks from Bunny temp-uploads
  * into complete videos. It should be run as a cron job or background service.
  * 
- * Usage:
- *   node vps-chunk-assembler.js
+ * Setup:
+ *   1. Copy this script to your VPS
+ *   2. Create a .env file in the same directory with your credentials
+ *   3. Run: npm install dotenv (or just set environment variables directly)
+ *   4. Run: node vps-chunk-assembler.js
  * 
- * Environment variables required:
- *   BUNNY_STORAGE_ZONE - Your Bunny storage zone name (e.g., "2mstreamsn")
- *   BUNNY_STORAGE_API_KEY - Your Bunny storage API key
- *   BUNNY_CDN_HOSTNAME - Your Bunny CDN hostname (e.g., "2mstreamsn.b-cdn.net")
- *   SUPABASE_URL - Your Supabase project URL
- *   SUPABASE_SERVICE_ROLE_KEY - Your Supabase service role key (for server-side access)
- *   APP_URL - Your app URL (e.g., "https://2mstream.com")
+ * Environment variables required (put in .env file):
+ *   BUNNY_STORAGE_ZONE=2mstreamsn
+ *   BUNNY_STORAGE_API_KEY=your-bunny-storage-api-key
+ *   BUNNY_CDN_HOSTNAME=2mstreamsn.b-cdn.net
+ *   SUPABASE_URL=https://ouobhgelqzxhxbiwuhlu.supabase.co
+ *   SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
+ *   APP_URL=https://2mstream.com
  */
+
+// Load .env file if it exists (install dotenv: npm install dotenv)
+try {
+  require('dotenv').config();
+} catch (e) {
+  // dotenv not installed, will use system environment variables
+  console.log('Note: dotenv not installed, using system environment variables');
+}
 
 const https = require('https');
 const http = require('http');
