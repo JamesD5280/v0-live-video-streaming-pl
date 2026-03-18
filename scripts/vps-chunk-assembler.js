@@ -38,6 +38,7 @@ const BUNNY_STORAGE_ZONE = process.env.BUNNY_STORAGE_ZONE || '2mstreamsn';
 const BUNNY_STORAGE_API_KEY = process.env.BUNNY_STORAGE_API_KEY;
 const BUNNY_CDN_HOSTNAME = process.env.BUNNY_CDN_HOSTNAME || '2mstreamsn.b-cdn.net';
 const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const APP_URL = process.env.APP_URL || 'https://2mstream.com';
 
@@ -199,7 +200,7 @@ async function updateVideoStatus(videoId, status, storagePath) {
     path: url.pathname + url.search,
     method: 'PATCH',
     headers: {
-      'apikey': SUPABASE_SERVICE_ROLE_KEY,
+      'apikey': SUPABASE_ANON_KEY,
       'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
       'Content-Type': 'application/json',
       'Content-Length': Buffer.byteLength(postData),
