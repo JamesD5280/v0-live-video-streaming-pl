@@ -283,13 +283,14 @@ async function assembleVideo(video) {
   const cdnUrl = await uploadToBunny(video.filename, completeFile);
   console.log(`    Uploaded: ${cdnUrl}`);
   
-  // Update video status in database
+  // Update video status in database directly (no API call needed)
   console.log(`    Updating database status to 'ready'...`);
   try {
-    await finalizeAssembly(video.id, cdnUrl);
-  } catch (err) {
-    console.log(`    API call failed, updating directly: ${err.message}`);
     await updateVideoStatus(video.id, 'ready', cdnUrl);
+    console.log(`    Database updated successfully`);
+  } catch (err) {
+    console.error(`    Failed to update database: ${err.message}`);
+    throw err;
   }
   
   // Clean up temp chunks
