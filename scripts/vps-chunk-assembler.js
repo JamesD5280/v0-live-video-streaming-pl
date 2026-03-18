@@ -111,8 +111,8 @@ async function listBunnyTempFiles() {
 // Download a chunk from Bunny
 async function downloadChunk(chunkFilename) {
   const options = {
-    hostname: 'storage.bunnycdn.com',
-    path: `/${BUNNY_STORAGE_ZONE}/temp-uploads/${encodeURIComponent(chunkFilename)}`,
+    hostname: BUNNY_CDN_HOSTNAME,
+    path: `/temp-uploads/${encodeURIComponent(chunkFilename)}`,
     method: 'GET',
     headers: {
       'AccessKey': BUNNY_STORAGE_API_KEY,
@@ -126,8 +126,8 @@ async function downloadChunk(chunkFilename) {
 // Upload assembled video to Bunny videos folder
 async function uploadToBunny(filename, buffer) {
   const options = {
-    hostname: 'storage.bunnycdn.com',
-    path: `/${BUNNY_STORAGE_ZONE}/videos/${encodeURIComponent(filename)}`,
+    hostname: BUNNY_CDN_HOSTNAME,
+    path: `/videos/${encodeURIComponent(filename)}`,
     method: 'PUT',
     headers: {
       'AccessKey': BUNNY_STORAGE_API_KEY,
@@ -143,8 +143,8 @@ async function uploadToBunny(filename, buffer) {
 // Delete chunk from Bunny
 async function deleteChunk(chunkFilename) {
   const options = {
-    hostname: 'storage.bunnycdn.com',
-    path: `/${BUNNY_STORAGE_ZONE}/temp-uploads/${encodeURIComponent(chunkFilename)}`,
+    hostname: BUNNY_CDN_HOSTNAME,
+    path: `/temp-uploads/${encodeURIComponent(chunkFilename)}`,
     method: 'DELETE',
     headers: {
       'AccessKey': BUNNY_STORAGE_API_KEY,
