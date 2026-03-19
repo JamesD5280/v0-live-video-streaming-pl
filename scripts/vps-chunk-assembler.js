@@ -22,7 +22,11 @@
 
 // Load .env file if it exists (install dotenv: npm install dotenv)
 try {
-require('dotenv').config();
+  require('dotenv').config();
+} catch (e) {
+  // dotenv not installed, will use system environment variables
+  console.log('Note: dotenv not installed, using system environment variables');
+}
 
 const https = require('https');
 const http = require('http');
@@ -117,11 +121,11 @@ async function downloadChunk(chunkFilename) {
   return body;
 }
 
-// Upload assembled video to Bunny videos folder
+// Upload assembled video to Bunny
 async function uploadToBunny(filename, buffer) {
   const options = {
-    hostname: BUNNY_CDN_HOSTNAME,
-    path: `/videos/${encodeURIComponent(filename)}`,
+    hostname: 'storage.bunnycdn.com',
+    path: `/${BUNNY_STORAGE_ZONE}/videos/${encodeURIComponent(filename)}`,
     method: 'PUT',
     headers: {
       'AccessKey': BUNNY_STORAGE_API_KEY,
@@ -130,7 +134,11 @@ async function uploadToBunny(filename, buffer) {
     }
   };
   
+  console.log(`    [DEBUG] Uploading via storage API: storage.bunnycdn.com${options.path}`);
+  
   await makeRequest(options, buffer);
+  
+  // Return the CDN URL
   return `https://${BUNNY_CDN_HOSTNAME}/videos/${encodeURIComponent(filename)}`;
 }
 
@@ -288,83 +296,6 @@ async function assembleVideo(video) {
     } catch (err) {
       console.log(`    Note: Could not delete chunk ${i}: ${err.message}`);
     }
-  }
-  
-  console.log(`    Done!`);
-  return true;
-}
-  
-  console.log(`  Processing video: ${video.title}`);
-  console.log(`    Upload ID: ${uploadId}`);
-  console.log(`    Filename: ${video.filename}`);
-  
-  // List all files in temp-uploads
-  const allFiles = await listBunnyTempFiles();
-  
-  // Find chunks for this upload ID
-  const chunkPattern = new RegExp(`^${uploadId}-chunk-(\\d+)$`);
-  const chunks = allFiles
-    .filter(f => chunkPattern.test(f.ObjectName))
-    .map(f => ({
-      name: f.ObjectName,
-      index: parseInt(f.ObjectName.match(chunkPattern)[1]),
-      size: f.Length,
-    }))
-    .sort((a, b) => a.index - b.index);
-  
-  if (chunks.length === 0) {
-    console.log(`    No chunks found for upload ID ${uploadId}`);
-    return false;
-  }
-  
-  console.log(`    Found ${chunks.length} chunks`);
-  
-  // Verify chunks are sequential (0, 1, 2, ...)
-  for (let i = 0; i < chunks.length; i++) {
-    if (chunks[i].index !== i) {
-      console.log(`    ERROR: Missing chunk ${i} (found ${chunks[i].index})`);
-      return false;
-    }
-  }
-  
-  // Download and assemble chunks
-  console.log(`    Downloading and assembling chunks...`);
-  const assembledChunks = [];
-  let totalSize = 0;
-  
-  for (const chunk of chunks) {
-    process.stdout.write(`\r    Downloading chunk ${chunk.index + 1}/${chunks.length}...`);
-    const data = await downloadChunk(chunk.name);
-    assembledChunks.push(data);
-    totalSize += data.length;
-  }
-  
-  console.log(`\n    Downloaded ${totalSize} bytes total`);
-  
-  // Combine all chunks
-  console.log(`    Combining chunks...`);
-  const completeFile = Buffer.concat(assembledChunks);
-  console.log(`    Combined file size: ${completeFile.length} bytes`);
-  
-  // Upload to videos folder
-  console.log(`    Uploading to Bunny videos folder...`);
-  const cdnUrl = await uploadToBunny(video.filename, completeFile);
-  console.log(`    Uploaded: ${cdnUrl}`);
-  
-  // Update video status in database directly (no API call needed)
-  console.log(`    Updating database status to 'ready'...`);
-  try {
-    await updateVideoStatus(video.id, 'ready', cdnUrl);
-    console.log(`    Database updated successfully`);
-  } catch (err) {
-    console.error(`    Failed to update database: ${err.message}`);
-    throw err;
-  }
-  
-  // Clean up temp chunks
-  console.log(`    Cleaning up ${chunks.length} temp chunks...`);
-  for (const chunk of chunks) {
-    await deleteChunk(chunk.name);
   }
   
   console.log(`    Done!`);

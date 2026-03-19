@@ -237,35 +237,63 @@ export async function GET(req: NextRequest) {
         stream_id: stream.id,
       })
 
-      // Handle repeating events
+      // Handle repeating events - create the next occurrence
       if (event.repeat_mode && event.repeat_mode !== "none") {
         const nextDate = getNextScheduleDate(new Date(event.scheduled_at), event.repeat_mode)
         if (nextDate) {
-          await supabase.from("scheduled_events").insert({
-            user_id: event.user_id,
-            video_id: event.video_id,
-            title: event.title,
-            scheduled_at: nextDate.toISOString(),
-            repeat_mode: event.repeat_mode,
-            source_type: event.source_type,
-            rtmp_pull_url: event.rtmp_pull_url,
-            status: "scheduled",
-          }).select().single().then(async ({ data: newEvent }) => {
-            if (newEvent) {
+          try {
+            // Create the next scheduled event
+            const { data: newEvent, error: newEventError } = await supabase
+              .from("scheduled_events")
+              .insert({
+                user_id: event.user_id,
+                video_id: event.video_id,
+                title: event.title,
+                scheduled_at: nextDate.toISOString(),
+                repeat_mode: event.repeat_mode,
+                source_type: event.source_type,
+                rtmp_pull_url: event.rtmp_pull_url,
+                status: "scheduled",
+              })
+              .select()
+              .single()
+
+            if (newEventError) {
+              console.error("Failed to create next repeat event:", newEventError)
+            } else if (newEvent) {
               // Copy destinations to new event
-              if (destRows.length > 0) {
-                await supabase.from("event_destinations").insert(
-                  destinations.map((d: { id: string }) => ({ event_id: newEvent.id, destination_id: d.id }))
-                )
+              if (destinations.length > 0) {
+                const destInserts = destinations.map((d: { id: string }) => ({
+                  event_id: newEvent.id,
+                  destination_id: d.id,
+                }))
+                const { error: destError } = await supabase
+                  .from("event_destinations")
+                  .insert(destInserts)
+                if (destError) {
+                  console.error("Failed to copy destinations to repeat event:", destError)
+                }
               }
+              
               // Copy overlays to new event
               if (overlays.length > 0) {
-                await supabase.from("event_overlays").insert(
-                  overlays.map((o: { id: string }) => ({ event_id: newEvent.id, overlay_id: o.id }))
-                )
+                const overlayInserts = overlays.map((o: { id: string }) => ({
+                  event_id: newEvent.id,
+                  overlay_id: o.id,
+                }))
+                const { error: overlayError } = await supabase
+                  .from("event_overlays")
+                  .insert(overlayInserts)
+                if (overlayError) {
+                  console.error("Failed to copy overlays to repeat event:", overlayError)
+                }
               }
+              
+              console.log(`Created next ${event.repeat_mode} event for "${event.title}" at ${nextDate.toISOString()}`)
             }
-          })
+          } catch (repeatErr) {
+            console.error("Error creating repeat event:", repeatErr)
+          }
         }
       }
 
