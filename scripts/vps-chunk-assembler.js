@@ -52,20 +52,46 @@ if (!fs.existsSync(TEMP_DIR)) {
 }
 
 // Helper: Make HTTPS request
-function makeRequest(options, postData = null) {
+function makeRequest(options, postData = null, retries = 3) {
   return new Promise((resolve, reject) => {
     const protocol = options.protocol === 'http:' ? http : https;
+    
     const req = protocol.request(options, (res) => {
       const chunks = [];
       res.on('data', chunk => chunks.push(chunk));
       res.on('end', () => {
         const body = Buffer.concat(chunks);
-        console.log(`    [DEBUG] HTTP ${res.statusCode}: ${body.toString().substring(0, 200)}`);
         if (res.statusCode >= 200 && res.statusCode < 300) {
           resolve({ status: res.statusCode, body });
         } else {
           reject(new Error(`HTTP ${res.statusCode}: ${body.toString()}`));
         }
+      });
+    });
+    
+    // Set socket timeout to 5 minutes for large uploads
+    req.setTimeout(300000, () => {
+      req.destroy();
+      reject(new Error('Request timeout'));
+    });
+    
+    req.on('error', (err) => {
+      if (retries > 0 && (err.code === 'EPIPE' || err.code === 'ECONNRESET' || err.message.includes('timeout'))) {
+        console.log(`    Retrying (${retries} retries left)...`);
+        setTimeout(() => {
+          makeRequest(options, postData, retries - 1)
+            .then(resolve)
+            .catch(reject);
+        }, 2000);
+      } else {
+        reject(err);
+      }
+    });
+    
+    if (postData) req.write(postData);
+    req.end();
+  });
+}
       });
     });
     req.on('error', reject);
