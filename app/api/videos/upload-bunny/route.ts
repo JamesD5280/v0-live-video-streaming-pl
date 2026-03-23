@@ -122,7 +122,37 @@ export async function PUT(req: NextRequest) {
     }
 
     console.log(`[Bunny Finalize] Video saved with ID: ${data.id}`)
-    console.log(`[Bunny Finalize] VPS should now call /api/videos/finalize-assembly with upload_id=${uploadId} and video_id=${data.id}`)
+
+    // Trigger VPS webhook to assemble chunks
+    const vpsWebhookSecret = process.env.VPS_WEBHOOK_SECRET
+    const vpsAssemblerUrl = process.env.VPS_ASSEMBLER_URL
+
+    if (vpsWebhookSecret && vpsAssemblerUrl) {
+      try {
+        console.log("[v0] Triggering VPS webhook for video:", data.id)
+        const webhookResponse = await fetch(vpsAssemblerUrl, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${vpsWebhookSecret}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ videoId: data.id, uploadId }),
+        })
+
+        if (!webhookResponse.ok) {
+          const responseText = await webhookResponse.text()
+          console.error("[v0] Webhook failed:", webhookResponse.status, responseText)
+        } else {
+          console.log("[v0] Webhook triggered successfully")
+        }
+      } catch (webhookError) {
+        console.error("[v0] Webhook error:", webhookError)
+      }
+    } else {
+      console.warn("[v0] VPS_WEBHOOK_SECRET or VPS_ASSEMBLER_URL not configured")
+    }
+
+    console.log(`[Bunny Finalize] VPS webhook trigger sent for upload_id=${uploadId} and video_id=${data.id}`)
 
     return NextResponse.json({
       success: true,

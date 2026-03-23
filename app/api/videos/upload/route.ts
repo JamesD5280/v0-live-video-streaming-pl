@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
 /**
  * POST /api/videos/upload
  * After a successful upload to the streaming server, the client calls this
- * to save the video metadata to the database.
+ * to save the video metadata to the database and trigger VPS assembly.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -61,12 +61,41 @@ export async function POST(req: NextRequest) {
         resolution: body.resolution || null,
         format: body.format || null,
         storage_path: null, // stored on streaming server, not Supabase
-        status: "ready",
+        status: "uploading",
       })
       .select()
       .single()
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    // Trigger VPS assembler to process the video
+    const vpsWebhookSecret = process.env.VPS_WEBHOOK_SECRET
+    const vpsAssemblerUrl = process.env.VPS_ASSEMBLER_URL
+
+    if (vpsWebhookSecret && vpsAssemblerUrl) {
+      try {
+        console.log("[v0] Triggering VPS webhook for video:", data.id)
+        const webhookResponse = await fetch(vpsAssemblerUrl, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${vpsWebhookSecret}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ videoId: data.id }),
+        })
+
+        if (!webhookResponse.ok) {
+          console.error("[v0] Webhook failed:", webhookResponse.status, await webhookResponse.text())
+        } else {
+          console.log("[v0] Webhook triggered successfully")
+        }
+      } catch (webhookError) {
+        console.error("[v0] Webhook error:", webhookError)
+      }
+    } else {
+      console.warn("[v0] VPS_WEBHOOK_SECRET or VPS_ASSEMBLER_URL not configured")
+    }
+
     return NextResponse.json(data)
   } catch (e) {
     console.error("Upload metadata error:", e)
