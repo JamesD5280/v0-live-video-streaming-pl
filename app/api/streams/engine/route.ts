@@ -169,7 +169,7 @@ export async function POST(req: NextRequest) {
 
       let result
       try {
-        result = await callStreamingServer("/start", {
+        result = await callStreamingServer("/stream/start", {
           streamId: stream.id,
           videoSources,
           // Backward compat: also send single video fields
@@ -332,9 +332,9 @@ export async function POST(req: NextRequest) {
         }))
       }
 
-      // Call the streaming server's /restart endpoint
+      // Call the streaming server's /stream/stop endpoint
       try {
-        const result = await callStreamingServer("/restart", { streamId, overlays })
+        const result = await callStreamingServer("/stream/stop", { streamId })
         if (result?.error) {
           return NextResponse.json({ success: false, error: result.error }, { status: 400 })
         }
@@ -359,7 +359,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "stop") {
-      const result = await callStreamingServer("/stop", { streamId })
+      const result = await callStreamingServer("/stream/stop", { streamId })
 
       // Update stream status
       await supabase
