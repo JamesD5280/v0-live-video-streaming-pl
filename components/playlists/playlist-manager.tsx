@@ -163,7 +163,7 @@ export function PlaylistManager() {
               New Playlist
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+          <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
             <DialogHeader>
               <DialogTitle>{editingId ? "Edit Playlist" : "Create Playlist"}</DialogTitle>
             </DialogHeader>
@@ -205,7 +205,7 @@ export function PlaylistManager() {
                     <p className="mt-2 text-sm text-muted-foreground">No videos available. Upload videos first.</p>
                   </div>
                 ) : (
-                  <div className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-border p-2">
+                  <div className="max-h-72 space-y-1 overflow-y-auto rounded-lg border border-border p-2">
                     {readyVideos.map((video) => {
                       const isSelected = selectedVideos.includes(video.id)
                       return (
