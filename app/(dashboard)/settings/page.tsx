@@ -172,7 +172,7 @@ export default function SettingsPage() {
         body: JSON.stringify({ action: "status" }),
       })
       const data = await res.json()
-      if (data.status === "ok") {
+      if (data.status === "ok" || data.status === "online") {
         setTestError(null)
       } else if (data.configured === false) {
         setTestError("STREAMING_SERVER_URL is not set in environment variables")
