@@ -281,7 +281,7 @@ export default function SettingsPage() {
                 Test Connection
               </Button>
               <span className="text-xs text-muted-foreground">
-                URL: {process.env.NEXT_PUBLIC_STREAMING_SERVER_URL || engineStatus?.serverUrl || "not configured"}
+                URL: {engineStatus?.serverUrl || "not configured"}
               </span>
             </div>
             {testError && (
