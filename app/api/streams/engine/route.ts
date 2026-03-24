@@ -387,7 +387,7 @@ export async function POST(req: NextRequest) {
 
     if (action === "status") {
       if (!STREAMING_SERVER_URL) {
-        return NextResponse.json({ configured: false })
+        return NextResponse.json({ configured: false, serverUrl: null })
       }
       try {
         const res = await fetch(`${STREAMING_SERVER_URL}/health`, {
@@ -395,14 +395,14 @@ export async function POST(req: NextRequest) {
           signal: AbortSignal.timeout(5000),
         })
         const health = await res.json()
-        return NextResponse.json({ configured: true, ...health })
+        return NextResponse.json({ configured: true, serverUrl: STREAMING_SERVER_URL, ...health })
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err)
         return NextResponse.json({ 
           configured: true, 
           status: "offline", 
           errorDetail: errorMsg,
-          serverUrl: STREAMING_SERVER_URL?.replace(/\/\/(.+?)@/, '//**@')
+          serverUrl: STREAMING_SERVER_URL
         })
       }
     }
