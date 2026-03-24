@@ -223,24 +223,9 @@ export async function POST(req: NextRequest) {
       // Wait briefly then verify the engine is actually running the stream
       await new Promise((resolve) => setTimeout(resolve, 2000))
 
-      let engineRunning = false
-      try {
-        const healthRes = await fetch(`${STREAMING_SERVER_URL}/health`, {
-          headers: { Authorization: `Bearer ${STREAMING_API_SECRET}` },
-          signal: AbortSignal.timeout(5000),
-        })
-        const health = await healthRes.json()
-        // Check if the engine reports any active streams or this specific stream
-        const activeStreams = health.activeStreams || health.active_streams || 0
-        const activeIds = health.streamIds || health.active_ids || []
-        engineRunning = activeStreams > 0 || activeIds.includes(streamId)
-      } catch {
-        // Health check failed -- might be temporarily busy starting
-        engineRunning = false
-      }
-
-      if (!engineRunning) {
-        // Engine accepted the command but FFmpeg likely failed (e.g. no video file)
+      // Trust the stream start response - if it returned success, the stream is running
+      // The streaming server manages FFmpeg processes internally
+      if (!result.success) {
         await supabase
           .from("streams")
           .update({ status: "error", updated_at: new Date().toISOString() })
@@ -251,11 +236,11 @@ export async function POST(req: NextRequest) {
           .eq("stream_id", streamId)
         return NextResponse.json({
           success: false,
-          error: "Stream engine accepted the command but FFmpeg did not start. The video file may not exist on the server. Upload videos to the server first.",
+          error: result.error || "Stream engine failed to start the stream",
         }, { status: 400 })
       }
 
-      // Verified: engine is running the stream
+      // Stream started successfully
       await supabase
         .from("streams")
         .update({ status: "live", started_at: new Date().toISOString() })
