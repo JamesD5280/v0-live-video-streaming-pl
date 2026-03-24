@@ -9,15 +9,24 @@ async function callStreamingServer(path: string, body: Record<string, unknown>) 
     return { error: "Streaming server not configured" }
   }
   const url = `${STREAMING_SERVER_URL}${path}`
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${STREAMING_API_SECRET}`,
-    },
-    body: JSON.stringify(body),
-  })
-  return res.json()
+  console.log("[v0] Calling streaming server:", { url, secret: STREAMING_API_SECRET?.substring(0, 5) + "..." })
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${STREAMING_API_SECRET}`,
+      },
+      body: JSON.stringify(body),
+    })
+    console.log("[v0] Streaming server response:", { status: res.status })
+    const data = await res.json()
+    console.log("[v0] Streaming server data:", data)
+    return data
+  } catch (error) {
+    console.error("[v0] Streaming server error:", error instanceof Error ? error.message : String(error))
+    return { error: "Failed to reach streaming engine", details: error instanceof Error ? error.message : String(error) }
+  }
 }
 
 /**

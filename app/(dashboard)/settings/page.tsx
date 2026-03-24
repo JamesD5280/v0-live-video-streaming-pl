@@ -280,9 +280,9 @@ export default function SettingsPage() {
                 {testing ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <RefreshCw className="mr-2 h-3 w-3" />}
                 Test Connection
               </Button>
-              {engineStatus?.configured && engineStatus?.status !== "ok" && (
-                <span className="text-xs text-muted-foreground">URL: {engineStatus?.serverUrl || "set"}</span>
-              )}
+              <span className="text-xs text-muted-foreground">
+                URL: {process.env.NEXT_PUBLIC_STREAMING_SERVER_URL || engineStatus?.serverUrl || "not configured"}
+              </span>
             </div>
             {testError && (
               <div className="mt-3 rounded-md bg-destructive/10 p-3">
