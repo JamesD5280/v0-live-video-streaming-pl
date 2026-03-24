@@ -255,100 +255,33 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "update_overlays") {
-      // Live overlay update: restart FFmpeg with new overlay config
+      // For now, just update the database without restarting the stream
+      // Full overlay support requires FFmpeg filter graphs which we'll implement later
       const { overlayIds } = body
       if (!streamId) return NextResponse.json({ error: "Missing streamId" }, { status: 400 })
 
-      // Fetch the selected overlays
-      let overlays: {
-        id: string;
-        type: string;
-        imagePath: string | null;
-        videoPath: string | null;
-        loopOverlay: boolean;
-        textContent: string | null;
-        fontSize: number;
-        fontColor: string;
-        bgColor: string;
-        position: string;
-        positionX?: number;
-        positionY?: number;
-        sizePercent: number;
-        opacity: number;
-      }[] = []
-
-      if (overlayIds && overlayIds.length > 0) {
-        const { data: overlayRows } = await supabase
-          .from("overlays")
-          .select("*")
-          .in("id", overlayIds)
-
-        overlays = (overlayRows || []).map((o: {
-          id: string;
-          type: string;
-          image_path?: string;
-          video_path?: string;
-          loop_overlay?: boolean;
-          text_content?: string;
-          font_size: number;
-          font_color: string;
-          bg_color: string;
-          position: string;
-          position_x?: number;
-          position_y?: number;
-          size_percent: number;
-          opacity: number;
-          scroll_speed?: number;
-          scroll_start_x?: number;
-          scroll_end_x?: number;
-          font_family?: string;
-          font_weight?: string;
-        }) => ({
-          id: o.id,
-          type: o.type,
-          imagePath: o.image_path || null,
-          videoPath: o.video_path || null,
-          loopOverlay: o.loop_overlay !== false,
-          textContent: o.text_content || null,
-          fontSize: o.font_size,
-          fontColor: o.font_color,
-          fontFamily: o.font_family || 'sans',
-          fontWeight: o.font_weight || 'normal',
-          bgColor: o.bg_color,
-          position: o.position,
-          positionX: o.position_x ?? undefined,
-          positionY: o.position_y ?? undefined,
-          sizePercent: o.size_percent,
-          opacity: o.opacity,
-          scrollSpeed: o.scroll_speed ?? undefined,
-          scrollStartX: o.scroll_start_x ?? 0,
-          scrollEndX: o.scroll_end_x ?? 100,
-        }))
-      }
-
-      // Call the streaming server's /stream/stop endpoint
+      // Update the stream_overlays join table in DB
       try {
-        const result = await callStreamingServer("/stream/stop", { streamId })
-        if (result?.error) {
-          return NextResponse.json({ success: false, error: result.error }, { status: 400 })
-        }
-
-        // Update the stream_overlays join table in DB
         // Remove old overlay associations
         await supabase.from("stream_overlays").delete().eq("stream_id", streamId)
+        
         // Insert new ones
         if (overlayIds && overlayIds.length > 0) {
           const rows = overlayIds.map((oid: string) => ({ stream_id: streamId, overlay_id: oid }))
           await supabase.from("stream_overlays").insert(rows)
         }
 
-        return NextResponse.json({ success: true, overlayCount: overlays.length, restarted: true })
+        return NextResponse.json({ 
+          success: true, 
+          message: "Overlay configuration saved. Overlays will be applied on next stream restart.",
+          overlayCount: overlayIds?.length || 0
+        })
       } catch (err) {
         return NextResponse.json({
           success: false,
-          error: "Failed to reach streaming engine for overlay update",
+          error: "Failed to update overlays",
           detail: err instanceof Error ? err.message : String(err),
-        }, { status: 502 })
+        }, { status: 500 })
       }
     }
 

@@ -241,7 +241,7 @@ export default function SettingsPage() {
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-3">
-              {engineStatus?.status === "ok" ? (
+              {engineStatus?.status === "ok" || engineStatus?.status === "online" ? (
                 <>
                   <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
                     <Wifi className="h-4 w-4 text-primary" />
@@ -249,7 +249,7 @@ export default function SettingsPage() {
                   <div>
                     <p className="text-sm font-medium text-foreground">Connected</p>
                     <p className="text-xs text-muted-foreground">
-                      {engineStatus.activeStreams || 0} active stream(s) -- Uptime: {Math.floor((engineStatus.uptime || 0) / 60)}m
+                      {engineStatus.activeStreams || 0} active stream(s)
                     </p>
                   </div>
                 </>
