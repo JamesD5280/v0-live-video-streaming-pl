@@ -136,6 +136,7 @@ export async function POST(req: NextRequest) {
         .filter((so: { overlay: unknown }) => so.overlay)
         .map((so: { overlay: {
           id: string;
+          name: string;
           type: string;
           image_path?: string;
           video_path?: string;
@@ -156,6 +157,7 @@ export async function POST(req: NextRequest) {
           font_weight?: string;
         }}) => ({
           id: so.overlay.id,
+          name: so.overlay.name,
           type: so.overlay.type,
           imagePath: so.overlay.image_path || null,
           videoPath: so.overlay.video_path || null,
