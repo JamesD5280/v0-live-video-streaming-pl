@@ -180,7 +180,7 @@ export async function POST(req: NextRequest) {
 
       let result
       try {
-        result = await callStreamingServer("/stream/start", {
+        result = await callStreamingServer("/start", {
           streamId: stream.id,
           videoSources,
           // Backward compat: also send single video fields
@@ -288,7 +288,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "stop") {
-      const result = await callStreamingServer("/stream/stop", { streamId })
+      const result = await callStreamingServer("/stop", { streamId })
 
       // Update stream status
       await supabase
