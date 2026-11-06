@@ -9,7 +9,7 @@ async function callStreamingServer(path: string, body: Record<string, unknown>) 
     return { error: "Streaming server not configured" }
   }
   const url = `${STREAMING_SERVER_URL}${path}`
-  console.log("[v0] Calling streaming server:", { url, secret: STREAMING_API_SECRET?.substring(0, 5) + "..." })
+  console.log("[v0] Calling streaming server:", { url })
   try {
     const res = await fetch(url, {
       method: "POST",
@@ -136,6 +136,7 @@ export async function POST(req: NextRequest) {
         .filter((so: { overlay: unknown }) => so.overlay)
         .map((so: { overlay: {
           id: string;
+          name: string;
           type: string;
           image_path?: string;
           video_path?: string;
@@ -156,6 +157,7 @@ export async function POST(req: NextRequest) {
           font_weight?: string;
         }}) => ({
           id: so.overlay.id,
+          name: so.overlay.name,
           type: so.overlay.type,
           imagePath: so.overlay.image_path || null,
           videoPath: so.overlay.video_path || null,
