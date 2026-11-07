@@ -30,7 +30,7 @@ export function StreamMonitor() {
     if (!liveStream) return
     const currentIds = (liveStream.stream_overlays || [])
       .map((so) => so.overlay_id || so.overlay?.id)
-      .filter(Boolean)
+      .filter((id): id is string => typeof id === "string" && id.length > 0)
     setActiveOverlayIds(new Set(currentIds))
   }, [liveStream?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -47,7 +47,7 @@ export function StreamMonitor() {
     }
 
     try {
-      const res = await fetch("/api/streams/engine", {
+      const updateResponse = await fetch("/api/streams/engine", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -56,17 +56,32 @@ export function StreamMonitor() {
           overlayIds: Array.from(newIds),
         }),
       })
-      const data = await res.json()
-      if (data.success) {
-        setActiveOverlayIds(newIds)
-        mutate() // refresh streams data
-      } else {
-        setOverlayError(data.error || "Failed to update overlays")
+      const updateData = await updateResponse.json()
+      if (!updateResponse.ok || !updateData.success) {
+        throw new Error(updateData.error || "Failed to save overlay settings")
       }
-    } catch {
-      setOverlayError("Network error updating overlays")
+
+      setActiveOverlayIds(newIds)
+      mutate()
+
+      const restartResponse = await fetch("/api/streams/engine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "start", streamId: liveStream.id }),
+      })
+      const restartData = await restartResponse.json()
+      if (!restartResponse.ok || !restartData.success) {
+        throw new Error(
+          `Overlay settings were saved, but the stream could not restart: ${restartData.error || "Unknown error"}`
+        )
+      }
+
+      mutate()
+    } catch (error) {
+      setOverlayError(error instanceof Error ? error.message : "Network error updating overlays")
+    } finally {
+      setUpdatingOverlays(false)
     }
-    setUpdatingOverlays(false)
   }, [liveStream, activeOverlayIds, updatingOverlays, mutate])
 
   useEffect(() => {
