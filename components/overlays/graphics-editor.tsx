@@ -41,6 +41,7 @@ export function GraphicsEditor({
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState("")
   const [filename, setFilename] = useState("scroll-background")
   
   // Bar dimensions
@@ -203,12 +204,15 @@ export function GraphicsEditor({
   const handleSave = async () => {
     const canvas = canvasRef.current
     if (!canvas || !onSave) return
-    
+
     setSaving(true)
+    setSaveError("")
     try {
       const dataUrl = canvas.toDataURL("image/png")
       await onSave(dataUrl, `${filename}.png`)
       setDialogOpen(false)
+    } catch {
+      setSaveError("Unable to save the overlay. Please try again.")
     } finally {
       setSaving(false)
     }
@@ -390,6 +394,7 @@ export function GraphicsEditor({
                 </Button>
               )}
             </div>
+            {saveError && <p role="alert" className="text-sm text-destructive">{saveError}</p>}
           </div>
           
           {/* Controls */}

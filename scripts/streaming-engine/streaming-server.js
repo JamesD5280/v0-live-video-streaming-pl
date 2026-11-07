@@ -295,7 +295,7 @@ function buildOverlayFilters(overlays) {
           ltY = `ih-${fontSize + 30}`
           ltTextY = `h-${fontSize + 15}`
         }
-        const ltX = overlay.positionX !== undefined ? `iw*${overlay.positionX / 100}-iw/2` : '0'
+        const ltX = '0' // Lower thirds span the frame; only their vertical position is editable.
         filters.push(
           `[${currentLabel}]drawbox=x=${ltX}:y=${ltY}:w=iw:h=${fontSize + 30}:color=${bgColor}:t=fill[bg${i}]`,
           `[bg${i}]drawtext=text='${escapedText}':${txtFontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:x=20:y=${ltTextY}[${outputLabel}]`

@@ -123,9 +123,13 @@ export function VideoPreviewDialog({ video, open, onOpenChange }: VideoPreviewDi
     const el = containerRef.current
     if (!el) return
     if (document.fullscreenElement) {
-      document.exitFullscreen()
+      void document.exitFullscreen().catch(() => {
+        setError("Could not exit fullscreen. Please try again.")
+      })
     } else {
-      el.requestFullscreen()
+      void el.requestFullscreen().catch(() => {
+        setError("Fullscreen is unavailable in this browser.")
+      })
     }
   }, [])
 

@@ -11,6 +11,27 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import Image from "next/image"
 import { Loader2, ShieldCheck } from "lucide-react"
 
+function signUpErrorMessage(error: unknown): string {
+  const { code, status } = (error ?? {}) as { code?: string; status?: number }
+
+  if (code === "weak_password") {
+    return "Please choose a stronger password."
+  }
+  if (code === "email_address_invalid") {
+    return "Please use a valid email address."
+  }
+  if (code === "email_address_not_authorized") {
+    return "We cannot send a confirmation email to that address. Please use another."
+  }
+  if (code === "over_email_send_rate_limit" || status === 429) {
+    return "Too many attempts. Please wait a moment and try again."
+  }
+  if (code === "validation_failed") {
+    return "Please check the details you entered."
+  }
+  return "Unable to create your account right now. Please try again."
+}
+
 export default function SignUpPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -25,39 +46,45 @@ export default function SignUpPage() {
     setLoading(true)
     setError(null)
 
-    // Validate invite code first
-    const verifyRes = await fetch("/api/verify-invite", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code: inviteCode }),
-    })
+    try {
+      const verifyRes = await fetch("/api/verify-invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: inviteCode }),
+      })
 
-    if (!verifyRes.ok) {
-      const { error: inviteError } = await verifyRes.json()
-      setError(inviteError || "Invalid invite code")
-      setLoading(false)
-      return
-    }
+      if (!verifyRes.ok) {
+        let inviteError = "Invalid invite code"
+        try {
+          const body = await verifyRes.json()
+          inviteError = body.error || inviteError
+        } catch {
+          // Keep the validation message when the server returns a non-JSON error.
+        }
+        setError(inviteError)
+        return
+      }
 
-    const supabase = createClient()
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: `${window.location.origin}/auth/confirm?next=/`,
-        data: {
-          display_name: displayName,
+      const supabase = createClient()
+      const { error: authError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/confirm?next=/`,
+          data: {
+            display_name: displayName,
+          },
         },
-      },
-    })
+      })
 
-    if (error) {
-      setError(error.message)
+      if (authError) throw authError
+
+      router.push("/auth/sign-up-success")
+    } catch (signUpError) {
+      setError(signUpErrorMessage(signUpError))
+    } finally {
       setLoading(false)
-      return
     }
-
-    router.push("/auth/sign-up-success")
   }
 
   return (

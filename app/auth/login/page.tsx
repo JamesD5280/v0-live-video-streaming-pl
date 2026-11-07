@@ -11,7 +11,21 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import Image from "next/image"
 import { Loader2 } from "lucide-react"
 
-// Login page component
+function loginErrorMessage(error: unknown): string {
+  const { code, status } = (error ?? {}) as { code?: string; status?: number }
+
+  if (code === "email_not_confirmed") {
+    return "Please confirm your email address, then try again."
+  }
+  if (code === "over_request_rate_limit" || status === 429) {
+    return "Too many attempts. Please wait a moment and try again."
+  }
+  if (code === "invalid_credentials") {
+    return "Invalid email or password."
+  }
+  return "Unable to sign in right now. Please try again."
+}
+
 export default function LoginPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -24,20 +38,22 @@ export default function LoginPage() {
     setLoading(true)
     setError(null)
 
-    const supabase = createClient()
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
+    try {
+      const supabase = createClient()
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
 
-    if (error) {
-      setError(error.message)
+      if (authError) throw authError
+
+      router.push("/")
+      router.refresh()
+    } catch (loginError) {
+      setError(loginErrorMessage(loginError))
+    } finally {
       setLoading(false)
-      return
     }
-
-    router.push("/")
-    router.refresh()
   }
 
   return (

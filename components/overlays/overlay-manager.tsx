@@ -11,7 +11,6 @@ import { Slider } from "@/components/ui/slider"
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
@@ -26,6 +25,8 @@ import {
   Plus,
   Trash2,
   Layers,
+  LayoutTemplate,
+  SlidersHorizontal,
   Image as ImageIcon,
   Type,
   AlertCircle,
@@ -37,11 +38,12 @@ import {
   Video,
   Repeat,
   MoveHorizontal,
+  Save,
 } from "lucide-react"
+import { cn } from "@/lib/utils"
 import type { Overlay, OverlayType, OverlayPosition } from "@/lib/store"
 import { createClient } from "@/lib/supabase/client"
 import { OverlayPreview } from "./overlay-preview"
-import { OverlayPositionEditor } from "./overlay-position-editor"
 import { GraphicsEditor } from "./graphics-editor"
 
 const fetcher = (url: string) => fetch(url).then((r) => { if (!r.ok) throw new Error(); return r.json() })
@@ -74,6 +76,16 @@ const positionLabels: Record<OverlayPosition, string> = {
   "bottom-left": "Bottom Left",
   "bottom-center": "Bottom Center",
   "bottom-right": "Bottom Right",
+}
+
+function getPositionFromCoordinates(x: number, y: number): OverlayPosition {
+  if (x < 20 && y < 20) return "top-left"
+  if (x > 80 && y < 20) return "top-right"
+  if (x >= 20 && x <= 80 && y < 20) return "top-center"
+  if (x < 20 && y > 80) return "bottom-left"
+  if (x > 80 && y > 80) return "bottom-right"
+  if (x >= 20 && x <= 80 && y > 80) return "bottom-center"
+  return "center"
 }
 
 const broadcastTemplates: Array<{
@@ -168,16 +180,17 @@ export function OverlayManager() {
   const [creating, setCreating] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [designerPanel, setDesignerPanel] = useState<"layers" | "design" | "templates">("design")
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Form state
   const [name, setName] = useState("")
   const [type, setType] = useState<OverlayType>("logo")
-  const [position, setPosition] = useState<OverlayPosition>("top-left")
-  const [positionX, setPositionX] = useState(5)
-  const [positionY, setPositionY] = useState(5)
-  const [sizePercent, setSizePercent] = useState(100)
+  const [position, setPosition] = useState<OverlayPosition>("center")
+  const [positionX, setPositionX] = useState(50)
+  const [positionY, setPositionY] = useState(50)
+  const [sizePercent, setSizePercent] = useState(15)
   const [opacity, setOpacity] = useState(100)
   const [imagePath, setImagePath] = useState("")
   const [imagePreview, setImagePreview] = useState("")
@@ -197,6 +210,8 @@ export function OverlayManager() {
 
   const isTextType = type === "text" || type === "lower_third" || type === "scrolling_text"
   const isVideoType = type === "video"
+  const canSave = !creating && !uploading && Boolean(name.trim()) &&
+    (isTextType ? Boolean(textContent.trim()) : isVideoType ? Boolean(videoPath) : Boolean(imagePath))
   const tickerPassSeconds = Math.round(
     (1920 * (Math.max(5, scrollEndX - scrollStartX) / 100)) / Math.max(1, scrollSpeed)
   )
@@ -228,13 +243,17 @@ export function OverlayManager() {
     updated_at: "",
   }
 
+  const designerLayers = draftOverlay
+    ? [draftOverlay, ...(overlays ?? []).filter((overlay) => overlay.id !== draftOverlay.id)]
+    : overlays ?? []
+
   const resetForm = () => {
     setName("")
     setType("logo")
-    setPosition("top-left")
-    setPositionX(0)
-    setPositionY(0)
-    setSizePercent(100)
+    setPosition("center")
+    setPositionX(50)
+    setPositionY(50)
+    setSizePercent(15)
     setOpacity(100)
     setImagePath("")
     setImagePreview("")
@@ -256,6 +275,7 @@ export function OverlayManager() {
 
   const openCreateDialog = () => {
     resetForm()
+    setDesignerPanel("design")
     setDialogOpen(true)
   }
 
@@ -282,6 +302,7 @@ export function OverlayManager() {
     setScrollEndX(overlay.scroll_end_x ?? 100)
     setFontFamily(overlay.font_family || "sans")
     setFontWeight(overlay.font_weight || "normal")
+    setDesignerPanel("design")
     setDialogOpen(true)
   }
 
@@ -306,6 +327,7 @@ export function OverlayManager() {
     setScrollEndX(template.scrollEnd)
     setFontFamily("sans")
     setFontWeight(template.fontWeight)
+    setDesignerPanel("design")
   }
 
   const handleVideoOverlayUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -426,7 +448,9 @@ export function OverlayManager() {
       }
       setDialogOpen(false)
       resetForm()
-      mutate()
+      void mutate().catch(() => {
+        alert("Overlay saved, but the list could not refresh. Please reload the page.")
+      })
     } catch (err) {
       console.error("Overlay save error:", err)
       alert("Failed to save overlay. Check console for details.")
@@ -434,18 +458,40 @@ export function OverlayManager() {
     setCreating(false)
   }
 
+  const handleDraftChange = (change: Partial<Pick<Overlay, "position_x" | "position_y" | "size_percent" | "font_size" | "scroll_start_x" | "scroll_end_x">>) => {
+    if (change.position_x !== undefined) setPositionX(change.position_x)
+    if (change.position_y !== undefined) setPositionY(change.position_y)
+    if (change.position_x !== undefined || change.position_y !== undefined) {
+      setPosition(getPositionFromCoordinates(change.position_x ?? positionX, change.position_y ?? positionY))
+    }
+    if (change.size_percent !== undefined) setSizePercent(change.size_percent)
+    if (change.font_size !== undefined) setFontSize(change.font_size)
+    if (change.scroll_start_x !== undefined) setScrollStartX(change.scroll_start_x ?? 0)
+    if (change.scroll_end_x !== undefined) setScrollEndX(change.scroll_end_x ?? 100)
+  }
+
   const handleDelete = async (id: string) => {
-    await fetch(`/api/overlays?id=${id}`, { method: "DELETE" })
-    mutate()
+    try {
+      const response = await fetch(`/api/overlays?id=${encodeURIComponent(id)}`, { method: "DELETE" })
+      if (!response.ok) throw new Error(`Request failed (${response.status})`)
+      await mutate()
+    } catch {
+      alert("Unable to delete this overlay. Please try again.")
+    }
   }
 
   const handleToggleEnabled = async (overlay: Overlay) => {
-    await fetch("/api/overlays", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: overlay.id, enabled: !overlay.enabled }),
-    })
-    mutate()
+    try {
+      const response = await fetch("/api/overlays", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: overlay.id, enabled: !overlay.enabled }),
+      })
+      if (!response.ok) throw new Error(`Request failed (${response.status})`)
+      await mutate()
+    } catch {
+      alert("Unable to update this overlay. Please try again.")
+    }
   }
 
   const handleGraphicsSave = async (imageDataUrl: string, filename: string) => {
@@ -482,7 +528,7 @@ export function OverlayManager() {
           }),
         })
         if (res.ok) {
-          mutate()
+          await mutate()
         }
         return
       }
@@ -509,7 +555,7 @@ export function OverlayManager() {
         }),
       })
       
-      mutate()
+      await mutate()
     } catch (err) {
       console.error("Graphics save error:", err)
     }
@@ -555,32 +601,168 @@ export function OverlayManager() {
                 New Overlay
               </Button>
             </DialogTrigger>
-          <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-4xl">
-            <DialogHeader>
-              <DialogTitle>{editingId ? "Edit Overlay" : "Create Overlay"}</DialogTitle>
-            </DialogHeader>
-            {!editingId && (
-              <section aria-labelledby="overlay-template-heading" className="flex flex-col gap-2">
-                <div>
-                  <h3 id="overlay-template-heading" className="text-sm font-medium text-foreground">Start with a broadcast template</h3>
-                  <p className="text-xs text-muted-foreground">Choose a layout, then customize its text, position, and style.</p>
+          <DialogContent className="dark !fixed !inset-0 !left-0 !top-0 !z-50 !h-dvh !w-screen !max-w-none !translate-x-0 !translate-y-0 !gap-0 !rounded-none !border-0 !p-0 !flex flex-col overflow-hidden bg-background text-foreground">
+            <div className="flex h-full min-h-0 flex-col">
+              <header className="flex min-h-16 items-center justify-between gap-4 border-b border-border bg-card px-4 py-3 pr-14 sm:px-6 sm:pr-16">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-primary">Stream designer</p>
+                  <DialogTitle className="mt-1 truncate text-base font-semibold text-foreground">
+                    {name.trim() || (editingId ? "Edit overlay" : "New overlay")}
+                  </DialogTitle>
                 </div>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {broadcastTemplates.map((template) => (
+                <div className="flex shrink-0 items-center gap-2">
+                  <span className="hidden rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground sm:inline-flex">
+                    1920 × 1080
+                  </span>
+                  <Button onClick={handleSave} disabled={!canSave} size="sm" className="gap-2">
+                    {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    <span className="hidden sm:inline">{editingId ? "Save changes" : "Create overlay"}</span>
+                    <span className="sm:hidden">Save</span>
+                  </Button>
+                </div>
+              </header>
+
+              <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+                <nav aria-label="Add overlay element" className="hidden w-14 shrink-0 flex-col items-center gap-2 border-r border-border bg-card py-3 md:flex">
+                  {[
+                    { label: "Logo", type: "logo" as OverlayType, icon: ImageIcon },
+                    { label: "Text", type: "text" as OverlayType, icon: Type },
+                    { label: "Lower third", type: "lower_third" as OverlayType, icon: Layers },
+                    { label: "Ticker", type: "scrolling_text" as OverlayType, icon: MoveHorizontal },
+                    { label: "Video", type: "video" as OverlayType, icon: Video },
+                  ].map((tool) => {
+                    const ToolIcon = tool.icon
+                    return (
+                      <Button
+                        key={tool.type}
+                        type="button"
+                        variant={type === tool.type ? "secondary" : "ghost"}
+                        size="icon"
+                        aria-label={`Add ${tool.label.toLowerCase()} overlay`}
+                        title={`Add ${tool.label.toLowerCase()} overlay`}
+                        onClick={() => {
+                          setType(tool.type)
+                          setDesignerPanel("design")
+                        }}
+                      >
+                        <ToolIcon className="h-4 w-4" />
+                      </Button>
+                    )
+                  })}
+                </nav>
+
+                <main aria-label="Stream preview canvas" className="flex min-h-[280px] min-w-0 flex-1 flex-col bg-secondary/30">
+                  <div className="flex items-center justify-between border-b border-border/70 px-4 py-2.5">
+                    <div>
+                      <p className="text-xs font-medium text-foreground">Program preview</p>
+                      <p className="text-[11px] text-muted-foreground">Drag to position · resize from the corner</p>
+                    </div>
+                    <span className="font-mono text-[10px] text-muted-foreground">16:9</span>
+                  </div>
+                  <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-3 sm:p-5">
+                    <div className="w-full max-w-[1400px]">
+                      <OverlayPreview
+                        overlays={overlays}
+                        draftOverlay={draftOverlay}
+                        draftVideoPreviewUrl={isVideoType ? videoPreviewUrl || (editingId ? `/api/overlays/preview?overlayId=${encodeURIComponent(editingId)}` : undefined) : undefined}
+                        editableDraft
+                        onDraftChange={handleDraftChange}
+                        compact
+                      />
+                    </div>
+                  </div>
+                </main>
+
+                <aside aria-label="Overlay editor panels" className="flex max-h-[42vh] min-h-0 w-full flex-col border-t border-border bg-card md:max-h-none md:w-[340px] md:shrink-0 md:border-l md:border-t-0">
+                  <div role="group" aria-label="Designer panels" className="grid grid-cols-3 gap-1 border-b border-border p-2">
                     <button
-                      key={template.label}
                       type="button"
-                      onClick={() => applyTemplate(template)}
-                      className="flex flex-col gap-1 rounded-lg border border-border bg-secondary/40 p-3 text-left transition-colors hover:border-primary/50 hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      aria-pressed={designerPanel === "layers"}
+                      onClick={() => setDesignerPanel("layers")}
+                      className="flex items-center justify-center gap-1.5 rounded-md px-2 py-2 text-xs text-muted-foreground transition-colors hover:bg-secondary/70 hover:text-foreground aria-pressed:bg-secondary aria-pressed:text-foreground"
                     >
-                      <span className="text-sm font-medium text-foreground">{template.label}</span>
-                      <span className="text-xs leading-relaxed text-muted-foreground">{template.description}</span>
+                      <Layers className="h-3.5 w-3.5" />
+                      Layers
                     </button>
-                  ))}
-                </div>
-              </section>
-            )}
-            <div className="flex flex-col gap-4 pt-2">
+                    <button
+                      type="button"
+                      aria-pressed={designerPanel === "design"}
+                      onClick={() => setDesignerPanel("design")}
+                      className="flex items-center justify-center gap-1.5 rounded-md px-2 py-2 text-xs text-muted-foreground transition-colors hover:bg-secondary/70 hover:text-foreground aria-pressed:bg-secondary aria-pressed:text-foreground"
+                    >
+                      <SlidersHorizontal className="h-3.5 w-3.5" />
+                      Design
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={designerPanel === "templates"}
+                      onClick={() => setDesignerPanel("templates")}
+                      className="flex items-center justify-center gap-1.5 rounded-md px-2 py-2 text-xs text-muted-foreground transition-colors hover:bg-secondary/70 hover:text-foreground aria-pressed:bg-secondary aria-pressed:text-foreground"
+                    >
+                      <LayoutTemplate className="h-3.5 w-3.5" />
+                      Templates
+                    </button>
+                  </div>
+
+                  <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                    {designerPanel === "layers" && (
+                      <section aria-labelledby="designer-layers-heading" className="flex flex-col gap-3">
+                        <div>
+                          <h3 id="designer-layers-heading" className="text-sm font-semibold text-foreground">Scene layers</h3>
+                          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">Enabled overlays appear together in the stream preview.</p>
+                        </div>
+                        <ul className="flex flex-col gap-1.5" aria-label="Overlays in the preview">
+                          {designerLayers.map((layer) => {
+                            const LayerIcon = overlayTypeIcons[layer.type]
+                            const isDraftLayer = layer.id === draftOverlay.id
+                            return (
+                              <li key={layer.id} className={cn(
+                                "flex items-center gap-3 rounded-md border px-3 py-2.5",
+                                isDraftLayer ? "border-primary/40 bg-primary/10" : "border-transparent bg-secondary/50"
+                              )}>
+                                <LayerIcon className={cn("h-4 w-4 shrink-0", isDraftLayer ? "text-primary" : "text-muted-foreground")} />
+                                <span className="min-w-0 flex-1">
+                                  <span className="block truncate text-sm font-medium text-foreground">{layer.name}</span>
+                                  <span className="block truncate text-xs text-muted-foreground">{overlayTypeLabels[layer.type]}</span>
+                                </span>
+                                {isDraftLayer && <span className="shrink-0 text-[10px] font-medium text-primary">Editing</span>}
+                                {!layer.enabled && <EyeOff className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label="Disabled" />}
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      </section>
+                    )}
+
+                    {designerPanel === "templates" && (
+                      <section aria-labelledby="designer-templates-heading" className="flex flex-col gap-3">
+                        <div>
+                          <h3 id="designer-templates-heading" className="text-sm font-semibold text-foreground">Broadcast templates</h3>
+                          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">Start with a layout, then adjust it on the canvas.</p>
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          {broadcastTemplates.map((template) => (
+                            <button
+                              key={template.label}
+                              type="button"
+                              onClick={() => applyTemplate(template)}
+                              className="flex flex-col gap-1 rounded-md border border-border bg-secondary/40 p-3 text-left transition-colors hover:border-primary/50 hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            >
+                              <span className="text-sm font-medium text-foreground">{template.label}</span>
+                              <span className="text-xs leading-relaxed text-muted-foreground">{template.description}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </section>
+                    )}
+
+                    {designerPanel === "design" && (
+                      <div>
+                        <div className="mb-4">
+                          <h3 className="text-sm font-semibold text-foreground">Design properties</h3>
+                          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">Changes update the canvas as you work.</p>
+                        </div>
+                        <div className="flex flex-col gap-4 pt-2">
               <div className="space-y-2">
                 <Label htmlFor="overlay-name">Overlay Name</Label>
                 <Input
@@ -753,7 +935,7 @@ export function OverlayManager() {
                       </Select>
                     </div>
                   </div>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-2">
                       <Label>Font Size</Label>
                       <Input
@@ -780,35 +962,37 @@ export function OverlayManager() {
                         />
                       </div>
                     </div>
-                    <div className="space-y-2">
-                      <Label>Background</Label>
-                      <div className="flex items-center gap-2">
-                        <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={bgColor === "transparent"}
-                            onChange={(e) => setBgColor(e.target.checked ? "transparent" : "#00000080")}
-                            className="rounded border-border"
-                          />
-                          No Background
-                        </label>
-                      </div>
-                      {bgColor !== "transparent" && (
+                    {type !== "text" && (
+                      <div className="space-y-2">
+                        <Label>Background</Label>
                         <div className="flex items-center gap-2">
-                          <input
-                            type="color"
-                            value={bgColor.slice(0, 7)}
-                            onChange={(e) => setBgColor(e.target.value + "80")}
-                            className="h-9 w-9 cursor-pointer rounded border border-border"
-                          />
-                          <Input
-                            value={bgColor}
-                            onChange={(e) => setBgColor(e.target.value)}
-                            className="flex-1"
-                          />
+                          <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={bgColor === "transparent"}
+                              onChange={(e) => setBgColor(e.target.checked ? "transparent" : "#00000080")}
+                              className="rounded border-border"
+                            />
+                            No Background
+                          </label>
                         </div>
-                      )}
-                    </div>
+                        {bgColor !== "transparent" && (
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="color"
+                              value={bgColor.slice(0, 7)}
+                              onChange={(e) => setBgColor(e.target.value + "80")}
+                              className="h-9 w-9 cursor-pointer rounded border border-border"
+                            />
+                            <Input
+                              value={bgColor}
+                              onChange={(e) => setBgColor(e.target.value)}
+                              className="flex-1"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {type === "scrolling_text" && (
@@ -866,47 +1050,10 @@ export function OverlayManager() {
                 </>
               )}
 
-              <div className="flex flex-col gap-2 rounded-lg border border-border bg-secondary/20 p-3">
-                <div>
-                  <p className="text-sm font-medium text-foreground">Live draft preview</p>
-                  <p className="text-xs text-muted-foreground">Choose a background clip to check the overlay against real footage.</p>
-                </div>
-                <OverlayPreview
-                  overlays={overlays}
-                  draftOverlay={draftOverlay}
-                  draftVideoPreviewUrl={videoPreviewUrl}
-                  compact
-                />
-              </div>
-
-              <OverlayPositionEditor
-                positionX={positionX}
-                positionY={positionY}
-                onPositionChange={(x, y) => {
-                  setPositionX(x)
-                  setPositionY(y)
-                  // Auto-set the legacy position field based on nearest preset
-                  if (x < 20 && y < 20) setPosition("top-left")
-                  else if (x > 80 && y < 20) setPosition("top-right")
-                  else if (x >= 20 && x <= 80 && y < 20) setPosition("top-center")
-                  else if (x < 20 && y > 80) setPosition("bottom-left")
-                  else if (x > 80 && y > 80) setPosition("bottom-right")
-                  else if (x >= 20 && x <= 80 && y > 80) setPosition("bottom-center")
-                  else setPosition("center")
-                }}
-                overlayType={type}
-                overlayName={name}
-                imagePath={imagePath || null}
-                textContent={textContent || null}
-                sizePercent={sizePercent}
-                videoPreviewUrl={isVideoType ? videoPreviewUrl || (editingId ? `/api/overlays/preview?overlayId=${encodeURIComponent(editingId)}` : null) : null}
-                loopOverlay={loopOverlay}
-              />
-
               {!isTextType && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label>Size</Label>
+                    <Label>Width on stream</Label>
                     <span className="text-xs text-muted-foreground">{sizePercent}%</span>
                   </div>
                   <Slider
@@ -933,14 +1080,12 @@ export function OverlayManager() {
                 />
               </div>
 
-              <Button
-                onClick={handleSave}
-                disabled={creating || !name.trim() || (!isTextType && !isVideoType && !imagePath) || (isTextType && !textContent.trim()) || (isVideoType && !videoPath) || (type === "scrolling_text" && !textContent.trim())}
-                className="w-full"
-              >
-                {creating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {editingId ? "Save Changes" : "Create Overlay"}
-              </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </aside>
+              </div>
             </div>
           </DialogContent>
           </Dialog>
