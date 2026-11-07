@@ -42,6 +42,16 @@ const VIDEO_DIR = process.env.VIDEO_DIR || './videos'
 // Active FFmpeg processes: streamId -> { processes, destinations[], tempFiles[], playlistState? }
 const activeStreams = new Map()
 
+function isProcessRunning(proc) {
+  return Boolean(
+    proc &&
+      typeof proc.pid === 'number' &&
+      proc.exitCode === null &&
+      proc.signalCode === null &&
+      !proc.killed
+  )
+}
+
 // Auth middleware
 function authenticate(req, res, next) {
   // Skip auth for /stream-video (it has its own auth: Bearer token or signed URL)
@@ -62,7 +72,8 @@ app.get('/health', (req, res) => {
     streams.push({
       streamId,
       destinations: info.destinations.length,
-      running: info.processes.some(p => !p.proc.killed),
+      running: info.processes.some(p => isProcessRunning(p.proc)),
+      hasVideoFrames: info.processes.some(p => p.hasProducedFrames),
       isPlaylist: info.isPlaylist || false,
       hasOverlays: (info.overlayCount || 0) > 0,
     })
@@ -76,7 +87,7 @@ app.get('/health', (req, res) => {
 })
 
 /**
- * Build FFmpeg overlay filter chain for image and text overlays.
+ * Build FFmpeg overlay filter chain for image, video, and text overlays.
  * Returns { inputArgs, filterComplex } or null if no overlays.
  */
 async function downloadToTemp(url) {
@@ -315,8 +326,8 @@ function buildOverlayFilters(overlays) {
 
       const scaleFilter = `[${inputIndex}:v]scale=${targetWidth}:-1,format=rgba,colorchannelmixer=aa=${opacityValue}[vid${i}]`
       filters.push(scaleFilter)
-      // shortest=1 ends when main video ends, eof_action=pass prevents freeze
-      filters.push(`[${currentLabel}][vid${i}]overlay=${posCoords}:shortest=1:eof_action=pass[${outputLabel}]`)
+      // Keep the main stream flowing after a non-looping video overlay ends.
+      filters.push(`[${currentLabel}][vid${i}]overlay=${posCoords}:eof_action=pass:repeatlast=0[${outputLabel}]`)
       
       currentLabel = outputLabel
       inputIndex++
@@ -331,8 +342,8 @@ function buildOverlayFilters(overlays) {
 
       const scaleFilter = `[${inputIndex}:v]scale=${targetWidth}:-1,format=rgba,colorchannelmixer=aa=${opacityValue}[img${i}]`
       filters.push(scaleFilter)
-      // shortest=1 ends when main video ends, eof_action=pass prevents freeze
-      filters.push(`[${currentLabel}][img${i}]overlay=${posCoords}:shortest=1:eof_action=pass[${outputLabel}]`)
+      // Keep the main stream flowing after the overlay input ends.
+      filters.push(`[${currentLabel}][img${i}]overlay=${posCoords}:eof_action=pass:repeatlast=0[${outputLabel}]`)
       
       currentLabel = outputLabel
       inputIndex++
@@ -796,12 +807,16 @@ function startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop,
       if (pe) {
         pe.proc = proc
         pe.killed = false
+        pe.hasProducedFrames = false
       }
     }
 
     let fileFinishedNaturally = false
     proc.stderr.on('data', (data) => {
       const msg = data.toString()
+      const currentEntry = activeStreams.get(streamId)
+      const trackedProcess = currentEntry?.processes.find(p => p.destId === dest.id)
+      if (trackedProcess && /\bframe=\s*\d+/.test(msg)) trackedProcess.hasProducedFrames = true
       if (msg.includes('Error') || msg.includes('error') || msg.includes('No such file') || msg.includes('Invalid')) {
         console.log(`[FFmpeg ${streamId}/${dest.id}] ${msg.trim()}`)
       }
@@ -1001,15 +1016,16 @@ app.post('/start', async (req, res) => {
       const ffmpegArgs = buildFFmpegArgs(inputArgs, overlayResult, rtmpTarget)
 
       const proc = spawn('ffmpeg', ffmpegArgs, { stdio: ['pipe', 'pipe', 'pipe'] })
+      const procEntry = { proc, destId: dest.id, killed: false, restartCount: 0, hasProducedFrames: false }
       proc.stderr.on('data', (data) => {
         const msg = data.toString()
+        if (/\bframe=\s*\d+/.test(msg)) procEntry.hasProducedFrames = true
         if (msg.includes('Error') || msg.includes('error') || msg.includes('Opening')) {
           console.log(`[FFmpeg ${streamId}/${dest.id}] ${msg.trim()}`)
         }
       })
 
       // Auto-restart for RTMP pull (source may disconnect temporarily)
-      const procEntry = { proc, destId: dest.id, killed: false, restartCount: 0 }
       setupAutoRestart(streamId, dest.id, ffmpegArgs, procEntry)
       proc.on('error', (err) => {
         console.error(`[2MStream] FFmpeg spawn error: ${err.message}`)
@@ -1046,8 +1062,10 @@ app.post('/start', async (req, res) => {
         const ffmpegArgs = buildFFmpegArgs(inputArgs, overlayResult, rtmpTarget)
 
         const proc = spawn('ffmpeg', ffmpegArgs, { stdio: ['pipe', 'pipe', 'pipe'] })
+        const procEntry = { proc, destId: dest.id, killed: false, restartCount: 0, hasProducedFrames: false }
         proc.stderr.on('data', (data) => {
           const msg = data.toString()
+          if (/\bframe=\s*\d+/.test(msg)) procEntry.hasProducedFrames = true
           if (msg.includes('Error') || msg.includes('error')) {
             console.log(`[FFmpeg ${streamId}/${dest.id}] ${msg.trim()}`)
           }
@@ -1055,7 +1073,7 @@ app.post('/start', async (req, res) => {
         proc.on('error', (err) => {
           errors.push({ destinationId: dest.id, error: err.message })
         })
-        processes.push({ proc, destId: dest.id, killed: false, restartCount: 0 })
+        processes.push(procEntry)
       }
     }
   }
@@ -1082,13 +1100,31 @@ app.post('/start', async (req, res) => {
     },
   })
 
-  // Give FFmpeg a moment to start, then check status
-  setTimeout(() => {
-    const stream = activeStreams.get(streamId)
-    if (!stream) return
-    const running = stream.processes.filter(p => p.proc && !p.proc.killed)
-    console.log(`[2MStream] Stream ${streamId}: ${running.length}/${stream.processes.length} destinations connected`)
-  }, 3000)
+  await new Promise(resolve => setTimeout(resolve, 1500))
+
+  const startedStream = activeStreams.get(streamId)
+  const activeProcesses = startedStream?.processes.filter(p => isProcessRunning(p.proc)) || []
+  const producedFrames = startedStream?.processes.some(p => p.hasProducedFrames) || false
+  console.log(`[2MStream] Stream ${streamId}: ${activeProcesses.length}/${startedStream?.processes.length || 0} FFmpeg processes running`)
+
+  if (activeProcesses.length === 0 && !producedFrames) {
+    const processErrors = startedStream?.processes.map(p => ({
+      destinationId: p.destId,
+      error: p.proc?.exitCode !== null && p.proc?.exitCode !== undefined
+        ? `FFmpeg exited with code ${p.proc.exitCode}`
+        : p.proc?.signalCode
+          ? `FFmpeg stopped by ${p.proc.signalCode}`
+          : 'FFmpeg did not start',
+      exitCode: p.proc?.exitCode ?? null,
+      signal: p.proc?.signalCode ?? null,
+    })) || []
+    stopStream(streamId)
+    return res.status(502).json({
+      success: false,
+      error: 'FFmpeg exited before the stream could start. Check the source video and overlay media.',
+      errors: [...errors, ...processErrors],
+    })
+  }
 
   res.json({ 
     success: true, 
@@ -1167,8 +1203,11 @@ app.get('/status/:streamId', (req, res) => {
 
   const destStatuses = stream.processes.map(p => ({
     destinationId: p.destId,
-    running: p.proc && !p.proc.killed,
-    pid: p.proc?.pid,
+    running: isProcessRunning(p.proc),
+    hasVideoFrames: Boolean(p.hasProducedFrames),
+    exitCode: p.proc?.exitCode ?? null,
+    signal: p.proc?.signalCode ?? null,
+    pid: p.proc?.pid ?? null,
   }))
 
   res.json({
@@ -1434,6 +1473,6 @@ process.on('SIGINT', () => {
 app.listen(PORT, () => {
   console.log(`[2MStream] Streaming engine listening on port ${PORT}`)
   console.log(`[2MStream] Video directory: ${VIDEO_DIR}`)
-  console.log(`[2MStream] Supports: playlists (sequential), overlays (image + text), multi-destination`)
+  console.log(`[2MStream] Supports: playlists (sequential), overlays (image + video + text), multi-destination`)
   console.log(`[2MStream] Waiting for stream commands...`)
 })

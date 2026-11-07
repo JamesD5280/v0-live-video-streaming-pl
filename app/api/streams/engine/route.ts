@@ -219,14 +219,16 @@ export async function POST(req: NextRequest) {
           .from("stream_destinations")
           .update({ status: "error" })
           .eq("stream_id", streamId)
-        return NextResponse.json({ success: false, error: result.error }, { status: 400 })
+        return NextResponse.json(
+          { success: false, error: result.error, details: result.errors || undefined },
+          { status: 502 }
+        )
       }
 
-      // Wait briefly then verify the engine is actually running the stream
+      // Let the destination ingest settle before marking the stream as live. the stream
       await new Promise((resolve) => setTimeout(resolve, 2000))
 
-      // Trust the stream start response - if it returned success, the stream is running
-      // The streaming server manages FFmpeg processes internally
+      // The streaming engine verifies that FFmpeg remains active before returning success.
       if (!result.success) {
         await supabase
           .from("streams")
@@ -257,8 +259,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "update_overlays") {
-      // For now, just update the database without restarting the stream
-      // Full overlay support requires FFmpeg filter graphs which we'll implement later
+      // The client restarts the streaming engine after these associations are saved.
       const { overlayIds } = body
       if (!streamId) return NextResponse.json({ error: "Missing streamId" }, { status: 400 })
 
