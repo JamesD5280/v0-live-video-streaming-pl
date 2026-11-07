@@ -44,6 +44,8 @@ interface OverlayPositionEditorProps {
   imagePath?: string | null
   textContent?: string | null
   sizePercent?: number
+  videoPreviewUrl?: string | null
+  loopOverlay?: boolean
 }
 
 export function OverlayPositionEditor({
@@ -55,9 +57,12 @@ export function OverlayPositionEditor({
   imagePath,
   textContent,
   sizePercent = 15,
+  videoPreviewUrl,
+  loopOverlay = true,
 }: OverlayPositionEditorProps) {
   const canvasRef = useRef<HTMLDivElement>(null)
   const [isDragging, setIsDragging] = useState(false)
+  const [videoPreviewError, setVideoPreviewError] = useState(false)
   const [showSafeZones, setShowSafeZones] = useState(true)
   const [showGrid, setShowGrid] = useState(false)
   const [localX, setLocalX] = useState(positionX)
@@ -67,6 +72,10 @@ export function OverlayPositionEditor({
     setLocalX(positionX)
     setLocalY(positionY)
   }, [positionX, positionY])
+
+  useEffect(() => {
+    setVideoPreviewError(false)
+  }, [videoPreviewUrl])
 
   const clamp = (val: number, min = 0, max = 100) => Math.max(min, Math.min(max, val))
 
@@ -289,13 +298,31 @@ export function OverlayPositionEditor({
           <div
             className={`flex w-full items-center justify-center rounded border-2 ${
               isDragging ? "border-primary shadow-lg shadow-primary/30" : "border-primary/70"
-            } bg-primary/20 backdrop-blur-sm`}
+            } ${overlayType === "video" ? "bg-transparent" : "bg-primary/20 backdrop-blur-sm"}`}
             style={{
               height: isTextType ? "24px" : undefined,
-              aspectRatio: isTextType ? undefined : "4/3",
+              aspectRatio: isTextType ? undefined : overlayType === "video" ? "16/9" : "4/3",
             }}
           >
-            {imagePath && !isTextType ? (
+            {overlayType === "video" ? (
+              videoPreviewUrl && !videoPreviewError ? (
+                <video
+                  src={videoPreviewUrl}
+                  aria-label={`${overlayName} video overlay preview`}
+                  className="h-full w-full object-contain"
+                  autoPlay
+                  muted
+                  playsInline
+                  loop={loopOverlay}
+                  preload="metadata"
+                  onError={() => setVideoPreviewError(true)}
+                />
+              ) : (
+                <span role={videoPreviewError ? "status" : undefined} className="px-1 text-center text-[8px] font-medium text-primary">
+                  {videoPreviewError ? "Video preview unavailable" : "Upload video to preview"}
+                </span>
+              )
+            ) : imagePath && !isTextType ? (
               <img src={imagePath} alt="" className="max-h-full max-w-full object-contain p-0.5" />
             ) : isTextType ? (
               <span className="truncate px-1 text-[8px] font-medium text-primary-foreground">

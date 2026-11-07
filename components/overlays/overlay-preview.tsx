@@ -18,6 +18,7 @@ const fetcher = (url: string) => fetch(url).then((r) => { if (!r.ok) throw new E
 interface OverlayPreviewProps {
   overlays: Overlay[]
   draftOverlay?: Overlay
+  draftVideoPreviewUrl?: string
   compact?: boolean
 }
 
@@ -63,7 +64,67 @@ function getPositionStyle(overlay: Overlay): React.CSSProperties {
   return styles[overlay.position] || styles["top-left"]
 }
 
-export function OverlayPreview({ overlays, draftOverlay, compact = false }: OverlayPreviewProps) {
+function VideoOverlayPreview({
+  name,
+  src,
+  loop,
+}: {
+  name: string
+  src: string | null
+  loop: boolean
+}) {
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    setFailed(false)
+  }, [src])
+
+  return (
+    <div className="relative aspect-video w-full overflow-hidden rounded border border-primary/30 bg-background/30">
+      {src && !failed ? (
+        <video
+          key={src}
+          src={src}
+          aria-label={`${name} video overlay preview`}
+          className="h-full w-full object-contain"
+          autoPlay
+          muted
+          playsInline
+          loop={loop}
+          preload="metadata"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-background/70 text-center">
+          <VideoIcon className="h-4 w-4 text-primary" />
+          <p className="max-w-full truncate px-2 text-[8px] font-medium text-primary">
+            {failed ? "Video preview unavailable" : "Upload video to preview"}
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function getOverlayVideoPreviewUrl(
+  overlay: Overlay,
+  draftOverlay: Overlay | undefined,
+  draftVideoPreviewUrl: string | undefined
+) {
+  if (draftOverlay?.id === overlay.id) {
+    if (draftVideoPreviewUrl) return draftVideoPreviewUrl
+    if (overlay.id === "draft-overlay") return null
+  }
+
+  return `/api/overlays/preview?overlayId=${encodeURIComponent(overlay.id)}`
+}
+
+export function OverlayPreview({
+  overlays,
+  draftOverlay,
+  draftVideoPreviewUrl,
+  compact = false,
+}: OverlayPreviewProps) {
   const { data: videos } = useSWR<Video[]>("/api/videos", fetcher)
   const videoRef = useRef<HTMLVideoElement>(null)
   const previewOverlays = draftOverlay
@@ -294,19 +355,12 @@ export function OverlayPreview({ overlays, draftOverlay, compact = false }: Over
                 </div>
               )}
 
-              {/* Video overlay placeholder */}
               {overlay.type === "video" && (
-                <div
-                  className="flex w-full items-center justify-center rounded border border-primary/30 bg-primary/10 backdrop-blur-sm"
-                  style={{
-                    aspectRatio: "16/9",
-                  }}
-                >
-                  <div className="text-center">
-                    <VideoIcon className="mx-auto h-4 w-4 text-primary" />
-                    <p className="mt-0.5 text-[8px] font-medium text-primary">{overlay.name}</p>
-                  </div>
-                </div>
+                <VideoOverlayPreview
+                  name={overlay.name}
+                  src={getOverlayVideoPreviewUrl(overlay, draftOverlay, draftVideoPreviewUrl)}
+                  loop={overlay.loop_overlay !== false}
+                />
               )}
 
               {/* Text overlay */}
