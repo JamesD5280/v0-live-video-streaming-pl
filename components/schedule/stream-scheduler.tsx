@@ -11,14 +11,18 @@ import { Checkbox } from "@/components/ui/checkbox"
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { fetcher } from "@/lib/fetcher"
-import type { Video, Destination, ScheduledEvent, Overlay } from "@/lib/store"
-import { Calendar, Clock, Plus, Trash2, Video as VideoIcon, Radio, Repeat, Loader2, Rss, Film, Layers, Pencil } from "lucide-react"
+import type { Video, Destination, ScheduledEvent, Overlay, Playlist } from "@/lib/store"
+import { Calendar, Clock, Plus, Trash2, Video as VideoIcon, Radio, Repeat, Loader2, Rss, Film, ListVideo, Layers, Pencil } from "lucide-react"
 import { cn } from "@/lib/utils"
+
+type ScheduleSourceType = "video" | "playlist" | "rtmp_pull"
 
 function toLocalDateInput(date: Date): string {
   const year = date.getFullYear()
@@ -35,6 +39,7 @@ function toLocalTimeInput(date: Date): string {
 
 export function StreamScheduler() {
   const { data: videos } = useSWR<Video[]>("/api/videos", fetcher)
+  const { data: playlists } = useSWR<Playlist[]>("/api/playlists", fetcher)
   const { data: destinations } = useSWR<Destination[]>("/api/destinations", fetcher)
   const { data: overlays } = useSWR<Overlay[]>("/api/overlays", fetcher)
   const { data: events, error: eventsError, mutate } = useSWR<ScheduledEvent[]>("/api/schedule", fetcher)
@@ -50,7 +55,8 @@ export function StreamScheduler() {
   const [newEvent, setNewEvent] = useState({
     title: "",
     videoId: "",
-    sourceType: "video" as "video" | "rtmp_pull",
+    playlistId: "",
+    sourceType: "video" as ScheduleSourceType,
     rtmpPullUrl: "",
     destinations: [] as string[],
     overlayIds: [] as string[],
@@ -60,6 +66,16 @@ export function StreamScheduler() {
   })
 
   const readyVideos = Array.isArray(videos) ? videos.filter((v) => v.status === "ready") : []
+  const readyPlaylists = Array.isArray(playlists)
+    ? playlists.filter((playlist) => {
+        const items = playlist.playlist_items || []
+        return items.length > 0 && items.every((item) => {
+          const relationVideo = item.video as Video | Video[] | null | undefined
+          const video = Array.isArray(relationVideo) ? relationVideo[0] : relationVideo
+          return video?.status === "ready"
+        })
+      })
+    : []
   const enabledDests = Array.isArray(destinations) ? destinations.filter((d) => d.enabled) : []
   const enabledOverlays = Array.isArray(overlays) ? overlays.filter((o) => o.enabled) : []
 
@@ -82,7 +98,7 @@ export function StreamScheduler() {
   }
 
   const resetForm = () => {
-    setNewEvent({ title: "", videoId: "", sourceType: "video", rtmpPullUrl: "", destinations: [], overlayIds: [], date: "", time: "", repeat: "none" })
+    setNewEvent({ title: "", videoId: "", playlistId: "", sourceType: "video", rtmpPullUrl: "", destinations: [], overlayIds: [], date: "", time: "", repeat: "none" })
     setEditingId(null)
     setScheduleError(null)
     setShowForm(false)
@@ -93,7 +109,8 @@ export function StreamScheduler() {
     setNewEvent({
       title: event.title,
       videoId: event.video_id || "",
-      sourceType: event.source_type as "video" | "rtmp_pull",
+      playlistId: event.playlist_id || "",
+      sourceType: event.source_type,
       rtmpPullUrl: event.rtmp_pull_url || "",
       destinations: event.event_destinations?.map((ed) => ed.destination_id) || [],
       overlayIds: event.event_overlays?.map((eo) => eo.overlay_id) || [],
@@ -125,6 +142,14 @@ export function StreamScheduler() {
       setScheduleError("Select at least one destination.")
       return
     }
+    if (newEvent.sourceType === "video" && !newEvent.videoId) {
+      setScheduleError("Select a video source.")
+      return
+    }
+    if (newEvent.sourceType === "playlist" && !newEvent.playlistId) {
+      setScheduleError("Select a playlist source.")
+      return
+    }
     if (newEvent.sourceType === "rtmp_pull") {
       try {
         const sourceUrl = new URL(newEvent.rtmpPullUrl)
@@ -143,8 +168,9 @@ export function StreamScheduler() {
     const body = {
       title: newEvent.title,
       source_type: newEvent.sourceType,
-      video_id: newEvent.sourceType === "video" ? newEvent.videoId : undefined,
-      rtmp_pull_url: newEvent.sourceType === "rtmp_pull" ? newEvent.rtmpPullUrl : undefined,
+      video_id: newEvent.sourceType === "video" ? newEvent.videoId : null,
+      playlist_id: newEvent.sourceType === "playlist" ? newEvent.playlistId : null,
+      rtmp_pull_url: newEvent.sourceType === "rtmp_pull" ? newEvent.rtmpPullUrl : null,
       scheduled_at: scheduledAt,
       repeat_mode: newEvent.repeat,
       destination_ids: newEvent.destinations,
@@ -248,46 +274,74 @@ export function StreamScheduler() {
               </div>
               <div className="space-y-2">
                 <Label className="text-foreground">Source Type</Label>
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant={newEvent.sourceType === "video" ? "default" : "outline"}
-                    size="sm"
-                    className="gap-1.5"
-                    onClick={() => setNewEvent({ ...newEvent, sourceType: "video" })}
-                  >
+                <ToggleGroup
+                  type="single"
+                  value={newEvent.sourceType}
+                  onValueChange={(value) => {
+                    if (value) setNewEvent((prev) => ({ ...prev, sourceType: value as ScheduleSourceType }))
+                  }}
+                  variant="outline"
+                  size="sm"
+                  aria-label="Source type"
+                  className="flex-wrap justify-start"
+                >
+                  <ToggleGroupItem value="video" aria-label="Video file" className="gap-1.5">
                     <Film className="h-3.5 w-3.5" />
                     Video File
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={newEvent.sourceType === "rtmp_pull" ? "default" : "outline"}
-                    size="sm"
-                    className="gap-1.5"
-                    onClick={() => setNewEvent({ ...newEvent, sourceType: "rtmp_pull" })}
-                  >
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="playlist" aria-label="Video playlist" className="gap-1.5">
+                    <ListVideo className="h-3.5 w-3.5" />
+                    Playlist
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="rtmp_pull" aria-label="RTMP pull" className="gap-1.5">
                     <Rss className="h-3.5 w-3.5" />
                     RTMP Pull
-                  </Button>
-                </div>
+                  </ToggleGroupItem>
+                </ToggleGroup>
               </div>
             </div>
             {newEvent.sourceType === "video" ? (
               <div className="space-y-2">
-                <Label className="text-foreground">Video</Label>
+                <Label htmlFor="scheduled-video-source" className="text-foreground">Video</Label>
                 <Select value={newEvent.videoId} onValueChange={(val) => setNewEvent({ ...newEvent, videoId: val })}>
-                  <SelectTrigger className="bg-secondary border-border text-foreground"><SelectValue placeholder="Select video" /></SelectTrigger>
+                  <SelectTrigger id="scheduled-video-source" className="bg-secondary border-border text-foreground"><SelectValue placeholder="Select video" /></SelectTrigger>
                   <SelectContent className="bg-card border-border">
-                    {readyVideos.map((video) => (
-                      <SelectItem key={video.id} value={video.id}>{video.title}</SelectItem>
-                    ))}
+                    <SelectGroup>
+                      {readyVideos.map((video) => (
+                        <SelectItem key={video.id} value={video.id}>{video.title}</SelectItem>
+                      ))}
+                    </SelectGroup>
                   </SelectContent>
                 </Select>
               </div>
+            ) : newEvent.sourceType === "playlist" ? (
+              <div className="space-y-2">
+                <Label htmlFor="scheduled-playlist-source" className="text-foreground">Video playlist</Label>
+                <Select value={newEvent.playlistId} onValueChange={(val) => setNewEvent({ ...newEvent, playlistId: val })}>
+                  <SelectTrigger id="scheduled-playlist-source" className="bg-secondary border-border text-foreground">
+                    <SelectValue placeholder={playlists ? "No ready playlists" : "Loading playlists"} />
+                  </SelectTrigger>
+                  <SelectContent className="bg-card border-border">
+                    <SelectGroup>
+                      {readyPlaylists.map((playlist) => (
+                        <SelectItem key={playlist.id} value={playlist.id}>
+                          {playlist.name} ({playlist.playlist_items?.length} videos)
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  {playlists && readyPlaylists.length === 0
+                    ? "Create a playlist with at least one ready video before scheduling it."
+                    : "Plays the playlist in order and follows its loop setting. Every video must be ready."}
+                </p>
+              </div>
             ) : (
               <div className="space-y-2">
-                <Label className="text-foreground">RTMP Source URL</Label>
+                <Label htmlFor="scheduled-rtmp-source" className="text-foreground">RTMP Source URL</Label>
                 <Input
+                  id="scheduled-rtmp-source"
                   value={newEvent.rtmpPullUrl}
                   onChange={(e) => setNewEvent({ ...newEvent, rtmpPullUrl: e.target.value })}
                   placeholder="rtmp://source-server.com/live/stream-key"
@@ -372,7 +426,7 @@ export function StreamScheduler() {
               <p role="alert" className="text-sm text-destructive">{scheduleError}</p>
             )}
             <div className="flex gap-2">
-              <Button onClick={saveEvent} disabled={!newEvent.title.trim() || (newEvent.sourceType === "video" ? !newEvent.videoId : !newEvent.rtmpPullUrl.trim()) || !newEvent.date || !newEvent.time || newEvent.destinations.length === 0 || saving} className="bg-primary text-primary-foreground hover:bg-primary/90">
+              <Button onClick={saveEvent} disabled={!newEvent.title.trim() || (newEvent.sourceType === "video" ? !newEvent.videoId : newEvent.sourceType === "playlist" ? !newEvent.playlistId : !newEvent.rtmpPullUrl.trim()) || !newEvent.date || !newEvent.time || newEvent.destinations.length === 0 || saving} className="bg-primary text-primary-foreground hover:bg-primary/90">
                 {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 {editingId ? "Update" : "Schedule"}
               </Button>
@@ -432,8 +486,18 @@ export function StreamScheduler() {
                       </div>
                       <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
                         <span className="flex items-center gap-1">
-                          {event.source_type === "rtmp_pull" ? <Rss className="h-3 w-3" /> : <VideoIcon className="h-3 w-3" />}
-                          {event.source_type === "rtmp_pull" ? `RTMP: ${event.rtmp_pull_url}` : (event.video?.title || "Unknown")}
+                          {event.source_type === "rtmp_pull" ? (
+                            <Rss className="h-3 w-3" />
+                          ) : event.source_type === "playlist" ? (
+                            <ListVideo className="h-3 w-3" />
+                          ) : (
+                            <VideoIcon className="h-3 w-3" />
+                          )}
+                          {event.source_type === "rtmp_pull"
+                            ? `RTMP: ${event.rtmp_pull_url}`
+                            : event.source_type === "playlist"
+                              ? `Playlist: ${event.playlist?.name || "Unavailable"}`
+                              : event.video?.title || "Unknown"}
                         </span>
                         <span className="flex items-center gap-1"><Radio className="h-3 w-3" />{destNames.join(", ") || "No destinations"}</span>
                       </div>

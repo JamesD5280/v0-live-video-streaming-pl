@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
   // Find all pending events that are due
   const { data: dueEvents, error } = await supabase
     .from("scheduled_events")
-    .select("*, video:videos(*), event_destinations(*, destination:destinations(*)), event_overlays(*, overlay:overlays(*))")
+    .select("*, video:videos(*), playlist:playlists(*, playlist_items(*, video:videos(*))), event_destinations(*, destination:destinations(*)), event_overlays(*, overlay:overlays(*))")
     .in("status", ["idle", "pending", "scheduled"])
     .lte("scheduled_at", now)
 
@@ -106,9 +106,26 @@ export async function GET(req: NextRequest) {
 
       // Determine source
       const supabaseStorageBase = `${SUPABASE_URL}/storage/v1/object/public`
+      const getVideoUrl = (video: { storage_path?: string | null }) => {
+        if (!video.storage_path) return undefined
+        if (video.storage_path.startsWith("http://") || video.storage_path.startsWith("https://")) {
+          if (video.storage_path.includes("b-cdn.net")) {
+            const url = new URL(video.storage_path)
+            const pathSegments = url.pathname.split("/").map((segment) =>
+              segment ? encodeURIComponent(decodeURIComponent(segment)) : segment
+            )
+            url.pathname = pathSegments.join("/")
+            return url.toString()
+          }
+          return video.storage_path
+        }
+        return `${supabaseStorageBase}/videos/${video.storage_path}`
+      }
+
       let videoSources: { url?: string; path?: string; title?: string }[] = []
       let loop = true
       const isRtmpPull = event.source_type === "rtmp_pull"
+      const isPlaylist = event.source_type === "playlist"
 
       if (isRtmpPull) {
         if (!event.rtmp_pull_url) {
@@ -124,11 +141,38 @@ export async function GET(req: NextRequest) {
         }
         videoSources = [{ url: event.rtmp_pull_url, title: "RTMP Pull Source" }]
         loop = false
+      } else if (isPlaylist) {
+        const playlist = event.playlist as {
+          loop?: boolean
+          playlist_items?: Array<{
+            position: number
+            video?: { status?: string; storage_path?: string | null; filename?: string; title?: string } | { status?: string; storage_path?: string | null; filename?: string; title?: string }[] | null
+          }>
+        } | null
+        const playlistItems = [...(playlist?.playlist_items || [])].sort((a, b) => a.position - b.position)
+        const playlistVideos = playlistItems.map((item) => Array.isArray(item.video) ? item.video[0] : item.video)
+
+        if (!playlist || playlistItems.length === 0 || playlistVideos.some((video) => video?.status !== "ready")) {
+          await supabase.from("scheduled_events").update({ status: "error" }).eq("id", event.id)
+          await createNotification(supabase, event.user_id, {
+            type: "schedule_error",
+            title: "Schedule failed",
+            message: `"${event.title}" has no available playlist videos.`,
+            event_id: event.id,
+          })
+          results.push({ eventId: event.id, error: "Playlist has no available videos" })
+          continue
+        }
+
+        videoSources = playlistVideos.map((video) => ({
+          url: getVideoUrl(video!),
+          path: video!.filename,
+          title: video!.title,
+        }))
+        loop = playlist.loop !== false
       } else if (event.video) {
         videoSources = [{
-          url: event.video.storage_path
-            ? `${supabaseStorageBase}/videos/${event.video.storage_path}`
-            : undefined,
+          url: getVideoUrl(event.video),
           path: event.video.filename,
           title: event.video.title,
         }]
@@ -182,7 +226,8 @@ export async function GET(req: NextRequest) {
         .insert({
           user_id: event.user_id,
           title: event.title,
-          video_id: isRtmpPull ? null : event.video_id,
+          video_id: isRtmpPull || isPlaylist ? null : event.video_id,
+          playlist_id: isPlaylist ? event.playlist_id : null,
           rtmp_pull_url: isRtmpPull ? event.rtmp_pull_url : null,
           status: "scheduled",
         })
@@ -220,7 +265,7 @@ export async function GET(req: NextRequest) {
         destinations,
         overlays,
         loop,
-        isPlaylist: false,
+        isPlaylist,
         isRtmpPull,
         rtmpPullUrl: isRtmpPull ? event.rtmp_pull_url : null,
       })
@@ -269,6 +314,7 @@ export async function GET(req: NextRequest) {
               .insert({
                 user_id: event.user_id,
                 video_id: event.video_id,
+                playlist_id: event.playlist_id,
                 title: event.title,
                 scheduled_at: nextDate.toISOString(),
                 repeat_mode: event.repeat_mode,
