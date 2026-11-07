@@ -53,8 +53,7 @@ export function VideoPreviewDialog({ video, open, onOpenChange }: VideoPreviewDi
   const [showControls, setShowControls] = useState(true)
   const hideControlsTimer = useRef<NodeJS.Timeout | null>(null)
 
-  // Build the proxy URL - the Edge Runtime proxy handles HTTPS -> HTTP
-  const videoUrl = video ? `/api/videos/preview?filename=${encodeURIComponent(video.filename)}` : ""
+  const videoUrl = video ? `/api/videos/preview?videoId=${encodeURIComponent(video.id)}` : ""
 
   // Reset state when video changes
   useEffect(() => {

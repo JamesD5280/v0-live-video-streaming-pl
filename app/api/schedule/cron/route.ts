@@ -1,14 +1,16 @@
-import { createClient as createServiceClient } from "@supabase/supabase-js"
+import { createClient as createServiceClient, type SupabaseClient } from "@supabase/supabase-js"
 import { NextRequest, NextResponse } from "next/server"
 
 const STREAMING_SERVER_URL = process.env.STREAMING_SERVER_URL
-const STREAMING_API_SECRET = process.env.STREAMING_API_SECRET || "change-this-secret"
+const STREAMING_API_SECRET = process.env.STREAMING_API_SECRET
+
+export const maxDuration = 60
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
 const CRON_SECRET = process.env.CRON_SECRET
 
 async function callStreamingServer(path: string, body: Record<string, unknown>) {
-  if (!STREAMING_SERVER_URL) return { error: "Streaming server not configured" }
+  if (!STREAMING_SERVER_URL || !STREAMING_API_SECRET) return { error: "Streaming server not configured" }
   const res = await fetch(`${STREAMING_SERVER_URL}${path}`, {
     method: "POST",
     headers: {
@@ -27,12 +29,15 @@ async function callStreamingServer(path: string, body: Record<string, unknown>) 
  * Creates a stream and starts it for any events whose scheduled_at is in the past and status is "pending".
  */
 export async function GET(req: NextRequest) {
-  // Verify cron secret if set
-  if (CRON_SECRET) {
-    const authHeader = req.headers.get("authorization")
-    if (authHeader !== `Bearer ${CRON_SECRET}`) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
+  if (!CRON_SECRET && process.env.NODE_ENV === "production") {
+    return NextResponse.json({ error: "Cron authentication is not configured" }, { status: 503 })
+  }
+  if (CRON_SECRET && req.headers.get("authorization") !== `Bearer ${CRON_SECRET}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+    return NextResponse.json({ error: "Scheduler database access is not configured" }, { status: 503 })
   }
 
   const supabase = createServiceClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
@@ -42,7 +47,7 @@ export async function GET(req: NextRequest) {
   const { data: dueEvents, error } = await supabase
     .from("scheduled_events")
     .select("*, video:videos(*), event_destinations(*, destination:destinations(*)), event_overlays(*, overlay:overlays(*))")
-    .in("status", ["idle", "scheduled"])
+    .in("status", ["idle", "pending", "scheduled"])
     .lte("scheduled_at", now)
 
   if (error) {
@@ -57,11 +62,22 @@ export async function GET(req: NextRequest) {
 
   for (const event of dueEvents) {
     try {
-      // Mark event as live (in progress)
-      await supabase
+      const { data: claimedEvent, error: claimError } = await supabase
         .from("scheduled_events")
-        .update({ status: "live" })
+        .update({ status: "running", updated_at: new Date().toISOString() })
         .eq("id", event.id)
+        .in("status", ["idle", "pending", "scheduled"])
+        .select("id")
+        .maybeSingle()
+
+      if (claimError) {
+        results.push({ eventId: event.id, error: claimError.message })
+        continue
+      }
+      if (!claimedEvent) {
+        results.push({ eventId: event.id, skipped: true })
+        continue
+      }
 
       // Build destinations
       const destinations = (event.event_destinations || [])
@@ -134,9 +150,10 @@ export async function GET(req: NextRequest) {
         .map((eo: { overlay: {
           id: string; type: string; image_path?: string; video_path?: string;
           loop_overlay?: boolean; text_content?: string; font_size: number;
-          font_color: string; bg_color: string; position: string;
+          font_color: string; font_family?: string; font_weight?: string;
+          bg_color: string; position: string;
           position_x?: number; position_y?: number; size_percent: number;
-          opacity: number; scroll_speed?: number;
+          opacity: number; scroll_speed?: number; scroll_start_x?: number; scroll_end_x?: number;
         }}) => ({
           id: eo.overlay.id,
           type: eo.overlay.type,
@@ -146,6 +163,8 @@ export async function GET(req: NextRequest) {
           textContent: eo.overlay.text_content || null,
           fontSize: eo.overlay.font_size,
           fontColor: eo.overlay.font_color,
+          fontFamily: eo.overlay.font_family || "sans",
+          fontWeight: eo.overlay.font_weight || "normal",
           bgColor: eo.overlay.bg_color,
           position: eo.overlay.position,
           positionX: eo.overlay.position_x ?? undefined,
@@ -153,6 +172,8 @@ export async function GET(req: NextRequest) {
           sizePercent: eo.overlay.size_percent,
           opacity: eo.overlay.opacity,
           scrollSpeed: eo.overlay.scroll_speed ?? undefined,
+          scrollStartX: eo.overlay.scroll_start_x ?? undefined,
+          scrollEndX: eo.overlay.scroll_end_x ?? undefined,
         }))
 
       // Create a stream record
@@ -204,7 +225,7 @@ export async function GET(req: NextRequest) {
         rtmpPullUrl: isRtmpPull ? event.rtmp_pull_url : null,
       })
 
-      if (engineResult?.error) {
+      if (engineResult?.error || engineResult?.success === false) {
         await supabase.from("streams").update({ status: "error" }).eq("id", stream.id)
         await supabase.from("scheduled_events").update({ status: "error" }).eq("id", event.id)
         await createNotification(supabase, event.user_id, {
@@ -334,7 +355,7 @@ function getNextScheduleDate(current: Date, repeatMode: string): Date | null {
 }
 
 async function createNotification(
-  supabase: ReturnType<typeof createServiceClient>,
+  supabase: SupabaseClient<any>,
   userId: string,
   data: { type: string; title: string; message: string; event_id?: string; stream_id?: string }
 ) {
@@ -349,7 +370,7 @@ async function createNotification(
 }
 
 async function sendWebhook(
-  supabase: ReturnType<typeof createServiceClient>,
+  supabase: SupabaseClient<any>,
   userId: string,
   payload: Record<string, unknown>
 ) {

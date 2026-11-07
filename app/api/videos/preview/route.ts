@@ -1,5 +1,7 @@
+import { createClient } from "@/lib/supabase/server"
 import { NextRequest, NextResponse } from "next/server"
 import http from "http"
+import https from "https"
 
 /**
  * Node.js runtime -- required for proper HTTP piping with Range support.
@@ -8,26 +10,50 @@ import http from "http"
 export const maxDuration = 60
 
 const STREAMING_SERVER_URL = process.env.STREAMING_SERVER_URL
-const STREAMING_API_SECRET = process.env.STREAMING_API_SECRET || "change-this-secret"
+const STREAMING_API_SECRET = process.env.STREAMING_API_SECRET
 
 /**
- * GET /api/videos/preview?filename=video.mp4
+ * GET /api/videos/preview?videoId=<owned-video-id>
  *
  * Node.js-based video proxy that uses raw http.get to properly pipe
  * Range responses from the VPS streaming server to the browser.
  */
 export async function GET(req: NextRequest) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+
   const { searchParams } = new URL(req.url)
-  const filename = searchParams.get("filename")
-  if (!filename) {
-    return NextResponse.json({ error: "Missing filename" }, { status: 400 })
+  const videoId = searchParams.get("videoId")
+  if (!videoId) {
+    return NextResponse.json({ error: "Missing videoId" }, { status: 400 })
   }
 
-  if (!STREAMING_SERVER_URL) {
-    return NextResponse.json({ error: "Streaming server not configured" }, { status: 500 })
+  const { data: video, error: videoError } = await supabase
+    .from("videos")
+    .select("filename")
+    .eq("id", videoId)
+    .eq("user_id", user.id)
+    .maybeSingle()
+
+  if (videoError || !video) {
+    return NextResponse.json({ error: "Video not found" }, { status: 404 })
   }
 
-  const serverUrl = `${STREAMING_SERVER_URL}/stream-video/${encodeURIComponent(filename)}`
+  if (!STREAMING_SERVER_URL || !STREAMING_API_SECRET) {
+    return NextResponse.json({ error: "Streaming preview is not configured" }, { status: 503 })
+  }
+
+  let parsedUrl: URL
+  try {
+    parsedUrl = new URL(`/stream-video/${encodeURIComponent(video.filename)}`, STREAMING_SERVER_URL)
+  } catch {
+    return NextResponse.json({ error: "Invalid streaming server URL" }, { status: 500 })
+  }
+
+  if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+    return NextResponse.json({ error: "Unsupported streaming server protocol" }, { status: 500 })
+  }
 
   // Build headers for the upstream request
   const upstreamHeaders: Record<string, string> = {
@@ -38,27 +64,25 @@ export async function GET(req: NextRequest) {
     upstreamHeaders["Range"] = rangeHeader
   }
 
-  // Use native http module for proper streaming
   return new Promise<Response>((resolve) => {
-    const parsedUrl = new URL(serverUrl)
-    
+    const transport = parsedUrl.protocol === "https:" ? https : http
     const options: http.RequestOptions = {
       hostname: parsedUrl.hostname,
-      port: parsedUrl.port || 80,
+      port: parsedUrl.port || (parsedUrl.protocol === "https:" ? 443 : 80),
       path: parsedUrl.pathname + parsedUrl.search,
       method: "GET",
       headers: upstreamHeaders,
     }
 
-    const proxyReq = http.request(options, (proxyRes) => {
+    const proxyReq = transport.request(options, (proxyRes) => {
       const responseHeaders = new Headers()
       
       // Forward relevant headers
       const ct = proxyRes.headers["content-type"] || "video/mp4"
-      responseHeaders.set("Content-Type", ct)
-      responseHeaders.set("Accept-Ranges", "bytes")
-      responseHeaders.set("Cache-Control", "public, max-age=3600")
-      responseHeaders.set("Access-Control-Allow-Origin", "*")
+      responseHeaders.set("Content-Type", String(ct))
+      responseHeaders.set("Accept-Ranges", String(proxyRes.headers["accept-ranges"] || "bytes"))
+      responseHeaders.set("Cache-Control", "private, no-store")
+      responseHeaders.set("Vary", "Cookie, Range")
 
       if (proxyRes.headers["content-length"]) {
         responseHeaders.set("Content-Length", proxyRes.headers["content-length"])
@@ -93,6 +117,7 @@ export async function GET(req: NextRequest) {
       )
     })
 
+    proxyReq.setTimeout(20_000, () => proxyReq.destroy(new Error("Preview request timed out")))
     proxyReq.on("error", () => {
       resolve(
         NextResponse.json(

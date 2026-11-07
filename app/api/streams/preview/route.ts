@@ -2,7 +2,9 @@ import { createClient } from "@/lib/supabase/server"
 import { NextRequest, NextResponse } from "next/server"
 
 const STREAMING_SERVER_URL = process.env.STREAMING_SERVER_URL
-const STREAMING_API_SECRET = process.env.STREAMING_API_SECRET || "change-this-secret"
+const STREAMING_API_SECRET = process.env.STREAMING_API_SECRET
+
+export const maxDuration = 60
 
 /**
  * POST /api/streams/preview
@@ -18,8 +20,12 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json()
 
-    if (!STREAMING_SERVER_URL) {
-      return NextResponse.json({ error: "Streaming server not configured" }, { status: 500 })
+    if (!STREAMING_SERVER_URL || !STREAMING_API_SECRET) {
+      return NextResponse.json({ error: "Streaming preview is not configured" }, { status: 503 })
+    }
+
+    if (![body.videoId, body.playlistId, body.rtmpPullUrl].filter(Boolean).length) {
+      return NextResponse.json({ error: "Select a video, playlist, or RTMP source" }, { status: 400 })
     }
 
     let videoSource = ""
@@ -27,6 +33,15 @@ export async function POST(req: NextRequest) {
     let isPlaylist = false
 
     if (body.rtmpPullUrl) {
+      let sourceUrl: URL
+      try {
+        sourceUrl = new URL(body.rtmpPullUrl)
+      } catch {
+        return NextResponse.json({ error: "Enter a valid RTMP source URL" }, { status: 400 })
+      }
+      if (sourceUrl.protocol !== "rtmp:" && sourceUrl.protocol !== "rtmps:") {
+        return NextResponse.json({ error: "RTMP sources must use rtmp:// or rtmps://" }, { status: 400 })
+      }
       videoSource = body.rtmpPullUrl
       videoSources = [{ url: body.rtmpPullUrl }]
     } else if (body.videoId) {
@@ -35,22 +50,22 @@ export async function POST(req: NextRequest) {
         .select("filename")
         .eq("id", body.videoId)
         .single()
-      if (video) {
-        videoSources = [{ path: video.filename }]
-      }
+      if (!video) return NextResponse.json({ error: "Video not found" }, { status: 404 })
+      videoSources = [{ path: video.filename }]
     } else if (body.playlistId) {
       const { data: playlist } = await supabase
         .from("playlists")
         .select("*, playlist_items(*, video:videos(filename))")
         .eq("id", body.playlistId)
         .single()
-      if (playlist?.playlist_items) {
-        isPlaylist = true
-        videoSources = playlist.playlist_items
-          .sort((a: { position: number }, b: { position: number }) => a.position - b.position)
-          .map((item: { video?: { filename?: string } }) => ({ path: item.video?.filename }))
-          .filter((s: { path?: string }) => s.path)
+      if (!playlist?.playlist_items?.length) {
+        return NextResponse.json({ error: "Playlist has no videos" }, { status: 404 })
       }
+      isPlaylist = true
+      videoSources = playlist.playlist_items
+        .sort((a: { position: number }, b: { position: number }) => a.position - b.position)
+        .map((item: { video?: { filename?: string } }) => ({ path: item.video?.filename }))
+        .filter((source: { path?: string }) => source.path)
     }
 
     // Fetch overlay data
@@ -70,6 +85,8 @@ export async function POST(req: NextRequest) {
           textContent: o.text_content || null,
           fontSize: o.font_size,
           fontColor: o.font_color,
+          fontFamily: o.font_family,
+          fontWeight: o.font_weight,
           bgColor: o.bg_color,
           position: o.position,
           positionX: o.position_x,
@@ -77,6 +94,8 @@ export async function POST(req: NextRequest) {
           sizePercent: o.size_percent,
           opacity: o.opacity,
           scrollSpeed: o.scroll_speed,
+          scrollStartX: o.scroll_start_x,
+          scrollEndX: o.scroll_end_x,
         }))
       }
     }

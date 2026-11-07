@@ -125,6 +125,30 @@ function getFontName(family, weight) {
   return baseName + weightSuffix
 }
 
+function formatFfmpegColor(value, opacity = 100, fallback = 'white') {
+  let color = typeof value === 'string' ? value.trim() : ''
+  let intrinsicAlpha = 1
+
+  if (/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(color)) {
+    const hex = color.slice(1)
+    color = `0x${hex.slice(0, 6).toUpperCase()}`
+    if (hex.length === 8) intrinsicAlpha = parseInt(hex.slice(6), 16) / 255
+  } else if (color.toLowerCase() === 'transparent' || color.toLowerCase() === 'none') {
+    color = '0x000000'
+    intrinsicAlpha = 0
+  } else if (/^[a-z]+$/i.test(color)) {
+    color = color.toLowerCase()
+  } else {
+    color = fallback
+  }
+
+  const normalizedOpacity = Number.isFinite(Number(opacity))
+    ? Math.max(0, Math.min(100, Number(opacity))) / 100
+    : 1
+  const alpha = Math.max(0, Math.min(1, intrinsicAlpha * normalizedOpacity))
+  return `${color}@${alpha.toFixed(3)}`
+}
+
 function buildOverlayFilters(overlays) {
   console.log(`[2MStream] buildOverlayFilters called with ${overlays?.length || 0} overlays`)
   if (!overlays || overlays.length === 0) return null
@@ -168,11 +192,12 @@ function buildOverlayFilters(overlays) {
 
     if (overlay.type === 'scrolling_text') {
       const escapedText = (overlay.textContent || '').replace(/'/g, "'\\''").replace(/:/g, '\\:')
-      const fontSize = overlay.fontSize || 24
-      const fontColor = overlay.fontColor || 'white'
-      const bgColor = overlay.bgColor || '0x00000080'
-      // Speed in px/sec: 5 = very slow, 100 = fast
-      const speed = overlay.scrollSpeed || 20
+      const fontSize = Math.max(12, Math.min(120, Number(overlay.fontSize) || 24))
+      const fontColor = formatFfmpegColor(overlay.fontColor || 'white', overlay.opacity ?? 100, 'white')
+      const bgColorValue = overlay.bgColor || 'black'
+      const hasTransparentBackground = ['transparent', 'none'].includes(String(bgColorValue).toLowerCase())
+      const bgColor = formatFfmpegColor(bgColorValue, overlay.opacity ?? 100, 'black')
+      const speed = Math.max(1, Math.min(500, Number(overlay.scrollSpeed) || 20))
       const fontName = getFontName(overlay.fontFamily, overlay.fontWeight)
       const fontParam = `font='${fontName}'`
 
@@ -188,11 +213,17 @@ function buildOverlayFilters(overlays) {
         scrollY = 1080 - fontSize - 60
       }
       
-      // Scroll zone boundaries: where text appears/disappears (percentage -> pixels)
-      // scrollStartX = left edge (where text exits), scrollEndX = right edge (where text enters)
-      const scrollStartX = Math.round(1920 * (overlay.scrollStartX ?? 0) / 100)
-      const scrollEndX = Math.round(1920 * (overlay.scrollEndX ?? 100) / 100)
-      const scrollZoneWidth = scrollEndX - scrollStartX
+      // Keep the ticker clip within the output frame and at least 5% wide.
+      const rawStartPercent = Number(overlay.scrollStartX ?? 0)
+      const rawEndPercent = Number(overlay.scrollEndX ?? 100)
+      const startPercent = Math.max(0, Math.min(95, Number.isFinite(rawStartPercent) ? rawStartPercent : 0))
+      const endPercent = Math.max(
+        startPercent + 5,
+        Math.min(100, Number.isFinite(rawEndPercent) ? rawEndPercent : 100)
+      )
+      const scrollStartX = Math.round(1920 * startPercent / 100)
+      const scrollEndX = Math.round(1920 * endPercent / 100)
+      const scrollZoneWidth = Math.max(96, scrollEndX - scrollStartX)
       
       console.log(`[2MStream] Scrolling text: Y=${scrollY}px, zone X=${scrollStartX}-${scrollEndX}px (width=${scrollZoneWidth}), speed=${speed}`)
 
@@ -221,13 +252,13 @@ function buildOverlayFilters(overlays) {
       filters.push(`[${currentLabel}]split=2[${splitBase}][${splitText}]`)
       
       // Draw background and two text instances for seamless looping
-      if (bgColor === 'transparent' || bgColor === 'none') {
+      if (hasTransparentBackground) {
         filters.push(
           `[${splitText}]crop=${scrollZoneWidth}:${barHeight}:${scrollStartX}:${scrollY}-8,drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula1},drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula2}[${textCropped}]`
         )
       } else {
         filters.push(
-          `[${splitText}]crop=${scrollZoneWidth}:${barHeight}:${scrollStartX}:${scrollY}-8,drawbox=x=0:y=0:w=iw:h=ih:color=${bgColor}@0.7:t=fill,drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula1},drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula2}[${textCropped}]`
+          `[${splitText}]crop=${scrollZoneWidth}:${barHeight}:${scrollStartX}:${scrollY}-8,drawbox=x=0:y=0:w=iw:h=ih:color=${bgColor}:t=fill,drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula1},drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula2}[${textCropped}]`
         )
       }
       
@@ -237,13 +268,13 @@ function buildOverlayFilters(overlays) {
       currentLabel = outputLabel
     } else if (overlay.type === 'text' || overlay.type === 'lower_third') {
       const escapedText = (overlay.textContent || '').replace(/'/g, "'\\''").replace(/:/g, '\\:')
-      const fontSize = overlay.fontSize || 24
-      const fontColor = overlay.fontColor || 'white'
+      const fontSize = Math.max(12, Math.min(120, Number(overlay.fontSize) || 24))
+      const fontColor = formatFfmpegColor(overlay.fontColor || 'white', overlay.opacity ?? 100, 'white')
       const txtFontName = getFontName(overlay.fontFamily, overlay.fontWeight)
       const txtFontParam = `font='${txtFontName}'`
       
       if (overlay.type === 'lower_third') {
-        const bgColor = overlay.bgColor || '0x00000080'
+        const bgColor = formatFfmpegColor(overlay.bgColor || 'black', overlay.opacity ?? 100, 'black')
         let ltY, ltTextY
         if (overlay.positionY !== undefined) {
           ltY = `ih*${overlay.positionY / 100}-${(fontSize + 30) / 2}`
@@ -254,7 +285,7 @@ function buildOverlayFilters(overlays) {
         }
         const ltX = overlay.positionX !== undefined ? `iw*${overlay.positionX / 100}-iw/2` : '0'
         filters.push(
-          `[${currentLabel}]drawbox=x=${ltX}:y=${ltY}:w=iw:h=${fontSize + 30}:color=${bgColor}@0.7:t=fill[bg${i}]`,
+          `[${currentLabel}]drawbox=x=${ltX}:y=${ltY}:w=iw:h=${fontSize + 30}:color=${bgColor}:t=fill[bg${i}]`,
           `[bg${i}]drawtext=text='${escapedText}':${txtFontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:x=20:y=${ltTextY}[${outputLabel}]`
         )
       } else {

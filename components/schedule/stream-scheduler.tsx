@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import useSWR from "swr"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -20,6 +20,19 @@ import type { Video, Destination, ScheduledEvent, Overlay } from "@/lib/store"
 import { Calendar, Clock, Plus, Trash2, Video as VideoIcon, Radio, Repeat, Loader2, Rss, Film, Layers, Pencil } from "lucide-react"
 import { cn } from "@/lib/utils"
 
+function toLocalDateInput(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+function toLocalTimeInput(date: Date): string {
+  const hours = String(date.getHours()).padStart(2, "0")
+  const minutes = String(date.getMinutes()).padStart(2, "0")
+  return `${hours}:${minutes}`
+}
+
 export function StreamScheduler() {
   const { data: videos } = useSWR<Video[]>("/api/videos", fetcher)
   const { data: destinations } = useSWR<Destination[]>("/api/destinations", fetcher)
@@ -28,6 +41,12 @@ export function StreamScheduler() {
   const [showForm, setShowForm] = useState(false)
   const [saving, setSaving] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [scheduleError, setScheduleError] = useState<string | null>(null)
+  const [timeZone, setTimeZone] = useState("your local timezone")
+
+  useEffect(() => {
+    setTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone || "your local timezone")
+  }, [])
   const [newEvent, setNewEvent] = useState({
     title: "",
     videoId: "",
@@ -65,6 +84,7 @@ export function StreamScheduler() {
   const resetForm = () => {
     setNewEvent({ title: "", videoId: "", sourceType: "video", rtmpPullUrl: "", destinations: [], overlayIds: [], date: "", time: "", repeat: "none" })
     setEditingId(null)
+    setScheduleError(null)
     setShowForm(false)
   }
 
@@ -75,28 +95,51 @@ export function StreamScheduler() {
       videoId: event.video_id || "",
       sourceType: event.source_type as "video" | "rtmp_pull",
       rtmpPullUrl: event.rtmp_pull_url || "",
-      destinations: event.event_destinations?.map(ed => ed.destination_id) || [],
-      overlayIds: event.event_overlays?.map(eo => eo.overlay_id) || [],
-      date: scheduledDate.toISOString().split("T")[0],
-      time: scheduledDate.toTimeString().slice(0, 5),
+      destinations: event.event_destinations?.map((ed) => ed.destination_id) || [],
+      overlayIds: event.event_overlays?.map((eo) => eo.overlay_id) || [],
+      date: toLocalDateInput(scheduledDate),
+      time: toLocalTimeInput(scheduledDate),
       repeat: event.repeat_mode || "none",
     })
     setEditingId(event.id)
+    setScheduleError(null)
     setShowForm(true)
   }
 
   const saveEvent = async () => {
-    setSaving(true)
-    // Get the user's timezone offset and build the correct ISO string
-    // so the scheduled time matches exactly what the user picked
+    setScheduleError(null)
     const localDate = new Date(`${newEvent.date}T${newEvent.time}:00`)
-    const tzOffset = -localDate.getTimezoneOffset()
-    const sign = tzOffset >= 0 ? '+' : '-'
-    const absOffset = Math.abs(tzOffset)
-    const tzHours = String(Math.floor(absOffset / 60)).padStart(2, '0')
-    const tzMins = String(absOffset % 60).padStart(2, '0')
-    const scheduledAt = `${newEvent.date}T${newEvent.time}:00${sign}${tzHours}:${tzMins}`
-    
+    if (!newEvent.title.trim()) {
+      setScheduleError("Enter a stream title.")
+      return
+    }
+    if (Number.isNaN(localDate.getTime())) {
+      setScheduleError("Choose a valid date and time.")
+      return
+    }
+    if (localDate.getTime() <= Date.now()) {
+      setScheduleError("Choose a time in the future.")
+      return
+    }
+    if (newEvent.destinations.length === 0) {
+      setScheduleError("Select at least one destination.")
+      return
+    }
+    if (newEvent.sourceType === "rtmp_pull") {
+      try {
+        const sourceUrl = new URL(newEvent.rtmpPullUrl)
+        if (sourceUrl.protocol !== "rtmp:" && sourceUrl.protocol !== "rtmps:") {
+          setScheduleError("RTMP sources must use rtmp:// or rtmps://.")
+          return
+        }
+      } catch {
+        setScheduleError("Enter a valid RTMP source URL.")
+        return
+      }
+    }
+
+    setSaving(true)
+    const scheduledAt = localDate.toISOString()
     const body = {
       title: newEvent.title,
       source_type: newEvent.sourceType,
@@ -119,7 +162,7 @@ export function StreamScheduler() {
         if (!res.ok) {
           const err = await res.json()
           console.error("Schedule update failed:", err)
-          alert(`Failed to update schedule: ${err.error || 'Unknown error'}`)
+          setScheduleError(err.error || "Failed to update schedule.")
           setSaving(false)
           return
         }
@@ -133,14 +176,14 @@ export function StreamScheduler() {
         if (!res.ok) {
           const err = await res.json()
           console.error("Schedule create failed:", err)
-          alert(`Failed to create schedule: ${err.error || 'Unknown error'}`)
+          setScheduleError(err.error || "Failed to create schedule.")
           setSaving(false)
           return
         }
       }
     } catch (e) {
       console.error("Schedule save error:", e)
-      alert("Failed to save schedule. Please try again.")
+      setScheduleError("Failed to save schedule. Please try again.")
       setSaving(false)
       return
     }
@@ -278,6 +321,9 @@ export function StreamScheduler() {
                 </Select>
               </div>
             </div>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Times use {timeZone}. Start timing follows your deployment&apos;s supported cron interval and may be delayed by the execution window.
+            </p>
             <div className="space-y-2">
               <Label className="text-foreground">Destinations</Label>
               <div className="grid gap-2 sm:grid-cols-2">
@@ -322,8 +368,11 @@ export function StreamScheduler() {
                 </div>
               </div>
             )}
+            {scheduleError && (
+              <p role="alert" className="text-sm text-destructive">{scheduleError}</p>
+            )}
             <div className="flex gap-2">
-              <Button onClick={saveEvent} disabled={!newEvent.title || (newEvent.sourceType === "video" ? !newEvent.videoId : !newEvent.rtmpPullUrl.trim()) || !newEvent.date || !newEvent.time || saving} className="bg-primary text-primary-foreground hover:bg-primary/90">
+              <Button onClick={saveEvent} disabled={!newEvent.title.trim() || (newEvent.sourceType === "video" ? !newEvent.videoId : !newEvent.rtmpPullUrl.trim()) || !newEvent.date || !newEvent.time || newEvent.destinations.length === 0 || saving} className="bg-primary text-primary-foreground hover:bg-primary/90">
                 {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 {editingId ? "Update" : "Schedule"}
               </Button>
@@ -361,6 +410,19 @@ export function StreamScheduler() {
                     <div>
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-medium text-foreground">{event.title}</p>
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "text-xs capitalize",
+                            event.status === "error"
+                              ? "border-destructive/30 text-destructive"
+                              : event.status === "completed"
+                                ? "border-primary/30 text-primary"
+                                : "border-border text-muted-foreground"
+                          )}
+                        >
+                          {event.status}
+                        </Badge>
                         {event.repeat_mode !== "none" && (
                           <Badge variant="outline" className="gap-1 text-xs text-muted-foreground border-border">
                             <Repeat className="h-3 w-3" />
