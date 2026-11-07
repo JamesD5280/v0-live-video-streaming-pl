@@ -76,15 +76,17 @@ export function VideoPreviewDialog({ video, open, onOpenChange }: VideoPreviewDi
     }
   }, [open])
 
-  const togglePlay = useCallback(() => {
+  const togglePlay = useCallback(async () => {
     const el = videoRef.current
     if (!el) return
     if (el.paused) {
-      el.play()
-      setPlaying(true)
+      try {
+        await el.play()
+      } catch {
+        setPlaying(false)
+      }
     } else {
       el.pause()
-      setPlaying(false)
     }
   }, [])
 

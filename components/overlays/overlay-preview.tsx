@@ -73,6 +73,7 @@ export function OverlayPreview({ overlays, draftOverlay, compact = false }: Over
   const [highlightedId, setHighlightedId] = useState<string | null>(null)
   const [selectedVideo, setSelectedVideo] = useState<Video | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
+  const [videoError, setVideoError] = useState<string | null>(null)
   const [tickerPaused, setTickerPaused] = useState(false)
   const enabledOverlays = previewOverlays.filter((overlay) => overlay.enabled)
   const enabledOverlayIds = enabledOverlays.map((overlay) => overlay.id).join("\u0000")
@@ -95,14 +96,32 @@ export function OverlayPreview({ overlays, draftOverlay, compact = false }: Over
     })
   }
 
-  const handlePlayPause = () => {
-    if (!videoRef.current) return
-    if (videoRef.current.paused) {
-      videoRef.current.play()
-      setIsPlaying(true)
+  useEffect(() => {
+    const video = videoRef.current
+    setVideoError(null)
+    setIsPlaying(false)
+    if (!video || !proxyVideoUrl) return
+
+    video.load()
+    video.muted = true
+    void video.play().catch(() => setIsPlaying(false))
+
+    return () => video.pause()
+  }, [proxyVideoUrl])
+
+  const handlePlayPause = async () => {
+    const video = videoRef.current
+    if (!video) return
+    if (video.paused) {
+      setVideoError(null)
+      try {
+        await video.play()
+      } catch {
+        setIsPlaying(false)
+        setVideoError("This video could not be played. Use an MP4 encoded with H.264 video and AAC audio.")
+      }
     } else {
-      videoRef.current.pause()
-      setIsPlaying(false)
+      video.pause()
     }
   }
 
@@ -161,9 +180,21 @@ export function OverlayPreview({ overlays, draftOverlay, compact = false }: Over
                 loop
                 muted
                 playsInline
+                preload="metadata"
                 onPlay={() => setIsPlaying(true)}
                 onPause={() => setIsPlaying(false)}
+                onError={() => {
+                  setIsPlaying(false)
+                  setVideoError("This video could not be played. Use an MP4 encoded with H.264 video and AAC audio.")
+                }}
               />
+              {videoError && (
+                <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-black/75 p-4">
+                  <p role="alert" className="max-w-sm text-center text-xs font-medium text-white">
+                    {videoError}
+                  </p>
+                </div>
+              )}
               {/* Play/Pause control */}
               <button
                 type="button"
