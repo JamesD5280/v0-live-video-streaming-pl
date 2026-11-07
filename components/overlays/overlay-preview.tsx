@@ -21,6 +21,8 @@ type DraftOverlayChange = Partial<
 
 type DraftGesture = {
   pointerId: number
+  overlayId: string
+  latestChange: DraftOverlayChange
   mode: "move" | "resize"
   type: Overlay["type"]
   startClientX: number
@@ -43,7 +45,11 @@ interface OverlayPreviewProps {
   draftVideoPreviewUrl?: string
   compact?: boolean
   editableDraft?: boolean
+  selectedOverlayId?: string | null
   onDraftChange?: (change: DraftOverlayChange) => void
+  onOverlaySelect?: (overlayId: string) => void
+  onOverlayChange?: (overlayId: string, change: DraftOverlayChange) => void
+  onOverlayCommit?: (overlayId: string, change: DraftOverlayChange) => void
 }
 
 function getFontStyle(overlay: Overlay): React.CSSProperties {
@@ -161,7 +167,11 @@ export function OverlayPreview({
   draftVideoPreviewUrl,
   compact = false,
   editableDraft = false,
+  selectedOverlayId,
   onDraftChange,
+  onOverlaySelect,
+  onOverlayChange,
+  onOverlayCommit,
 }: OverlayPreviewProps) {
   const { data: videos } = useSWR<Video[]>("/api/videos", fetcher)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -225,13 +235,23 @@ export function OverlayPreview({
 
   const roundPercent = (value: number) => Math.round(value * 10) / 10
   const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
+  const isDraftEditable = (overlayId: string) => editableDraft && draftOverlay?.id === overlayId && Boolean(onDraftChange)
+
+  const applyOverlayChange = (overlayId: string, change: DraftOverlayChange, commit = false) => {
+    if (isDraftEditable(overlayId)) {
+      onDraftChange?.(change)
+      return
+    }
+    onOverlayChange?.(overlayId, change)
+    if (commit) onOverlayCommit?.(overlayId, change)
+  }
 
   const startDraftGesture = (
     event: React.PointerEvent<HTMLElement>,
     overlay: Overlay,
     mode: DraftGesture["mode"],
   ) => {
-    if (!editableDraft || !onDraftChange || event.button !== 0) return
+    if (event.button !== 0 || (!isDraftEditable(overlay.id) && !onOverlayChange)) return
     const canvas = canvasRef.current
     const element = overlayElementsRef.current.get(overlay.id)
     if (!canvas || !element) return
@@ -243,6 +263,8 @@ export function OverlayPreview({
 
     gestureRef.current = {
       pointerId: event.pointerId,
+      overlayId: overlay.id,
+      latestChange: {},
       mode,
       type: overlay.type,
       startClientX: event.clientX,
@@ -266,19 +288,23 @@ export function OverlayPreview({
 
   const handleCanvasPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
     const gesture = gestureRef.current
-    if (!gesture || gesture.pointerId !== event.pointerId || !onDraftChange) return
+    if (!gesture || gesture.pointerId !== event.pointerId) return
     event.preventDefault()
 
+    const applyGestureChange = (change: DraftOverlayChange) => {
+      gesture.latestChange = { ...gesture.latestChange, ...change }
+      applyOverlayChange(gesture.overlayId, change)
+    }
     const deltaX = ((event.clientX - gesture.startClientX) / gesture.canvasWidth) * 100
     const deltaY = ((event.clientY - gesture.startClientY) / gesture.canvasHeight) * 100
 
     if (gesture.mode === "resize") {
       if (gesture.type === "scrolling_text") {
-        onDraftChange({ scroll_end_x: roundPercent(clamp(gesture.initialScrollEnd + deltaX, gesture.initialScrollStart + 5, 100)) })
+        applyGestureChange({ scroll_end_x: roundPercent(clamp(gesture.initialScrollEnd + deltaX, gesture.initialScrollStart + 5, 100)) })
       } else if (gesture.type === "text" || gesture.type === "lower_third") {
-        onDraftChange({ font_size: Math.round(clamp(gesture.initialFontSize + deltaX * 19.2, 12, 120)) })
+        applyGestureChange({ font_size: Math.round(clamp(gesture.initialFontSize + deltaX * 19.2, 12, 120)) })
       } else {
-        onDraftChange({ size_percent: Math.round(clamp(gesture.initialSize + deltaX, 5, 100)) })
+        applyGestureChange({ size_percent: Math.round(clamp(gesture.initialSize + deltaX, 5, 100)) })
       }
       return
     }
@@ -289,7 +315,7 @@ export function OverlayPreview({
       const fontSize = clamp(gesture.initialFontSize, 12, 120)
       const minY = (fontSize / 1080) * 100
       const maxY = ((1080 - fontSize - 10) / 1080) * 100
-      onDraftChange({
+      applyGestureChange({
         scroll_start_x: roundPercent(start),
         scroll_end_x: roundPercent(start + zoneWidth),
         position_y: roundPercent(clamp(gesture.initialY + deltaY, minY, maxY)),
@@ -303,21 +329,26 @@ export function OverlayPreview({
       ? undefined
       : roundPercent(clamp(gesture.initialX + deltaX, halfWidth, 100 - halfWidth))
     const y = roundPercent(clamp(gesture.initialY + deltaY, halfHeight, 100 - halfHeight))
-    onDraftChange({ ...(x === undefined ? {} : { position_x: x }), position_y: y })
+    applyGestureChange({ ...(x === undefined ? {} : { position_x: x }), position_y: y })
   }
 
   const endDraftGesture = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (gestureRef.current?.pointerId !== event.pointerId) return
+    const gesture = gestureRef.current
+    if (gesture?.pointerId !== event.pointerId) return
     gestureRef.current = null
+    if (Object.keys(gesture.latestChange).length > 0 && !isDraftEditable(gesture.overlayId)) {
+      onOverlayCommit?.(gesture.overlayId, gesture.latestChange)
+    }
     const canvas = canvasRef.current
     if (canvas?.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId)
   }
 
   const handleDraftKeyDown = (event: React.KeyboardEvent<HTMLDivElement>, overlay: Overlay) => {
-    if (!editableDraft || !onDraftChange) return
+    if (!isDraftEditable(overlay.id) && !onOverlayChange) return
     const step = event.shiftKey ? 2 : 0.5
     if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) return
     event.preventDefault()
+    onOverlaySelect?.(overlay.id)
 
     const canvas = canvasRef.current
     const element = overlayElementsRef.current.get(overlay.id)
@@ -335,11 +366,11 @@ export function OverlayPreview({
       const nextY = event.key === "ArrowUp" || event.key === "ArrowDown"
         ? clamp(y + (event.key === "ArrowUp" ? -step : step), (fontSize / 1080) * 100, ((1080 - fontSize - 10) / 1080) * 100)
         : y
-      onDraftChange({
+      applyOverlayChange(overlay.id, {
         scroll_start_x: roundPercent(nextStart),
         scroll_end_x: roundPercent(nextStart + end - start),
         position_y: roundPercent(nextY),
-      })
+      }, true)
       return
     }
 
@@ -353,23 +384,24 @@ export function OverlayPreview({
     const nextY = event.key === "ArrowLeft" || event.key === "ArrowRight"
       ? y
       : roundPercent(clamp(y + (event.key === "ArrowUp" ? -step : step), heightHalf, 100 - heightHalf))
-    onDraftChange({ ...(nextX === undefined ? {} : { position_x: nextX }), position_y: nextY })
+    applyOverlayChange(overlay.id, { ...(nextX === undefined ? {} : { position_x: nextX }), position_y: nextY }, true)
   }
 
   const handleResizeKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, overlay: Overlay) => {
-    if (!onDraftChange || !["ArrowUp", "ArrowRight", "ArrowDown", "ArrowLeft"].includes(event.key)) return
+    if ((!isDraftEditable(overlay.id) && !onOverlayChange) || !["ArrowUp", "ArrowRight", "ArrowDown", "ArrowLeft"].includes(event.key)) return
     event.preventDefault()
     event.stopPropagation()
+    onOverlaySelect?.(overlay.id)
     const step = event.shiftKey ? 5 : 1
     const direction = event.key === "ArrowUp" || event.key === "ArrowRight" ? 1 : -1
     if (overlay.type === "scrolling_text") {
       const start = clamp(overlay.scroll_start_x ?? 0, 0, 95)
       const end = clamp(overlay.scroll_end_x ?? 100, start + 5, 100)
-      onDraftChange({ scroll_end_x: roundPercent(clamp(end + direction * step, start + 5, 100)) })
+      applyOverlayChange(overlay.id, { scroll_end_x: roundPercent(clamp(end + direction * step, start + 5, 100)) }, true)
     } else if (overlay.type === "text" || overlay.type === "lower_third") {
-      onDraftChange({ font_size: Math.round(clamp((overlay.font_size || 24) + direction * step, 12, 120)) })
+      applyOverlayChange(overlay.id, { font_size: Math.round(clamp((overlay.font_size || 24) + direction * step, 12, 120)) }, true)
     } else {
-      onDraftChange({ size_percent: Math.round(clamp((overlay.size_percent || 20) + direction * step, 5, 100)) })
+      applyOverlayChange(overlay.id, { size_percent: Math.round(clamp((overlay.size_percent || 20) + direction * step, 5, 100)) }, true)
     }
   }
 
@@ -421,7 +453,7 @@ export function OverlayPreview({
 
   const readyVideos = (videos || []).filter((video) => video.status === "ready")
 
-  if (enabledOverlays.length === 0) return null
+  if (enabledOverlays.length === 0 && !onOverlayChange && !editableDraft) return null
 
   return (
     <div className="w-full space-y-3">
@@ -529,8 +561,10 @@ export function OverlayPreview({
         {/* Render each visible overlay */}
         {enabledOverlays.map((overlay) => {
           const isVisible = visibleIds.has(overlay.id)
-          const isEditable = editableDraft && draftOverlay?.id === overlay.id
-          const isHighlighted = highlightedId === overlay.id || isEditable
+          const isDraftEditable = editableDraft && draftOverlay?.id === overlay.id && Boolean(onDraftChange)
+          const isEditable = isDraftEditable || Boolean(onOverlayChange)
+          const isSelected = selectedOverlayId === overlay.id || isDraftEditable
+          const isHighlighted = highlightedId === overlay.id || isSelected
           if (!isVisible) return null
 
           const isTicker = overlay.type === "scrolling_text"
@@ -596,8 +630,8 @@ export function OverlayPreview({
               tabIndex={isEditable ? 0 : undefined}
               aria-label={isEditable
                 ? overlay.type === "lower_third"
-                  ? `Move ${overlay.name} vertically; adjust its font size in the form`
-                  : `Move ${overlay.name}; use the corner handle to resize`
+                  ? `Select and move ${overlay.name} vertically; resize its text with the corner handle`
+                  : `Select and move ${overlay.name}; use the corner handle to resize`
                 : undefined}
               className={cn(
                 "absolute",
@@ -605,7 +639,11 @@ export function OverlayPreview({
                 isHighlighted && "rounded ring-2 ring-primary ring-offset-1 ring-offset-transparent"
               )}
               style={overlayStyle}
-              onPointerDown={isEditable ? (event) => startDraftGesture(event, overlay, "move") : undefined}
+              onPointerDown={isEditable ? (event) => {
+                onOverlaySelect?.(overlay.id)
+                startDraftGesture(event, overlay, "move")
+              } : undefined}
+              onFocus={isEditable ? () => onOverlaySelect?.(overlay.id) : undefined}
               onKeyDown={isEditable ? (event) => handleDraftKeyDown(event, overlay) : undefined}
               onMouseEnter={() => setHighlightedId(overlay.id)}
               onMouseLeave={() => setHighlightedId(null)}
@@ -685,14 +723,18 @@ export function OverlayPreview({
                 </div>
               )}
 
-              {isEditable && overlay.type !== "lower_third" && (
+              {isEditable && (isDraftEditable || selectedOverlayId === overlay.id) && (
                 <button
                   type="button"
                   aria-label={`Resize ${overlay.name}`}
                   aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight"
                   title="Drag to resize; use arrow keys for precise changes"
                   className="absolute bottom-0 right-0 z-20 grid size-4 translate-x-1/2 translate-y-1/2 touch-none cursor-se-resize place-items-center rounded border border-background bg-primary shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  onPointerDown={(event) => startDraftGesture(event, overlay, "resize")}
+                  onPointerDown={(event) => {
+                    event.stopPropagation()
+                    onOverlaySelect?.(overlay.id)
+                    startDraftGesture(event, overlay, "resize")
+                  }}
                   onKeyDown={(event) => handleResizeKeyDown(event, overlay)}
                   onClick={(event) => event.stopPropagation()}
                 >
