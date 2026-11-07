@@ -53,10 +53,15 @@ export function AppSidebar({ userEmail, displayName, liveStreams = [] }: AppSide
   }, [pathname])
 
   async function handleLogout() {
-    const supabase = createClient()
-    await supabase.auth.signOut()
-    router.push("/auth/login")
-    router.refresh()
+    try {
+      const supabase = createClient()
+      const { error } = await supabase.auth.signOut()
+      if (error) throw error
+      router.push("/auth/login")
+      router.refresh()
+    } catch {
+      alert("Unable to sign out right now. Please try again.")
+    }
   }
 
   const liveCount = liveStreams.filter((s) => s.status === "live").length

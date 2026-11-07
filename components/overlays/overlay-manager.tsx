@@ -448,7 +448,9 @@ export function OverlayManager() {
       }
       setDialogOpen(false)
       resetForm()
-      mutate()
+      void mutate().catch(() => {
+        alert("Overlay saved, but the list could not refresh. Please reload the page.")
+      })
     } catch (err) {
       console.error("Overlay save error:", err)
       alert("Failed to save overlay. Check console for details.")
@@ -469,17 +471,27 @@ export function OverlayManager() {
   }
 
   const handleDelete = async (id: string) => {
-    await fetch(`/api/overlays?id=${id}`, { method: "DELETE" })
-    mutate()
+    try {
+      const response = await fetch(`/api/overlays?id=${encodeURIComponent(id)}`, { method: "DELETE" })
+      if (!response.ok) throw new Error(`Request failed (${response.status})`)
+      await mutate()
+    } catch {
+      alert("Unable to delete this overlay. Please try again.")
+    }
   }
 
   const handleToggleEnabled = async (overlay: Overlay) => {
-    await fetch("/api/overlays", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: overlay.id, enabled: !overlay.enabled }),
-    })
-    mutate()
+    try {
+      const response = await fetch("/api/overlays", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: overlay.id, enabled: !overlay.enabled }),
+      })
+      if (!response.ok) throw new Error(`Request failed (${response.status})`)
+      await mutate()
+    } catch {
+      alert("Unable to update this overlay. Please try again.")
+    }
   }
 
   const handleGraphicsSave = async (imageDataUrl: string, filename: string) => {
@@ -516,7 +528,7 @@ export function OverlayManager() {
           }),
         })
         if (res.ok) {
-          mutate()
+          await mutate()
         }
         return
       }
@@ -543,7 +555,7 @@ export function OverlayManager() {
         }),
       })
       
-      mutate()
+      await mutate()
     } catch (err) {
       console.error("Graphics save error:", err)
     }
