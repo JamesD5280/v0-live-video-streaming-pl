@@ -697,21 +697,20 @@ app.post('/delete-video', (req, res) => {
  * Build FFmpeg args for a single file with overlays and encoding.
  * Returns the full ffmpegArgs array.
  */
+const VIDEO_NORM_FILTER = 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1'
+
 function buildFFmpegArgs(inputArgs, overlayResult, rtmpTarget) {
   const ffmpegArgs = [...inputArgs]
-
-  // Normalize video to 1080p
-  const videoNorm = 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1'
 
   if (overlayResult) {
     ffmpegArgs.push(...overlayResult.inputArgs)
     const overlayChain = overlayResult.filterComplex.replace('[0:v]', '[norm]')
-    const combinedFilter = `[0:v]${videoNorm}[norm];${overlayChain}`
+    const combinedFilter = `[0:v]${VIDEO_NORM_FILTER}[norm];${overlayChain}`
     ffmpegArgs.push('-filter_complex', combinedFilter)
     ffmpegArgs.push('-map', `[${overlayResult.outputLabel}]`)
     ffmpegArgs.push('-map', '0:a?')  // Optional audio - use if exists
   } else {
-    ffmpegArgs.push('-vf', videoNorm)
+    ffmpegArgs.push('-vf', VIDEO_NORM_FILTER)
   }
 
   ffmpegArgs.push(
@@ -1251,9 +1250,13 @@ app.post('/preview', async (req, res) => {
   let ffmpegArgs = [...inputArgs]
   if (overlayResult) {
     ffmpegArgs.push(...overlayResult.inputArgs)
-    ffmpegArgs.push('-filter_complex', overlayResult.filterComplex)
+    const overlayChain = overlayResult.filterComplex.replace('[0:v]', '[norm]')
+    const combinedFilter = `[0:v]${VIDEO_NORM_FILTER}[norm];${overlayChain}`
+    ffmpegArgs.push('-filter_complex', combinedFilter)
     ffmpegArgs.push('-map', `[${overlayResult.outputLabel}]`)
     ffmpegArgs.push('-map', '0:a?')
+  } else {
+    ffmpegArgs.push('-vf', VIDEO_NORM_FILTER)
   }
 
   ffmpegArgs.push(
