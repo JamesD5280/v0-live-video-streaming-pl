@@ -68,15 +68,17 @@ export interface ScheduledEvent {
   id: string
   user_id: string
   video_id: string | null
+  playlist_id: string | null
   title: string
   scheduled_at: string
   repeat_mode: RepeatMode
   status: EventStatus
-  source_type: "video" | "rtmp_pull"
+  source_type: "video" | "playlist" | "rtmp_pull"
   rtmp_pull_url: string | null
   created_at: string
   updated_at: string
   video?: Video
+  playlist?: Playlist | null
   event_destinations?: EventDestination[]
   event_overlays?: Array<{
     id: string
