@@ -17,6 +17,28 @@ const fetcher = (url: string) => fetch(url).then((r) => { if (!r.ok) throw new E
 
 interface OverlayPreviewProps {
   overlays: Overlay[]
+  draftOverlay?: Overlay
+  compact?: boolean
+}
+
+function getFontStyle(overlay: Overlay): React.CSSProperties {
+  const family = overlay.font_family || "sans"
+  const familyMap: Record<string, string> = {
+    viga: "Viga, sans-serif",
+    sans: "DejaVu Sans, sans-serif",
+    serif: "DejaVu Serif, serif",
+    mono: "DejaVu Sans Mono, monospace",
+    arial: "Arial, sans-serif",
+    times: "Times New Roman, serif",
+    courier: "Courier New, monospace",
+  }
+  const weight = overlay.font_weight || "normal"
+
+  return {
+    fontFamily: familyMap[family] || familyMap.sans,
+    fontWeight: weight.includes("bold") ? 700 : 400,
+    fontStyle: weight.includes("italic") ? "italic" : "normal",
+  }
 }
 
 function getPositionStyle(overlay: Overlay): React.CSSProperties {
@@ -41,23 +63,27 @@ function getPositionStyle(overlay: Overlay): React.CSSProperties {
   return styles[overlay.position] || styles["top-left"]
 }
 
-export function OverlayPreview({ overlays }: OverlayPreviewProps) {
+export function OverlayPreview({ overlays, draftOverlay, compact = false }: OverlayPreviewProps) {
   const { data: videos } = useSWR<Video[]>("/api/videos", fetcher)
   const videoRef = useRef<HTMLVideoElement>(null)
-  const [visibleIds, setVisibleIds] = useState<Set<string>>(
-    new Set(overlays.filter((o) => o.enabled).map((o) => o.id))
-  )
+  const previewOverlays = draftOverlay
+    ? [...overlays.filter((overlay) => overlay.id !== draftOverlay.id), draftOverlay]
+    : overlays
+  const [visibleIds, setVisibleIds] = useState<Set<string>>(new Set())
   const [highlightedId, setHighlightedId] = useState<string | null>(null)
   const [selectedVideo, setSelectedVideo] = useState<Video | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
-  // Update visible IDs when overlays change
-  useEffect(() => {
-    setVisibleIds(new Set(overlays.filter((o) => o.enabled).map((o) => o.id)))
-  }, [overlays])
+  const [tickerPaused, setTickerPaused] = useState(false)
+  const enabledOverlays = previewOverlays.filter((overlay) => overlay.enabled)
+  const enabledOverlayIds = enabledOverlays.map((overlay) => overlay.id).join("\u0000")
+  const scrollingOverlays = enabledOverlays.filter((overlay) => overlay.type === "scrolling_text")
 
-  // Build proxy URL directly -- Edge Runtime handles HTTPS -> HTTP
+  useEffect(() => {
+    setVisibleIds(new Set(enabledOverlayIds ? enabledOverlayIds.split("\u0000") : []))
+  }, [enabledOverlayIds])
+
   const proxyVideoUrl = selectedVideo
-    ? `/api/videos/preview?filename=${encodeURIComponent(selectedVideo.filename)}`
+    ? `/api/videos/preview?videoId=${encodeURIComponent(selectedVideo.id)}`
     : ""
 
   const toggleVisibility = (id: string) => {
@@ -80,13 +106,12 @@ export function OverlayPreview({ overlays }: OverlayPreviewProps) {
     }
   }
 
-  const enabledOverlays = overlays.filter((o) => o.enabled)
-  const readyVideos = (videos || []).filter((v) => v.status === "ready")
+  const readyVideos = (videos || []).filter((video) => video.status === "ready")
 
   if (enabledOverlays.length === 0) return null
 
   return (
-    <div className="space-y-3">
+    <div className={cn("space-y-3", compact && "max-w-xl")}>
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-foreground">Overlay Preview</h3>
         <div className="flex items-center gap-2">
@@ -124,7 +149,7 @@ export function OverlayPreview({ overlays }: OverlayPreviewProps) {
       </div>
 
       {/* 16:9 preview canvas */}
-      <div className="relative w-full overflow-hidden rounded-lg border border-border bg-[#1a1a2e]" style={{ paddingBottom: "56.25%" }}>
+      <div className="relative w-full overflow-hidden rounded-lg border border-border bg-foreground" style={{ paddingBottom: "56.25%" }}>
         {/* Background: real video or simulated pattern */}
         <div className="absolute inset-0">
           {selectedVideo ? (
@@ -143,6 +168,7 @@ export function OverlayPreview({ overlays }: OverlayPreviewProps) {
               <button
                 type="button"
                 onClick={handlePlayPause}
+                aria-label={isPlaying ? "Pause background video" : "Play background video"}
                 className="absolute bottom-2 left-2 z-20 flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white transition-opacity hover:bg-black/80"
               >
                 {isPlaying ? (
@@ -184,9 +210,25 @@ export function OverlayPreview({ overlays }: OverlayPreviewProps) {
           const isHighlighted = highlightedId === overlay.id
           if (!isVisible) return null
 
-          const positionStyle = getPositionStyle(overlay)
+          const isTicker = overlay.type === "scrolling_text"
+          const tickerStart = Math.max(0, Math.min(95, overlay.scroll_start_x ?? 0))
+          const tickerEnd = Math.max(tickerStart + 5, Math.min(100, overlay.scroll_end_x ?? 100))
+          const tickerWidth = tickerEnd - tickerStart
+          const tickerSpeed = Math.max(1, overlay.scroll_speed ?? 20)
+          const tickerFontSize = Math.max(12, overlay.font_size || 24)
+          const estimatedTextWidth = (overlay.text_content?.length || 0) * tickerFontSize * 0.58
+          const tickerDuration = (1920 * (tickerWidth / 100) + estimatedTextWidth) / tickerSpeed
+          const positionStyle = isTicker
+            ? {
+                left: `${tickerStart}%`,
+                top: `${overlay.position_y ?? 92}%`,
+                transform: "translateY(-50%)",
+                containerType: "inline-size" as const,
+              }
+            : getPositionStyle(overlay)
           const opacityValue = overlay.opacity / 100
           const sizePercent = overlay.size_percent
+          const fontStyle = getFontStyle(overlay)
 
           return (
             <div
@@ -199,8 +241,8 @@ export function OverlayPreview({ overlays }: OverlayPreviewProps) {
                 ...positionStyle,
                 opacity: opacityValue,
                 zIndex: isHighlighted ? 10 : 1,
-                /* Width as % of the canvas (parent) so overlays scale correctly */
-                width: `${Math.max(5, sizePercent)}%`,
+                width: `${isTicker ? tickerWidth : Math.max(5, sizePercent)}%`,
+                ...(isTicker ? { height: `${Math.max(18, tickerFontSize * 0.62)}px` } : {}),
               }}
               onMouseEnter={() => setHighlightedId(overlay.id)}
               onMouseLeave={() => setHighlightedId(null)}
@@ -213,6 +255,12 @@ export function OverlayPreview({ overlays }: OverlayPreviewProps) {
                   className="w-full object-contain"
                   crossOrigin="anonymous"
                 />
+              )}
+
+              {!overlay.image_path && ["logo", "bug", "image"].includes(overlay.type) && (
+                <div className="flex min-h-8 w-full items-center justify-center rounded border border-dashed border-primary/50 bg-background/80 px-2 text-center text-[10px] font-medium text-foreground">
+                  {overlay.name || "Image overlay"}
+                </div>
               )}
 
               {/* Video overlay placeholder */}
@@ -238,9 +286,10 @@ export function OverlayPreview({ overlays }: OverlayPreviewProps) {
                     overlay.type === "lower_third" && "rounded"
                   )}
                   style={{
+                    ...fontStyle,
                     backgroundColor: overlay.bg_color,
                     color: overlay.font_color,
-                    fontSize: `clamp(8px, ${sizePercent * 0.15}vw, ${overlay.font_size * 0.6}px)`,
+                    fontSize: `clamp(8px, ${overlay.font_size * 100 / 1920}vw, ${overlay.font_size}px)`,
                   }}
                 >
                   {overlay.text_content}
@@ -248,18 +297,21 @@ export function OverlayPreview({ overlays }: OverlayPreviewProps) {
               )}
 
               {/* Scrolling text overlay */}
-              {overlay.type === "scrolling_text" && overlay.text_content && (
+              {isTicker && overlay.text_content && (
                 <div
-                  className="whitespace-nowrap overflow-hidden"
-                  style={{
-                    width: "100%",
-                    backgroundColor: overlay.bg_color,
-                    color: overlay.font_color,
-                    fontSize: `clamp(8px, ${sizePercent * 0.15}vw, ${overlay.font_size * 0.5}px)`,
-                    padding: "2px 6px",
-                  }}
+                  className="relative h-full w-full overflow-hidden rounded-sm"
+                  style={{ backgroundColor: overlay.bg_color }}
                 >
-                  <span className="inline-block animate-[scrollText_10s_linear_infinite]">
+                  <span
+                    className="absolute left-0 top-1/2 inline-block whitespace-nowrap"
+                    style={{
+                      ...fontStyle,
+                      color: overlay.font_color,
+                      fontSize: `clamp(8px, ${tickerFontSize * 100 / 1920}vw, ${tickerFontSize}px)`,
+                      animation: `scrollText ${Math.max(1, tickerDuration)}s linear infinite`,
+                      animationPlayState: tickerPaused ? "paused" : "running",
+                    }}
+                  >
                     {overlay.text_content}
                   </span>
                 </div>
@@ -279,9 +331,23 @@ export function OverlayPreview({ overlays }: OverlayPreviewProps) {
         <div className="pointer-events-none absolute inset-[5%] border border-dashed border-white/5 rounded" />
       </div>
 
-      {/* Toggle controls for each overlay */}
-      <div className="flex flex-wrap gap-2">
-        {enabledOverlays.map((overlay) => {
+      {scrollingOverlays.length > 0 && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          aria-pressed={tickerPaused}
+          onClick={() => setTickerPaused((paused) => !paused)}
+          className="gap-2"
+        >
+          {tickerPaused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
+          {tickerPaused ? "Resume ticker" : "Pause ticker"}
+        </Button>
+      )}
+
+      {!compact && (
+        <div className="flex flex-wrap gap-2">
+          {enabledOverlays.map((overlay) => {
           const isVisible = visibleIds.has(overlay.id)
           const isHighlighted = highlightedId === overlay.id
           return (
@@ -304,8 +370,9 @@ export function OverlayPreview({ overlays }: OverlayPreviewProps) {
               {overlay.name}
             </button>
           )
-        })}
-      </div>
+          })}
+        </div>
+      )}
     </div>
   )
 }

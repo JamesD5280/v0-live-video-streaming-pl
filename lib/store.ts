@@ -3,7 +3,7 @@ export type VideoStatus = "ready" | "uploading" | "processing" | "error"
 export type StreamStatus = "pending" | "live" | "completed" | "error" | "stopped"
 export type Platform = "youtube" | "facebook" | "twitch" | "custom"
 export type RepeatMode = "none" | "daily" | "weekly" | "monthly"
-export type EventStatus = "scheduled" | "running" | "completed" | "cancelled"
+export type EventStatus = "idle" | "pending" | "scheduled" | "running" | "completed" | "cancelled" | "error"
 export type OverlayType = "logo" | "bug" | "lower_third" | "text" | "image" | "video" | "scrolling_text"
 export type OverlayPosition = "top-left" | "top-right" | "top-center" | "bottom-left" | "bottom-right" | "bottom-center" | "center"
 
@@ -78,6 +78,13 @@ export interface ScheduledEvent {
   updated_at: string
   video?: Video
   event_destinations?: EventDestination[]
+  event_overlays?: Array<{
+    id: string
+    event_id: string
+    overlay_id: string
+    created_at: string
+    overlay?: Overlay
+  }>
 }
 
 export interface EventDestination {

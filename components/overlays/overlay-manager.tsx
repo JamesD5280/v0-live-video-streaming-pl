@@ -76,6 +76,93 @@ const positionLabels: Record<OverlayPosition, string> = {
   "bottom-right": "Bottom Right",
 }
 
+const broadcastTemplates: Array<{
+  label: string
+  description: string
+  name: string
+  type: OverlayType
+  position: OverlayPosition
+  x: number
+  y: number
+  size: number
+  text: string
+  fontSize: number
+  fontWeight: string
+  bgColor: string
+  scrollSpeed: number
+  scrollStart: number
+  scrollEnd: number
+}> = [
+  {
+    label: "Channel bug",
+    description: "Upper-right logo placement",
+    name: "Channel Bug",
+    type: "logo",
+    position: "top-right",
+    x: 92,
+    y: 9,
+    size: 14,
+    text: "",
+    fontSize: 24,
+    fontWeight: "normal",
+    bgColor: "transparent",
+    scrollSpeed: 20,
+    scrollStart: 0,
+    scrollEnd: 100,
+  },
+  {
+    label: "Lower third",
+    description: "Guest name and segment title",
+    name: "Guest Lower Third",
+    type: "lower_third",
+    position: "bottom-center",
+    x: 50,
+    y: 86,
+    size: 70,
+    text: "GUEST NAME  |  SEGMENT TITLE",
+    fontSize: 36,
+    fontWeight: "bold",
+    bgColor: "#000000CC",
+    scrollSpeed: 20,
+    scrollStart: 0,
+    scrollEnd: 100,
+  },
+  {
+    label: "Breaking ticker",
+    description: "Bottom crawl with an editable zone",
+    name: "Breaking Ticker",
+    type: "scrolling_text",
+    position: "bottom-center",
+    x: 50,
+    y: 92,
+    size: 100,
+    text: "BREAKING NEWS  •  Add your update here",
+    fontSize: 30,
+    fontWeight: "bold",
+    bgColor: "#000000CC",
+    scrollSpeed: 20,
+    scrollStart: 5,
+    scrollEnd: 95,
+  },
+  {
+    label: "Center title",
+    description: "Large message for a title card",
+    name: "Center Title",
+    type: "text",
+    position: "center",
+    x: 50,
+    y: 50,
+    size: 80,
+    text: "YOUR MESSAGE",
+    fontSize: 56,
+    fontWeight: "bold",
+    bgColor: "transparent",
+    scrollSpeed: 20,
+    scrollStart: 0,
+    scrollEnd: 100,
+  },
+]
+
 export function OverlayManager() {
   const { data: overlays, error, mutate } = useSWR<Overlay[]>("/api/overlays", fetcher)
   const [creating, setCreating] = useState(false)
@@ -109,6 +196,36 @@ export function OverlayManager() {
 
   const isTextType = type === "text" || type === "lower_third" || type === "scrolling_text"
   const isVideoType = type === "video"
+  const tickerPassSeconds = Math.round(
+    (1920 * (Math.max(5, scrollEndX - scrollStartX) / 100)) / Math.max(1, scrollSpeed)
+  )
+  const tickerPassLabel = `${Math.floor(tickerPassSeconds / 60)}m ${String(tickerPassSeconds % 60).padStart(2, "0")}s`
+  const draftOverlay: Overlay = {
+    id: editingId || "draft-overlay",
+    user_id: "",
+    name: name.trim() || "New overlay",
+    type,
+    image_path: isVideoType ? null : imagePath || null,
+    video_path: isVideoType ? videoPath || null : null,
+    loop_overlay: isVideoType ? loopOverlay : true,
+    text_content: textContent || null,
+    font_size: fontSize,
+    font_color: fontColor,
+    font_family: fontFamily,
+    font_weight: fontWeight,
+    bg_color: bgColor,
+    position,
+    position_x: positionX,
+    position_y: positionY,
+    size_percent: sizePercent,
+    opacity,
+    scroll_speed: type === "scrolling_text" ? scrollSpeed : null,
+    scroll_start_x: type === "scrolling_text" ? scrollStartX : null,
+    scroll_end_x: type === "scrolling_text" ? scrollEndX : null,
+    enabled: true,
+    created_at: "",
+    updated_at: "",
+  }
 
   const resetForm = () => {
     setName("")
@@ -163,6 +280,29 @@ export function OverlayManager() {
     setFontFamily(overlay.font_family || "sans")
     setFontWeight(overlay.font_weight || "normal")
     setDialogOpen(true)
+  }
+
+  const applyTemplate = (template: (typeof broadcastTemplates)[number]) => {
+    setName(template.name)
+    setType(template.type)
+    setPosition(template.position)
+    setPositionX(template.x)
+    setPositionY(template.y)
+    setSizePercent(template.size)
+    setOpacity(100)
+    setImagePath("")
+    setImagePreview("")
+    setTextContent(template.text)
+    setFontSize(template.fontSize)
+    setFontColor("#ffffff")
+    setBgColor(template.bgColor)
+    setLoopOverlay(true)
+    setVideoPath("")
+    setScrollSpeed(template.scrollSpeed)
+    setScrollStartX(template.scrollStart)
+    setScrollEndX(template.scrollEnd)
+    setFontFamily("sans")
+    setFontWeight(template.fontWeight)
   }
 
   const handleVideoOverlayUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -413,7 +553,28 @@ export function OverlayManager() {
             <DialogHeader>
               <DialogTitle>{editingId ? "Edit Overlay" : "Create Overlay"}</DialogTitle>
             </DialogHeader>
-            <div className="space-y-4 pt-2">
+            {!editingId && (
+              <section aria-labelledby="overlay-template-heading" className="flex flex-col gap-2">
+                <div>
+                  <h3 id="overlay-template-heading" className="text-sm font-medium text-foreground">Start with a broadcast template</h3>
+                  <p className="text-xs text-muted-foreground">Choose a layout, then customize its text, position, and style.</p>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {broadcastTemplates.map((template) => (
+                    <button
+                      key={template.label}
+                      type="button"
+                      onClick={() => applyTemplate(template)}
+                      className="flex flex-col gap-1 rounded-lg border border-border bg-secondary/40 p-3 text-left transition-colors hover:border-primary/50 hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <span className="text-sm font-medium text-foreground">{template.label}</span>
+                      <span className="text-xs leading-relaxed text-muted-foreground">{template.description}</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
+            <div className="flex flex-col gap-4 pt-2">
               <div className="space-y-2">
                 <Label htmlFor="overlay-name">Overlay Name</Label>
                 <Input
@@ -656,20 +817,20 @@ export function OverlayManager() {
                           onValueChange={(v) => setScrollSpeed(v[0])}
                           min={5}
                           max={100}
-                          step={5}
+                          step={1}
                         />
-                        <p className="text-xs text-muted-foreground">
-                          5 = very slow (~6 min to cross), 20 = readable (~90 sec), 100 = fast (~20 sec)
+                        <p className="text-xs leading-relaxed text-muted-foreground">
+                          Approximate time across this zone: {tickerPassLabel}. The preview uses this same pixel-per-second speed.
                         </p>
                       </div>
                       <div className="space-y-2">
                         <div className="flex justify-between items-center">
-                          <Label>Scroll Zone Start (Left Edge)</Label>
+                          <Label>Visible zone left edge (exit)</Label>
                           <span className="text-xs text-muted-foreground">{scrollStartX}%</span>
                         </div>
                         <Slider
                           value={[scrollStartX]}
-                          onValueChange={(v) => setScrollStartX(v[0])}
+                          onValueChange={(v) => setScrollStartX(Math.min(v[0], scrollEndX - 5))}
                           min={0}
                           max={90}
                           step={1}
@@ -680,12 +841,12 @@ export function OverlayManager() {
                       </div>
                       <div className="space-y-2">
                         <div className="flex justify-between items-center">
-                          <Label>Scroll Zone End (Right Edge)</Label>
+                          <Label>Visible zone right edge (entry)</Label>
                           <span className="text-xs text-muted-foreground">{scrollEndX}%</span>
                         </div>
                         <Slider
                           value={[scrollEndX]}
-                          onValueChange={(v) => setScrollEndX(v[0])}
+                          onValueChange={(v) => setScrollEndX(Math.max(v[0], scrollStartX + 5))}
                           min={10}
                           max={100}
                           step={1}
@@ -698,6 +859,14 @@ export function OverlayManager() {
                   )}
                 </>
               )}
+
+              <div className="flex flex-col gap-2 rounded-lg border border-border bg-secondary/20 p-3">
+                <div>
+                  <p className="text-sm font-medium text-foreground">Live draft preview</p>
+                  <p className="text-xs text-muted-foreground">Choose a background clip to check the overlay against real footage.</p>
+                </div>
+                <OverlayPreview overlays={overlays} draftOverlay={draftOverlay} compact />
+              </div>
 
               <OverlayPositionEditor
                 positionX={positionX}
@@ -721,19 +890,21 @@ export function OverlayManager() {
                 sizePercent={sizePercent}
               />
 
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label>Size</Label>
-                  <span className="text-xs text-muted-foreground">{sizePercent}%</span>
+              {!isTextType && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>Size</Label>
+                    <span className="text-xs text-muted-foreground">{sizePercent}%</span>
+                  </div>
+                  <Slider
+                    value={[sizePercent]}
+                    onValueChange={(v) => setSizePercent(v[0])}
+                    min={5}
+                    max={100}
+                    step={1}
+                  />
                 </div>
-                <Slider
-                  value={[sizePercent]}
-                  onValueChange={(v) => setSizePercent(v[0])}
-                  min={5}
-                  max={100}
-                  step={1}
-                />
-              </div>
+              )}
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between">

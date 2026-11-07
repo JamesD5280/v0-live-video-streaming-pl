@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import useSWR from "swr"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -54,6 +54,17 @@ export function StreamCreator() {
   const [previewing, setPreviewing] = useState(false)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setPreviewUrl(null)
+    setPreviewError(null)
+  }, [sourceType, selectedVideo, selectedPlaylist, rtmpPullUrl, selectedOverlays])
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl)
+    }
+  }, [previewUrl])
 
   const readyVideos = Array.isArray(videos) ? videos.filter((v) => v.status === "ready") : []
   const enabledDestinations = Array.isArray(destinations) ? destinations.filter((d) => d.enabled) : []

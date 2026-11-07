@@ -9,8 +9,8 @@
 }
 
 @keyframes scrollText {
-  0% { transform: translateX(100%); }
-  100% { transform: translateX(-100%); }
+  0% { transform: translate(100cqw, -50%); }
+  100% { transform: translate(-100%, -50%); }
 }
 
 @layer base {
