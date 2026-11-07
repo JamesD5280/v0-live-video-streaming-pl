@@ -15,11 +15,35 @@ import {
 
 const fetcher = (url: string) => fetch(url).then((r) => { if (!r.ok) throw new Error(); return r.json() })
 
+type DraftOverlayChange = Partial<
+  Pick<Overlay, "position_x" | "position_y" | "size_percent" | "font_size" | "scroll_start_x" | "scroll_end_x">
+>
+
+type DraftGesture = {
+  pointerId: number
+  mode: "move" | "resize"
+  type: Overlay["type"]
+  startClientX: number
+  startClientY: number
+  canvasWidth: number
+  canvasHeight: number
+  initialX: number
+  initialY: number
+  initialSize: number
+  initialFontSize: number
+  initialScrollStart: number
+  initialScrollEnd: number
+  widthPercent: number
+  heightPercent: number
+}
+
 interface OverlayPreviewProps {
   overlays: Overlay[]
   draftOverlay?: Overlay
   draftVideoPreviewUrl?: string
   compact?: boolean
+  editableDraft?: boolean
+  onDraftChange?: (change: DraftOverlayChange) => void
 }
 
 function getFontStyle(overlay: Overlay): React.CSSProperties {
@@ -80,13 +104,13 @@ function VideoOverlayPreview({
   }, [src])
 
   return (
-    <div className="relative aspect-video w-full overflow-hidden rounded border border-primary/30 bg-background/30">
+    <div className="relative w-full overflow-hidden bg-transparent">
       {src && !failed ? (
         <video
           key={src}
           src={src}
           aria-label={`${name} video overlay preview`}
-          className="h-full w-full object-contain"
+          className="block h-auto w-full"
           autoPlay
           muted
           playsInline
@@ -124,9 +148,15 @@ export function OverlayPreview({
   draftOverlay,
   draftVideoPreviewUrl,
   compact = false,
+  editableDraft = false,
+  onDraftChange,
 }: OverlayPreviewProps) {
   const { data: videos } = useSWR<Video[]>("/api/videos", fetcher)
   const videoRef = useRef<HTMLVideoElement>(null)
+  const canvasRef = useRef<HTMLDivElement>(null)
+  const overlayElementsRef = useRef(new Map<string, HTMLDivElement>())
+  const gestureRef = useRef<DraftGesture | null>(null)
+  const [overlayBounds, setOverlayBounds] = useState<Record<string, { widthPercent: number; heightPercent: number }>>({})
   const previewOverlays = draftOverlay
     ? [...overlays.filter((overlay) => overlay.id !== draftOverlay.id), draftOverlay]
     : overlays
@@ -139,6 +169,197 @@ export function OverlayPreview({
   const enabledOverlays = previewOverlays.filter((overlay) => overlay.enabled)
   const enabledOverlayIds = enabledOverlays.map((overlay) => overlay.id).join("\u0000")
   const scrollingOverlays = enabledOverlays.filter((overlay) => overlay.type === "scrolling_text")
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas || typeof ResizeObserver === "undefined") return
+
+    const measureOverlays = () => {
+      const canvasRect = canvas.getBoundingClientRect()
+      if (!canvasRect.width || !canvasRect.height) return
+
+      const nextBounds: Record<string, { widthPercent: number; heightPercent: number }> = {}
+      for (const [id, element] of overlayElementsRef.current) {
+        if (!element.isConnected) continue
+        const rect = element.getBoundingClientRect()
+        nextBounds[id] = {
+          widthPercent: (rect.width / canvasRect.width) * 100,
+          heightPercent: (rect.height / canvasRect.height) * 100,
+        }
+      }
+
+      setOverlayBounds((current) => {
+        const currentIds = Object.keys(current)
+        const nextIds = Object.keys(nextBounds)
+        if (
+          currentIds.length === nextIds.length &&
+          nextIds.every((id) => {
+            const currentBounds = current[id]
+            const next = nextBounds[id]
+            return currentBounds && Math.abs(currentBounds.widthPercent - next.widthPercent) < 0.1 &&
+              Math.abs(currentBounds.heightPercent - next.heightPercent) < 0.1
+          })
+        ) return current
+        return nextBounds
+      })
+    }
+
+    const observer = new ResizeObserver(measureOverlays)
+    observer.observe(canvas)
+    for (const element of overlayElementsRef.current.values()) observer.observe(element)
+    measureOverlays()
+    return () => observer.disconnect()
+  }, [enabledOverlayIds, draftOverlay?.id, draftOverlay?.type, draftOverlay?.size_percent, draftOverlay?.font_size, draftOverlay?.text_content, draftOverlay?.image_path, draftOverlay?.video_path, draftOverlay?.scroll_start_x, draftOverlay?.scroll_end_x])
+
+  const roundPercent = (value: number) => Math.round(value * 10) / 10
+  const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value))
+
+  const startDraftGesture = (
+    event: React.PointerEvent<HTMLElement>,
+    overlay: Overlay,
+    mode: DraftGesture["mode"],
+  ) => {
+    if (!editableDraft || !onDraftChange || event.button !== 0) return
+    const canvas = canvasRef.current
+    const element = overlayElementsRef.current.get(overlay.id)
+    if (!canvas || !element) return
+
+    const canvasRect = canvas.getBoundingClientRect()
+    const overlayRect = element.getBoundingClientRect()
+    const tickerStart = clamp(overlay.scroll_start_x ?? 0, 0, 95)
+    const tickerEnd = clamp(overlay.scroll_end_x ?? 100, tickerStart + 5, 100)
+
+    gestureRef.current = {
+      pointerId: event.pointerId,
+      mode,
+      type: overlay.type,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      canvasWidth: canvasRect.width,
+      canvasHeight: canvasRect.height,
+      initialX: overlay.type === "scrolling_text" ? tickerStart : ((overlayRect.left + overlayRect.width / 2 - canvasRect.left) / canvasRect.width) * 100,
+      initialY: ((overlayRect.top + overlayRect.height / 2 - canvasRect.top) / canvasRect.height) * 100,
+      initialSize: overlay.size_percent || 20,
+      initialFontSize: overlay.font_size || 24,
+      initialScrollStart: tickerStart,
+      initialScrollEnd: tickerEnd,
+      widthPercent: (overlayRect.width / canvasRect.width) * 100,
+      heightPercent: (overlayRect.height / canvasRect.height) * 100,
+    }
+
+    event.preventDefault()
+    event.stopPropagation()
+    canvas.setPointerCapture(event.pointerId)
+  }
+
+  const handleCanvasPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const gesture = gestureRef.current
+    if (!gesture || gesture.pointerId !== event.pointerId || !onDraftChange) return
+    event.preventDefault()
+
+    const deltaX = ((event.clientX - gesture.startClientX) / gesture.canvasWidth) * 100
+    const deltaY = ((event.clientY - gesture.startClientY) / gesture.canvasHeight) * 100
+
+    if (gesture.mode === "resize") {
+      if (gesture.type === "scrolling_text") {
+        onDraftChange({ scroll_end_x: roundPercent(clamp(gesture.initialScrollEnd + deltaX, gesture.initialScrollStart + 5, 100)) })
+      } else if (gesture.type === "text" || gesture.type === "lower_third") {
+        onDraftChange({ font_size: Math.round(clamp(gesture.initialFontSize + deltaX * 19.2, 12, 120)) })
+      } else {
+        onDraftChange({ size_percent: Math.round(clamp(gesture.initialSize + deltaX, 5, 100)) })
+      }
+      return
+    }
+
+    if (gesture.type === "scrolling_text") {
+      const zoneWidth = gesture.initialScrollEnd - gesture.initialScrollStart
+      const start = clamp(gesture.initialScrollStart + deltaX, 0, 100 - zoneWidth)
+      const fontSize = clamp(gesture.initialFontSize, 12, 120)
+      const minY = (fontSize / 1080) * 100
+      const maxY = ((1080 - fontSize - 10) / 1080) * 100
+      onDraftChange({
+        scroll_start_x: roundPercent(start),
+        scroll_end_x: roundPercent(start + zoneWidth),
+        position_y: roundPercent(clamp(gesture.initialY + deltaY, minY, maxY)),
+      })
+      return
+    }
+
+    const halfWidth = gesture.widthPercent / 2
+    const halfHeight = gesture.heightPercent / 2
+    const x = gesture.type === "lower_third"
+      ? undefined
+      : roundPercent(clamp(gesture.initialX + deltaX, halfWidth, 100 - halfWidth))
+    const y = roundPercent(clamp(gesture.initialY + deltaY, halfHeight, 100 - halfHeight))
+    onDraftChange({ ...(x === undefined ? {} : { position_x: x }), position_y: y })
+  }
+
+  const endDraftGesture = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (gestureRef.current?.pointerId !== event.pointerId) return
+    gestureRef.current = null
+    const canvas = canvasRef.current
+    if (canvas?.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId)
+  }
+
+  const handleDraftKeyDown = (event: React.KeyboardEvent<HTMLDivElement>, overlay: Overlay) => {
+    if (!editableDraft || !onDraftChange) return
+    const step = event.shiftKey ? 2 : 0.5
+    if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) return
+    event.preventDefault()
+
+    const canvas = canvasRef.current
+    const element = overlayElementsRef.current.get(overlay.id)
+    if (!canvas || !element) return
+    const canvasRect = canvas.getBoundingClientRect()
+    const overlayRect = element.getBoundingClientRect()
+    const y = ((overlayRect.top + overlayRect.height / 2 - canvasRect.top) / canvasRect.height) * 100
+
+    if (overlay.type === "scrolling_text") {
+      const start = clamp(overlay.scroll_start_x ?? 0, 0, 95)
+      const end = clamp(overlay.scroll_end_x ?? 100, start + 5, 100)
+      const delta = event.key === "ArrowLeft" ? -step : event.key === "ArrowRight" ? step : 0
+      const nextStart = clamp(start + delta, 0, 100 - (end - start))
+      const fontSize = clamp(overlay.font_size || 24, 12, 120)
+      const nextY = event.key === "ArrowUp" || event.key === "ArrowDown"
+        ? clamp(y + (event.key === "ArrowUp" ? -step : step), (fontSize / 1080) * 100, ((1080 - fontSize - 10) / 1080) * 100)
+        : y
+      onDraftChange({
+        scroll_start_x: roundPercent(nextStart),
+        scroll_end_x: roundPercent(nextStart + end - start),
+        position_y: roundPercent(nextY),
+      })
+      return
+    }
+
+    const x = ((overlayRect.left + overlayRect.width / 2 - canvasRect.left) / canvasRect.width) * 100
+    const bounds = overlayBounds[overlay.id]
+    const widthHalf = (bounds?.widthPercent ?? 0) / 2
+    const heightHalf = (bounds?.heightPercent ?? 0) / 2
+    const nextX = overlay.type === "lower_third" || event.key === "ArrowUp" || event.key === "ArrowDown"
+      ? undefined
+      : roundPercent(clamp(x + (event.key === "ArrowLeft" ? -step : step), widthHalf, 100 - widthHalf))
+    const nextY = event.key === "ArrowLeft" || event.key === "ArrowRight"
+      ? y
+      : roundPercent(clamp(y + (event.key === "ArrowUp" ? -step : step), heightHalf, 100 - heightHalf))
+    onDraftChange({ ...(nextX === undefined ? {} : { position_x: nextX }), position_y: nextY })
+  }
+
+  const handleResizeKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, overlay: Overlay) => {
+    if (!onDraftChange || !["ArrowUp", "ArrowRight", "ArrowDown", "ArrowLeft"].includes(event.key)) return
+    event.preventDefault()
+    event.stopPropagation()
+    const step = event.shiftKey ? 5 : 1
+    const direction = event.key === "ArrowUp" || event.key === "ArrowRight" ? 1 : -1
+    if (overlay.type === "scrolling_text") {
+      const start = clamp(overlay.scroll_start_x ?? 0, 0, 95)
+      const end = clamp(overlay.scroll_end_x ?? 100, start + 5, 100)
+      onDraftChange({ scroll_end_x: roundPercent(clamp(end + direction * step, start + 5, 100)) })
+    } else if (overlay.type === "text" || overlay.type === "lower_third") {
+      onDraftChange({ font_size: Math.round(clamp((overlay.font_size || 24) + direction * step, 12, 120)) })
+    } else {
+      onDraftChange({ size_percent: Math.round(clamp((overlay.size_percent || 20) + direction * step, 5, 100)) })
+    }
+  }
 
   useEffect(() => {
     setVisibleIds(new Set(enabledOverlayIds ? enabledOverlayIds.split("\u0000") : []))
@@ -191,7 +412,7 @@ export function OverlayPreview({
   if (enabledOverlays.length === 0) return null
 
   return (
-    <div className={cn("space-y-3", compact && "max-w-xl")}>
+    <div className="w-full space-y-3">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-foreground">Overlay Preview</h3>
         <div className="flex items-center gap-2">
@@ -230,8 +451,13 @@ export function OverlayPreview({
 
       {/* 16:9 preview canvas */}
       <div
-        className="relative w-full overflow-hidden rounded-lg border border-border bg-foreground"
+        ref={canvasRef}
+        className="relative w-full touch-none overflow-hidden rounded-lg border border-border bg-black"
         style={{ paddingBottom: "56.25%", containerType: "inline-size" }}
+        onPointerMove={handleCanvasPointerMove}
+        onPointerUp={endDraftGesture}
+        onPointerCancel={endDraftGesture}
+        onLostPointerCapture={() => { gestureRef.current = null }}
       >
         {/* Background: real video or simulated pattern */}
         <div className="absolute inset-0">
@@ -240,7 +466,7 @@ export function OverlayPreview({
               <video
                 ref={videoRef}
                 src={proxyVideoUrl || undefined}
-                className="absolute inset-0 h-full w-full object-cover"
+                className="absolute inset-0 h-full w-full bg-black object-contain"
                 loop
                 muted
                 playsInline
@@ -280,64 +506,95 @@ export function OverlayPreview({
               </div>
             </>
           ) : (
-            <>
-              <div className="absolute inset-0 bg-gradient-to-br from-[#16213e] to-[#0f3460]" />
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 opacity-20">
-                <div className="h-px w-4/5 bg-white/30" />
-                <div className="h-px w-3/5 bg-white/20" />
-                <div className="h-px w-4/5 bg-white/30" />
-              </div>
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="text-center">
-                  <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/5">
-                    <VideoIcon className="h-5 w-5 text-white/20" />
-                  </div>
-                  <p className="text-xs font-medium text-white/15">Select a video above to preview</p>
-                </div>
-              </div>
-            </>
+            <div className="absolute inset-0 flex items-center justify-center bg-black">
+              <p className="text-center text-xs font-medium text-muted-foreground">
+                Select a background clip to preview the stream output
+              </p>
+            </div>
           )}
         </div>
 
         {/* Render each visible overlay */}
         {enabledOverlays.map((overlay) => {
           const isVisible = visibleIds.has(overlay.id)
-          const isHighlighted = highlightedId === overlay.id
+          const isEditable = editableDraft && draftOverlay?.id === overlay.id
+          const isHighlighted = highlightedId === overlay.id || isEditable
           if (!isVisible) return null
 
           const isTicker = overlay.type === "scrolling_text"
-          const tickerStart = Math.max(0, Math.min(95, overlay.scroll_start_x ?? 0))
+          const isTextOverlay = overlay.type === "text" || overlay.type === "lower_third"
+          const isLowerThird = overlay.type === "lower_third"
+          const tickerStart = clamp(overlay.scroll_start_x ?? 0, 0, 95)
           const tickerEnd = Math.max(tickerStart + 5, Math.min(100, overlay.scroll_end_x ?? 100))
           const tickerWidth = tickerEnd - tickerStart
           const tickerSpeed = Math.max(1, overlay.scroll_speed ?? 20)
-          const tickerFontSize = Math.max(12, Math.min(120, overlay.font_size || 24))
-          const estimatedTextWidth = (overlay.text_content?.length || 0) * tickerFontSize * 0.58
+          const fontSize = clamp(overlay.font_size || 24, 12, 120)
+          const estimatedTextWidth = (overlay.text_content?.length || 0) * fontSize * 0.58
           const tickerDuration = (1920 * (tickerWidth / 100) + estimatedTextWidth) / tickerSpeed
+          const tickerCenterY = clamp(overlay.position_y ?? 92, (fontSize / 1080) * 100, ((1080 - fontSize - 10) / 1080) * 100)
           const positionStyle = isTicker
             ? {
                 left: `${tickerStart}%`,
-                top: `${overlay.position_y ?? 92}%`,
+                top: `${tickerCenterY}%`,
                 transform: "translateY(-50%)",
               }
-            : getPositionStyle(overlay)
+            : isLowerThird
+              ? {
+                  left: "0%",
+                  top: `${overlay.position_y ?? 50}%`,
+                  transform: "translateY(-50%)",
+                }
+              : getPositionStyle(overlay)
           const opacityValue = overlay.opacity / 100
-          const sizePercent = overlay.size_percent
+          const sizePercent = overlay.size_percent || 20
           const fontStyle = getFontStyle(overlay)
+          const measuredBounds = overlayBounds[overlay.id]
+          const overlayWidth = isTicker
+            ? `${tickerWidth}%`
+            : isLowerThird
+              ? "100%"
+              : isTextOverlay
+                ? "max-content"
+                : `${sizePercent}%`
+          const overlayStyle: React.CSSProperties = {
+            ...positionStyle,
+            opacity: opacityValue,
+            zIndex: isHighlighted ? 10 : 1,
+            width: overlayWidth,
+            ...(isTicker ? { height: `${(fontSize + 16) * 100 / 1920}cqw` } : {}),
+          }
+
+          if (!isTicker && !isTextOverlay && measuredBounds) {
+            const x = overlay.position_x ?? 50
+            const y = overlay.position_y ?? 50
+            overlayStyle.left = `${Math.max(0, Math.min(100 - measuredBounds.widthPercent, x - measuredBounds.widthPercent / 2))}%`
+            overlayStyle.top = `${Math.max(0, Math.min(100 - measuredBounds.heightPercent, y - measuredBounds.heightPercent / 2))}%`
+            overlayStyle.transform = "none"
+          }
 
           return (
             <div
               key={overlay.id}
-              className={cn(
-                "absolute transition-all duration-300",
-                isHighlighted && "ring-2 ring-primary ring-offset-1 ring-offset-transparent rounded"
-              )}
-              style={{
-                ...positionStyle,
-                opacity: opacityValue,
-                zIndex: isHighlighted ? 10 : 1,
-                width: `${isTicker ? tickerWidth : Math.max(5, sizePercent)}%`,
-                ...(isTicker ? { height: `${(tickerFontSize + 16) * 100 / 1920}cqw` } : {}),
+              ref={(node) => {
+                if (node) overlayElementsRef.current.set(overlay.id, node)
+                else overlayElementsRef.current.delete(overlay.id)
               }}
+              data-overlay-box="true"
+              role={isEditable ? "group" : undefined}
+              tabIndex={isEditable ? 0 : undefined}
+              aria-label={isEditable
+                ? overlay.type === "lower_third"
+                  ? `Move ${overlay.name} vertically; adjust its font size in the form`
+                  : `Move ${overlay.name}; use the corner handle to resize`
+                : undefined}
+              className={cn(
+                "absolute",
+                isEditable ? "cursor-move touch-none transition-none" : "transition-all duration-300",
+                isHighlighted && "rounded ring-2 ring-primary ring-offset-1 ring-offset-transparent"
+              )}
+              style={overlayStyle}
+              onPointerDown={isEditable ? (event) => startDraftGesture(event, overlay, "move") : undefined}
+              onKeyDown={isEditable ? (event) => handleDraftKeyDown(event, overlay) : undefined}
               onMouseEnter={() => setHighlightedId(overlay.id)}
               onMouseLeave={() => setHighlightedId(null)}
             >
@@ -346,7 +603,7 @@ export function OverlayPreview({
                 <img
                   src={overlay.image_path}
                   alt={overlay.name}
-                  className="w-full object-contain"
+                  className="block h-auto w-full"
                   crossOrigin="anonymous"
                 />
               )}
@@ -368,15 +625,19 @@ export function OverlayPreview({
               {/* Text overlay */}
               {(overlay.type === "text" || overlay.type === "lower_third") && overlay.text_content && (
                 <div
-                  className={cn(
-                    "whitespace-nowrap px-3 py-1.5",
-                    overlay.type === "lower_third" && "rounded"
-                  )}
+                  className={cn("whitespace-nowrap leading-none", isLowerThird && "flex w-full items-center")}
                   style={{
                     ...fontStyle,
-                    backgroundColor: overlay.bg_color,
                     color: overlay.font_color,
-                    fontSize: `clamp(8px, ${overlay.font_size * 100 / 1920}vw, ${overlay.font_size}px)`,
+                    fontSize: `${fontSize * 100 / 1920}cqw`,
+                    lineHeight: 1,
+                    ...(isLowerThird
+                      ? {
+                          backgroundColor: overlay.bg_color,
+                          height: `${(fontSize + 30) * 100 / 1920}cqw`,
+                          paddingLeft: `${20 * 100 / 1920}cqw`,
+                        }
+                      : {}),
                   }}
                 >
                   {overlay.text_content}
@@ -394,7 +655,7 @@ export function OverlayPreview({
                     style={{
                       ...fontStyle,
                       color: overlay.font_color,
-                      fontSize: `${tickerFontSize * 100 / 1920}cqw`,
+                      fontSize: `${fontSize * 100 / 1920}cqw`,
                       lineHeight: 1,
                       animation: `scrollText ${Math.max(1, tickerDuration)}s linear infinite`,
                       animationPlayState: tickerPaused ? "paused" : "running",
@@ -411,12 +672,25 @@ export function OverlayPreview({
                   {overlay.name}
                 </div>
               )}
+
+              {isEditable && overlay.type !== "lower_third" && (
+                <button
+                  type="button"
+                  aria-label={`Resize ${overlay.name}`}
+                  aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight"
+                  title="Drag to resize; use arrow keys for precise changes"
+                  className="absolute bottom-0 right-0 z-20 grid size-4 translate-x-1/2 translate-y-1/2 touch-none cursor-se-resize place-items-center rounded border border-background bg-primary shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onPointerDown={(event) => startDraftGesture(event, overlay, "resize")}
+                  onKeyDown={(event) => handleResizeKeyDown(event, overlay)}
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <span aria-hidden="true" className="size-1 rounded-sm bg-primary-foreground" />
+                </button>
+              )}
             </div>
           )
         })}
 
-        {/* Safe zone guides */}
-        <div className="pointer-events-none absolute inset-[5%] border border-dashed border-white/5 rounded" />
       </div>
 
       {scrollingOverlays.length > 0 && (

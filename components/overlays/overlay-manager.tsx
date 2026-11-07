@@ -41,7 +41,6 @@ import {
 import type { Overlay, OverlayType, OverlayPosition } from "@/lib/store"
 import { createClient } from "@/lib/supabase/client"
 import { OverlayPreview } from "./overlay-preview"
-import { OverlayPositionEditor } from "./overlay-position-editor"
 import { GraphicsEditor } from "./graphics-editor"
 
 const fetcher = (url: string) => fetch(url).then((r) => { if (!r.ok) throw new Error(); return r.json() })
@@ -74,6 +73,16 @@ const positionLabels: Record<OverlayPosition, string> = {
   "bottom-left": "Bottom Left",
   "bottom-center": "Bottom Center",
   "bottom-right": "Bottom Right",
+}
+
+function getPositionFromCoordinates(x: number, y: number): OverlayPosition {
+  if (x < 20 && y < 20) return "top-left"
+  if (x > 80 && y < 20) return "top-right"
+  if (x >= 20 && x <= 80 && y < 20) return "top-center"
+  if (x < 20 && y > 80) return "bottom-left"
+  if (x > 80 && y > 80) return "bottom-right"
+  if (x >= 20 && x <= 80 && y > 80) return "bottom-center"
+  return "center"
 }
 
 const broadcastTemplates: Array<{
@@ -174,10 +183,10 @@ export function OverlayManager() {
   // Form state
   const [name, setName] = useState("")
   const [type, setType] = useState<OverlayType>("logo")
-  const [position, setPosition] = useState<OverlayPosition>("top-left")
-  const [positionX, setPositionX] = useState(5)
-  const [positionY, setPositionY] = useState(5)
-  const [sizePercent, setSizePercent] = useState(100)
+  const [position, setPosition] = useState<OverlayPosition>("center")
+  const [positionX, setPositionX] = useState(50)
+  const [positionY, setPositionY] = useState(50)
+  const [sizePercent, setSizePercent] = useState(15)
   const [opacity, setOpacity] = useState(100)
   const [imagePath, setImagePath] = useState("")
   const [imagePreview, setImagePreview] = useState("")
@@ -231,10 +240,10 @@ export function OverlayManager() {
   const resetForm = () => {
     setName("")
     setType("logo")
-    setPosition("top-left")
-    setPositionX(0)
-    setPositionY(0)
-    setSizePercent(100)
+    setPosition("center")
+    setPositionX(50)
+    setPositionY(50)
+    setSizePercent(15)
     setOpacity(100)
     setImagePath("")
     setImagePreview("")
@@ -432,6 +441,18 @@ export function OverlayManager() {
       alert("Failed to save overlay. Check console for details.")
     }
     setCreating(false)
+  }
+
+  const handleDraftChange = (change: Partial<Pick<Overlay, "position_x" | "position_y" | "size_percent" | "font_size" | "scroll_start_x" | "scroll_end_x">>) => {
+    if (change.position_x !== undefined) setPositionX(change.position_x)
+    if (change.position_y !== undefined) setPositionY(change.position_y)
+    if (change.position_x !== undefined || change.position_y !== undefined) {
+      setPosition(getPositionFromCoordinates(change.position_x ?? positionX, change.position_y ?? positionY))
+    }
+    if (change.size_percent !== undefined) setSizePercent(change.size_percent)
+    if (change.font_size !== undefined) setFontSize(change.font_size)
+    if (change.scroll_start_x !== undefined) setScrollStartX(change.scroll_start_x ?? 0)
+    if (change.scroll_end_x !== undefined) setScrollEndX(change.scroll_end_x ?? 100)
   }
 
   const handleDelete = async (id: string) => {
@@ -753,7 +774,7 @@ export function OverlayManager() {
                       </Select>
                     </div>
                   </div>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-2">
                       <Label>Font Size</Label>
                       <Input
@@ -780,35 +801,37 @@ export function OverlayManager() {
                         />
                       </div>
                     </div>
-                    <div className="space-y-2">
-                      <Label>Background</Label>
-                      <div className="flex items-center gap-2">
-                        <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={bgColor === "transparent"}
-                            onChange={(e) => setBgColor(e.target.checked ? "transparent" : "#00000080")}
-                            className="rounded border-border"
-                          />
-                          No Background
-                        </label>
-                      </div>
-                      {bgColor !== "transparent" && (
+                    {type !== "text" && (
+                      <div className="space-y-2">
+                        <Label>Background</Label>
                         <div className="flex items-center gap-2">
-                          <input
-                            type="color"
-                            value={bgColor.slice(0, 7)}
-                            onChange={(e) => setBgColor(e.target.value + "80")}
-                            className="h-9 w-9 cursor-pointer rounded border border-border"
-                          />
-                          <Input
-                            value={bgColor}
-                            onChange={(e) => setBgColor(e.target.value)}
-                            className="flex-1"
-                          />
+                          <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={bgColor === "transparent"}
+                              onChange={(e) => setBgColor(e.target.checked ? "transparent" : "#00000080")}
+                              className="rounded border-border"
+                            />
+                            No Background
+                          </label>
                         </div>
-                      )}
-                    </div>
+                        {bgColor !== "transparent" && (
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="color"
+                              value={bgColor.slice(0, 7)}
+                              onChange={(e) => setBgColor(e.target.value + "80")}
+                              className="h-9 w-9 cursor-pointer rounded border border-border"
+                            />
+                            <Input
+                              value={bgColor}
+                              onChange={(e) => setBgColor(e.target.value)}
+                              className="flex-1"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {type === "scrolling_text" && (
@@ -868,45 +891,31 @@ export function OverlayManager() {
 
               <div className="flex flex-col gap-2 rounded-lg border border-border bg-secondary/20 p-3">
                 <div>
-                  <p className="text-sm font-medium text-foreground">Live draft preview</p>
-                  <p className="text-xs text-muted-foreground">Choose a background clip to check the overlay against real footage.</p>
+                  <p className="text-sm font-medium text-foreground">Stream canvas · 1920 × 1080</p>
+                  <p id="overlay-canvas-help" className="text-xs text-muted-foreground">
+                    {type === "lower_third"
+                      ? "Drag vertically to position it. Adjust its size with Font Size."
+                      : type === "scrolling_text"
+                        ? "Drag to position it. Resize the scrolling zone from its corner."
+                        : isTextType
+                          ? "Drag to position it. Resize from the corner or adjust Font Size."
+                          : "Drag to position it. Resize from its corner handle."}
+                  </p>
                 </div>
                 <OverlayPreview
                   overlays={overlays}
                   draftOverlay={draftOverlay}
-                  draftVideoPreviewUrl={videoPreviewUrl}
+                  draftVideoPreviewUrl={isVideoType ? videoPreviewUrl || (editingId ? `/api/overlays/preview?overlayId=${encodeURIComponent(editingId)}` : undefined) : undefined}
+                  editableDraft
+                  onDraftChange={handleDraftChange}
                   compact
                 />
               </div>
 
-              <OverlayPositionEditor
-                positionX={positionX}
-                positionY={positionY}
-                onPositionChange={(x, y) => {
-                  setPositionX(x)
-                  setPositionY(y)
-                  // Auto-set the legacy position field based on nearest preset
-                  if (x < 20 && y < 20) setPosition("top-left")
-                  else if (x > 80 && y < 20) setPosition("top-right")
-                  else if (x >= 20 && x <= 80 && y < 20) setPosition("top-center")
-                  else if (x < 20 && y > 80) setPosition("bottom-left")
-                  else if (x > 80 && y > 80) setPosition("bottom-right")
-                  else if (x >= 20 && x <= 80 && y > 80) setPosition("bottom-center")
-                  else setPosition("center")
-                }}
-                overlayType={type}
-                overlayName={name}
-                imagePath={imagePath || null}
-                textContent={textContent || null}
-                sizePercent={sizePercent}
-                videoPreviewUrl={isVideoType ? videoPreviewUrl || (editingId ? `/api/overlays/preview?overlayId=${encodeURIComponent(editingId)}` : null) : null}
-                loopOverlay={loopOverlay}
-              />
-
               {!isTextType && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label>Size</Label>
+                    <Label>Width on stream</Label>
                     <span className="text-xs text-muted-foreground">{sizePercent}%</span>
                   </div>
                   <Slider
