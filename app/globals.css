@@ -49,6 +49,7 @@
     --sidebar-border: 220 14% 90%;
     --sidebar-ring: 217 91% 50%;
     --success: 142 72% 50%;
+    --success-foreground: 142 70% 9%;
     --warning: 40 90% 55%;
     --live: 0 84% 50%;
   }
@@ -86,6 +87,7 @@
     --sidebar-accent-foreground: 210 20% 90%;
     --sidebar-border: 220 14% 12%;
     --sidebar-ring: 217 91% 50%;
+    --success-foreground: 142 70% 9%;
   }
 }
 

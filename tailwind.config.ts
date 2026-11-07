@@ -51,7 +51,10 @@ const config: Config = {
           '4': 'hsl(var(--chart-4))',
           '5': 'hsl(var(--chart-5))',
         },
-        success: 'hsl(var(--success))',
+        success: {
+          DEFAULT: 'hsl(var(--success))',
+          foreground: 'hsl(var(--success-foreground))',
+        },
         warning: 'hsl(var(--warning))',
         live: 'hsl(var(--live))',
         sidebar: {

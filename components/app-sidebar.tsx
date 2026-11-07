@@ -9,6 +9,7 @@ import {
   Upload,
   Radio,
   MonitorPlay,
+  Cast,
   Settings,
   Calendar,
   Globe,
@@ -33,6 +34,7 @@ const navigation = [
   { name: "Streams", href: "/streams", icon: Radio },
   { name: "Schedule", href: "/schedule", icon: Calendar },
   { name: "Monitor", href: "/monitor", icon: MonitorPlay },
+  { name: "Live Now", href: "/live", icon: Cast },
   { name: "Settings", href: "/settings", icon: Settings },
 ]
 
@@ -101,7 +103,9 @@ export function AppSidebar({ userEmail, displayName, liveStreams = [] }: AppSide
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                 isActive
-                  ? "bg-primary/10 text-primary"
+                  ? item.href === "/live"
+                    ? "bg-success text-success-foreground shadow-sm shadow-success/20"
+                    : "bg-primary/10 text-primary"
                   : "text-muted-foreground hover:bg-secondary hover:text-foreground"
               )}
             >
