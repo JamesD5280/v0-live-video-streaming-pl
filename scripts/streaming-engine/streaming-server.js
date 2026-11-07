@@ -553,6 +553,49 @@ app.post('/check-rtmp', (req, res) => {
   })
 })
 
+function getVideoContentType(filename) {
+  const ext = filename.split('.').pop()?.toLowerCase() || 'mp4'
+  const mimeTypes = {
+    mp4: 'video/mp4',
+    mov: 'video/quicktime',
+    mkv: 'video/x-matroska',
+    avi: 'video/x-msvideo',
+    webm: 'video/webm',
+    flv: 'video/x-flv',
+    ts: 'video/mp2t',
+  }
+  return mimeTypes[ext] || 'video/mp4'
+}
+
+/** HEAD /stream-video/:filename -- return metadata without reading the video file. */
+app.head('/stream-video/:filename', (req, res) => {
+  const { token, expires } = req.query
+  const bearerAuth = req.headers.authorization
+
+  if (token && expires) {
+    const filename = basename(req.params.filename)
+    const payload = `${filename}:${expires}`
+    const expected = createHmac('sha256', API_SECRET).update(payload).digest('hex')
+    if (token !== expected || Date.now() > parseInt(expires, 10)) {
+      return res.status(403).end()
+    }
+  } else if (!bearerAuth || bearerAuth !== `Bearer ${API_SECRET}`) {
+    return res.status(401).end()
+  }
+
+  const safeFilename = basename(req.params.filename)
+  const filePath = join(VIDEO_DIR, safeFilename)
+  if (!existsSync(filePath)) return res.status(404).end()
+
+  const fileSize = statSync(filePath).size
+  res.writeHead(200, {
+    'Content-Length': fileSize,
+    'Content-Type': getVideoContentType(safeFilename),
+    'Accept-Ranges': 'bytes',
+    'Access-Control-Allow-Origin': '*',
+  }).end()
+})
+
 /**
  * GET /stream-video/:filename
  */
@@ -581,17 +624,7 @@ app.get('/stream-video/:filename', (req, res) => {
   const stat = statSync(filePath)
   const fileSize = stat.size
 
-  const ext = safeFilename.split('.').pop()?.toLowerCase() || 'mp4'
-  const mimeTypes = {
-    mp4: 'video/mp4',
-    mov: 'video/quicktime',
-    mkv: 'video/x-matroska',
-    avi: 'video/x-msvideo',
-    webm: 'video/webm',
-    flv: 'video/x-flv',
-    ts: 'video/mp2t',
-  }
-  const contentType = mimeTypes[ext] || 'video/mp4'
+  const contentType = getVideoContentType(safeFilename)
 
   const range = req.headers.range
   if (range) {
