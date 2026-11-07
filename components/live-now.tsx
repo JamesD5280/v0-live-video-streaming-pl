@@ -330,7 +330,7 @@ export function LiveNow() {
           </CardContent>
         </Card>
       ) : !streams ? (
-        <div className="grid gap-5 lg:grid-cols-2 2xl:grid-cols-3" aria-label="Loading live streams">
+        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3" aria-label="Loading live streams">
           {[0, 1, 2].map((item) => (
             <Card key={item} className="overflow-hidden border-border bg-card p-0">
               <Skeleton className="aspect-video rounded-none" />
@@ -342,7 +342,7 @@ export function LiveNow() {
           ))}
         </div>
       ) : liveStreams.length > 0 ? (
-        <div className="grid gap-5 lg:grid-cols-2 2xl:grid-cols-3">
+        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
           {liveStreams.map((stream) => (
             <LiveStreamCard key={stream.id} stream={stream} onPreview={openPreview} />
           ))}
