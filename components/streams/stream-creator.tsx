@@ -409,6 +409,7 @@ export function StreamCreator() {
                     >
                       <Checkbox
                         checked={selectedDestinations.includes(dest.id)}
+                        onClick={(event) => event.stopPropagation()}
                         onCheckedChange={() => toggleDestination(dest.id)}
                       />
                       <div className="flex-1">
@@ -447,6 +448,7 @@ export function StreamCreator() {
                       >
                         <Checkbox
                           checked={selectedOverlays.includes(overlay.id)}
+                          onClick={(event) => event.stopPropagation()}
                           onCheckedChange={() => toggleOverlay(overlay.id)}
                         />
                         <div className="flex items-center gap-2">
