@@ -215,14 +215,17 @@ function buildOverlayFilters(overlays) {
       // For seamless loop, duplicate the text with separator
       const loopText = `${escapedText}          ${escapedText}          ${escapedText}`
 
-      // Position Y: percentage -> pixels (1080p output)
-      let scrollY
+      const barHeight = fontSize + 16
+
+      // Position Y is the vertical center, matching the overlay editor.
+      let scrollCenterY
       if (overlay.positionY !== undefined && overlay.positionY !== null) {
-        scrollY = Math.round(1080 * overlay.positionY / 100)
-        scrollY = Math.max(fontSize, Math.min(1080 - fontSize - 10, scrollY))
+        scrollCenterY = Math.round(1080 * overlay.positionY / 100)
+        scrollCenterY = Math.max(fontSize, Math.min(1080 - fontSize - 10, scrollCenterY))
       } else {
-        scrollY = 1080 - fontSize - 60
+        scrollCenterY = Math.round(1080 * 0.92)
       }
+      const scrollTop = Math.round(scrollCenterY - barHeight / 2)
       
       // Keep the ticker clip within the output frame and at least 5% wide.
       const rawStartPercent = Number(overlay.scrollStartX ?? 0)
@@ -236,9 +239,7 @@ function buildOverlayFilters(overlays) {
       const scrollEndX = Math.round(1920 * endPercent / 100)
       const scrollZoneWidth = Math.max(96, scrollEndX - scrollStartX)
       
-      console.log(`[2MStream] Scrolling text: Y=${scrollY}px, zone X=${scrollStartX}-${scrollEndX}px (width=${scrollZoneWidth}), speed=${speed}`)
-
-      const barHeight = fontSize + 16
+      console.log(`[2MStream] Scrolling text: centerY=${scrollCenterY}px, top=${scrollTop}px, zone X=${scrollStartX}-${scrollEndX}px (width=${scrollZoneWidth}), speed=${speed}`)
       
       // To properly clip text within the scroll zone, we:
       // 1. Split video into two streams (both synced from same source)
@@ -265,16 +266,16 @@ function buildOverlayFilters(overlays) {
       // Draw background and two text instances for seamless looping
       if (hasTransparentBackground) {
         filters.push(
-          `[${splitText}]crop=${scrollZoneWidth}:${barHeight}:${scrollStartX}:${scrollY}-8,drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula1},drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula2}[${textCropped}]`
+          `[${splitText}]crop=${scrollZoneWidth}:${barHeight}:${scrollStartX}:${scrollTop},drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula1},drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula2}[${textCropped}]`
         )
       } else {
         filters.push(
-          `[${splitText}]crop=${scrollZoneWidth}:${barHeight}:${scrollStartX}:${scrollY}-8,drawbox=x=0:y=0:w=iw:h=ih:color=${bgColor}:t=fill,drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula1},drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula2}[${textCropped}]`
+          `[${splitText}]crop=${scrollZoneWidth}:${barHeight}:${scrollStartX}:${scrollTop},drawbox=x=0:y=0:w=iw:h=ih:color=${bgColor}:t=fill,drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula1},drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula2}[${textCropped}]`
         )
       }
       
       // Overlay cropped text area back onto base at the zone position
-      filters.push(`[${splitBase}][${textCropped}]overlay=x=${scrollStartX}:y=${scrollY}-8[${outputLabel}]`)
+      filters.push(`[${splitBase}][${textCropped}]overlay=x=${scrollStartX}:y=${scrollTop}[${outputLabel}]`)
 
       currentLabel = outputLabel
     } else if (overlay.type === 'text' || overlay.type === 'lower_third') {

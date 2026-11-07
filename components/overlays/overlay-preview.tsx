@@ -229,7 +229,10 @@ export function OverlayPreview({
       </div>
 
       {/* 16:9 preview canvas */}
-      <div className="relative w-full overflow-hidden rounded-lg border border-border bg-foreground" style={{ paddingBottom: "56.25%" }}>
+      <div
+        className="relative w-full overflow-hidden rounded-lg border border-border bg-foreground"
+        style={{ paddingBottom: "56.25%", containerType: "inline-size" }}
+      >
         {/* Background: real video or simulated pattern */}
         <div className="absolute inset-0">
           {selectedVideo ? (
@@ -307,7 +310,7 @@ export function OverlayPreview({
           const tickerEnd = Math.max(tickerStart + 5, Math.min(100, overlay.scroll_end_x ?? 100))
           const tickerWidth = tickerEnd - tickerStart
           const tickerSpeed = Math.max(1, overlay.scroll_speed ?? 20)
-          const tickerFontSize = Math.max(12, overlay.font_size || 24)
+          const tickerFontSize = Math.max(12, Math.min(120, overlay.font_size || 24))
           const estimatedTextWidth = (overlay.text_content?.length || 0) * tickerFontSize * 0.58
           const tickerDuration = (1920 * (tickerWidth / 100) + estimatedTextWidth) / tickerSpeed
           const positionStyle = isTicker
@@ -315,7 +318,6 @@ export function OverlayPreview({
                 left: `${tickerStart}%`,
                 top: `${overlay.position_y ?? 92}%`,
                 transform: "translateY(-50%)",
-                containerType: "inline-size" as const,
               }
             : getPositionStyle(overlay)
           const opacityValue = overlay.opacity / 100
@@ -334,7 +336,7 @@ export function OverlayPreview({
                 opacity: opacityValue,
                 zIndex: isHighlighted ? 10 : 1,
                 width: `${isTicker ? tickerWidth : Math.max(5, sizePercent)}%`,
-                ...(isTicker ? { height: `${Math.max(18, tickerFontSize * 0.62)}px` } : {}),
+                ...(isTicker ? { height: `${(tickerFontSize + 16) * 100 / 1920}cqw` } : {}),
               }}
               onMouseEnter={() => setHighlightedId(overlay.id)}
               onMouseLeave={() => setHighlightedId(null)}
@@ -388,11 +390,12 @@ export function OverlayPreview({
                   style={{ backgroundColor: overlay.bg_color }}
                 >
                   <span
-                    className="absolute left-0 top-1/2 inline-block whitespace-nowrap"
+                    className="absolute left-0 top-1/2 inline-block -translate-y-1/2 whitespace-nowrap"
                     style={{
                       ...fontStyle,
                       color: overlay.font_color,
-                      fontSize: `clamp(8px, ${tickerFontSize * 100 / 1920}vw, ${tickerFontSize}px)`,
+                      fontSize: `${tickerFontSize * 100 / 1920}cqw`,
+                      lineHeight: 1,
                       animation: `scrollText ${Math.max(1, tickerDuration)}s linear infinite`,
                       animationPlayState: tickerPaused ? "paused" : "running",
                     }}
