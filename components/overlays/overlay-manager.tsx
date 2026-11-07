@@ -187,6 +187,7 @@ export function OverlayManager() {
   const [bgColor, setBgColor] = useState("#00000080")
   const [loopOverlay, setLoopOverlay] = useState(true)
   const [videoPath, setVideoPath] = useState("")
+  const [videoPreviewUrl, setVideoPreviewUrl] = useState("")
   const [uploadProgress, setUploadProgress] = useState(0)
   const [scrollSpeed, setScrollSpeed] = useState(20)
   const [scrollStartX, setScrollStartX] = useState(0)
@@ -243,6 +244,7 @@ export function OverlayManager() {
     setBgColor("#00000080")
     setLoopOverlay(true)
     setVideoPath("")
+    setVideoPreviewUrl("")
     setUploadProgress(0)
     setScrollSpeed(20)
     setScrollStartX(0)
@@ -274,6 +276,7 @@ export function OverlayManager() {
     setBgColor(overlay.bg_color)
     setLoopOverlay(overlay.loop_overlay ?? true)
     setVideoPath(overlay.video_path || "")
+    setVideoPreviewUrl("")
     setScrollSpeed(overlay.scroll_speed ?? 20)
     setScrollStartX(overlay.scroll_start_x ?? 0)
     setScrollEndX(overlay.scroll_end_x ?? 100)
@@ -316,6 +319,7 @@ export function OverlayManager() {
       const CHUNK_SIZE = 4 * 1024 * 1024
       const totalChunks = Math.ceil(file.size / CHUNK_SIZE)
       const uploadId = `overlay-${Date.now()}`
+      const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_")
 
       for (let i = 0; i < totalChunks; i++) {
         const start = i * CHUNK_SIZE
@@ -324,10 +328,11 @@ export function OverlayManager() {
 
         const formData = new FormData()
         formData.append("chunk", chunk)
-        formData.append("filename", `overlay-${file.name}`)
+        formData.append("filename", `overlay-${safeFileName}`)
         formData.append("uploadId", uploadId)
         formData.append("chunkIndex", String(i))
         formData.append("totalChunks", String(totalChunks))
+        formData.append("uploadPurpose", "overlay")
 
         const res = await fetch("/api/videos/upload/chunk", {
           method: "POST",
@@ -341,6 +346,7 @@ export function OverlayManager() {
 
         if (data.complete && data.serverPath) {
           setVideoPath(data.serverPath)
+          setVideoPreviewUrl(data.previewUrl || "")
         }
       }
     } catch (err) {
@@ -865,7 +871,12 @@ export function OverlayManager() {
                   <p className="text-sm font-medium text-foreground">Live draft preview</p>
                   <p className="text-xs text-muted-foreground">Choose a background clip to check the overlay against real footage.</p>
                 </div>
-                <OverlayPreview overlays={overlays} draftOverlay={draftOverlay} compact />
+                <OverlayPreview
+                  overlays={overlays}
+                  draftOverlay={draftOverlay}
+                  draftVideoPreviewUrl={videoPreviewUrl}
+                  compact
+                />
               </div>
 
               <OverlayPositionEditor
@@ -888,6 +899,8 @@ export function OverlayManager() {
                 imagePath={imagePath || null}
                 textContent={textContent || null}
                 sizePercent={sizePercent}
+                videoPreviewUrl={isVideoType ? videoPreviewUrl || (editingId ? `/api/overlays/preview?overlayId=${encodeURIComponent(editingId)}` : null) : null}
+                loopOverlay={loopOverlay}
               />
 
               {!isTextType && (
