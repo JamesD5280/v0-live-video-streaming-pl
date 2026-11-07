@@ -94,6 +94,13 @@ function getPositionStyle(overlay: Overlay): React.CSSProperties {
   return styles[overlay.position] || styles["top-left"]
 }
 
+const engineLayerOrder: Partial<Record<Overlay["type"], number>> = {
+  image: 0,
+  scrolling_text: 1,
+  text: 2,
+  video: 3,
+}
+
 function VideoOverlayPreview({
   name,
   src,
@@ -188,7 +195,14 @@ export function OverlayPreview({
   const [isPlaying, setIsPlaying] = useState(false)
   const [videoError, setVideoError] = useState<string | null>(null)
   const [tickerPaused, setTickerPaused] = useState(false)
-  const enabledOverlays = previewOverlays.filter((overlay) => overlay.enabled)
+  const enabledOverlays = previewOverlays
+    .map((overlay, index) => ({ overlay, index }))
+    .filter(({ overlay }) => overlay.enabled)
+    .sort((a, b) => {
+      const orderDifference = (engineLayerOrder[a.overlay.type] ?? 1) - (engineLayerOrder[b.overlay.type] ?? 1)
+      return orderDifference || a.index - b.index
+    })
+    .map(({ overlay }) => overlay)
   const enabledOverlayIds = enabledOverlays.map((overlay) => overlay.id).join("\u0000")
   const scrollingOverlays = enabledOverlays.filter((overlay) => overlay.type === "scrolling_text")
 
@@ -559,7 +573,7 @@ export function OverlayPreview({
         </div>
 
         {/* Render each visible overlay */}
-        {enabledOverlays.map((overlay) => {
+        {enabledOverlays.map((overlay, layerIndex) => {
           const isVisible = visibleIds.has(overlay.id)
           const isDraftEditable = editableDraft && draftOverlay?.id === overlay.id && Boolean(onDraftChange)
           const isEditable = isDraftEditable || Boolean(onOverlayChange)
@@ -605,7 +619,7 @@ export function OverlayPreview({
           const overlayStyle: React.CSSProperties = {
             ...positionStyle,
             opacity: opacityValue,
-            zIndex: isHighlighted ? 10 : 1,
+            zIndex: layerIndex + 1,
             width: overlayWidth,
             ...(isTicker ? { height: `${(fontSize + 16) * 100 / 1920}cqw` } : {}),
           }
@@ -763,7 +777,7 @@ export function OverlayPreview({
 
       {!compact && (
         <div className="flex flex-wrap gap-2">
-          {enabledOverlays.map((overlay) => {
+        {enabledOverlays.map((overlay) => {
           const isVisible = visibleIds.has(overlay.id)
           const isHighlighted = highlightedId === overlay.id
           return (

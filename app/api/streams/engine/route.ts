@@ -29,9 +29,66 @@ async function callStreamingServer(path: string, body: Record<string, unknown>) 
   }
 }
 
+type EngineOverlayRow = {
+  id: string
+  name: string
+  type: string
+  image_path?: string | null
+  video_path?: string | null
+  loop_overlay?: boolean | null
+  text_content?: string | null
+  font_size: number
+  font_color: string
+  font_family?: string | null
+  font_weight?: string | null
+  bg_color: string
+  position: string
+  position_x?: number | null
+  position_y?: number | null
+  size_percent: number
+  opacity: number
+  scroll_speed?: number | null
+  scroll_start_x?: number | null
+  scroll_end_x?: number | null
+  enabled?: boolean
+}
+
+type StreamOverlayEntry = {
+  overlay_id: string
+  overlay: EngineOverlayRow | EngineOverlayRow[] | null
+}
+
+function mapEngineOverlays(entries: StreamOverlayEntry[]) {
+  return entries
+    .map((entry) => (Array.isArray(entry.overlay) ? entry.overlay[0] ?? null : entry.overlay))
+    .filter((overlay): overlay is EngineOverlayRow => overlay !== null && overlay.enabled !== false)
+    .map((overlay) => ({
+      id: overlay.id,
+      name: overlay.name,
+      type: overlay.type,
+      imagePath: overlay.image_path || null,
+      videoPath: overlay.video_path || null,
+      loopOverlay: overlay.loop_overlay !== false,
+      textContent: overlay.text_content || null,
+      fontSize: overlay.font_size,
+      fontColor: overlay.font_color,
+      fontFamily: overlay.font_family || "sans",
+      fontWeight: overlay.font_weight || "normal",
+      bgColor: overlay.bg_color,
+      position: overlay.position,
+      positionX: overlay.position_x ?? undefined,
+      positionY: overlay.position_y ?? undefined,
+      sizePercent: overlay.size_percent,
+      opacity: overlay.opacity,
+      scrollSpeed: overlay.scroll_speed ?? undefined,
+      scrollStartX: overlay.scroll_start_x ?? 0,
+      scrollEndX: overlay.scroll_end_x ?? 100,
+    }))
+}
+
 /**
  * POST /api/streams/engine
- * Actions: "start" | "stop" | "status"
+ * Actions: "start" | "stop" | "status" | "apply_saved_overlays"
  */
 export async function POST(req: NextRequest) {
   try {
@@ -131,52 +188,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "No video sources found" }, { status: 400 })
       }
 
-      // Build overlay list
-      const overlays = (stream.stream_overlays || [])
-        .filter((so: { overlay: unknown }) => so.overlay)
-        .map((so: { overlay: {
-          id: string;
-          name: string;
-          type: string;
-          image_path?: string;
-          video_path?: string;
-          loop_overlay?: boolean;
-          text_content?: string;
-          font_size: number;
-          font_color: string;
-          bg_color: string;
-          position: string;
-          position_x?: number;
-          position_y?: number;
-          size_percent: number;
-          opacity: number;
-          scroll_speed?: number;
-          scroll_start_x?: number;
-          scroll_end_x?: number;
-          font_family?: string;
-          font_weight?: string;
-        }}) => ({
-          id: so.overlay.id,
-          name: so.overlay.name,
-          type: so.overlay.type,
-          imagePath: so.overlay.image_path || null,
-          videoPath: so.overlay.video_path || null,
-          loopOverlay: so.overlay.loop_overlay !== false,
-          textContent: so.overlay.text_content || null,
-          fontSize: so.overlay.font_size,
-          fontColor: so.overlay.font_color,
-          fontFamily: so.overlay.font_family || 'sans',
-          fontWeight: so.overlay.font_weight || 'normal',
-          bgColor: so.overlay.bg_color,
-          position: so.overlay.position,
-          positionX: so.overlay.position_x ?? undefined,
-          positionY: so.overlay.position_y ?? undefined,
-          sizePercent: so.overlay.size_percent,
-          opacity: so.overlay.opacity,
-          scrollSpeed: so.overlay.scroll_speed ?? undefined,
-          scrollStartX: so.overlay.scroll_start_x ?? 0,
-          scrollEndX: so.overlay.scroll_end_x ?? 100,
-        }))
+      const overlays = mapEngineOverlays(stream.stream_overlays || [])
 
       let result
       try {
@@ -256,6 +268,64 @@ export async function POST(req: NextRequest) {
         .eq("stream_id", streamId)
 
       return NextResponse.json({ success: true, engine: result })
+    }
+
+    if (action === "apply_saved_overlays") {
+      const requestedOverlayIds = Array.isArray(body.overlayIds)
+        ? [...new Set(body.overlayIds.filter((id: unknown): id is string => typeof id === "string"))]
+        : []
+
+      if (requestedOverlayIds.length === 0 || requestedOverlayIds.length > 250) {
+        return NextResponse.json({ error: "Provide between 1 and 250 overlay ids" }, { status: 400 })
+      }
+
+      const { data: liveStreams, error: liveStreamsError } = await supabase
+        .from("streams")
+        .select("id, title, stream_overlays(overlay_id, overlay:overlays(*))")
+        .eq("status", "live")
+
+      if (liveStreamsError) {
+        return NextResponse.json({ error: "Unable to find live streams" }, { status: 500 })
+      }
+
+      const streamsWithOverlays = (liveStreams || []) as Array<{
+        id: string
+        title: string
+        stream_overlays?: StreamOverlayEntry[]
+      }>
+      const affectedStreams = streamsWithOverlays.filter((stream) =>
+        stream.stream_overlays?.some((entry) => requestedOverlayIds.includes(entry.overlay_id)),
+      )
+
+      if (affectedStreams.length === 0) {
+        return NextResponse.json({
+          success: true,
+          restartedCount: 0,
+          affectedCount: 0,
+          message: "No live streams currently use these overlays.",
+        })
+      }
+
+      let restartedCount = 0
+      for (const stream of affectedStreams) {
+        const result = await callStreamingServer("/restart", {
+          streamId: stream.id,
+          overlays: mapEngineOverlays(stream.stream_overlays || []),
+        })
+
+        if (result?.error || result?.success === false) continue
+        restartedCount += 1
+      }
+
+      const success = restartedCount === affectedStreams.length
+      return NextResponse.json({
+        success,
+        restartedCount,
+        affectedCount: affectedStreams.length,
+        message: success
+          ? `Applied saved overlays to ${restartedCount} live stream${restartedCount === 1 ? "" : "s"}.`
+          : `Applied saved overlays to ${restartedCount} of ${affectedStreams.length} live streams. One or more restarts failed.`,
+      }, { status: success ? 200 : 502 })
     }
 
     if (action === "update_overlays") {
