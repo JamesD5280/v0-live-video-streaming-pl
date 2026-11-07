@@ -501,7 +501,6 @@ export function StreamCreator() {
                     <video
                       src={previewUrl}
                       controls
-                      autoPlay
                       className="w-full aspect-video"
                       onEnded={() => {}}
                     />

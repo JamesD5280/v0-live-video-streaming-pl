@@ -97,21 +97,33 @@ function VideoOverlayPreview({
   src: string | null
   loop: boolean
 }) {
+  const videoRef = useRef<HTMLVideoElement>(null)
   const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     setFailed(false)
   }, [src])
 
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video || !src || failed) return
+
+    try {
+      void video.play().catch(() => setFailed(true))
+    } catch {
+      setFailed(true)
+    }
+  }, [failed, src])
+
   return (
     <div className="relative w-full overflow-hidden bg-transparent">
       {src && !failed ? (
         <video
+          ref={videoRef}
           key={src}
           src={src}
           aria-label={`${name} video overlay preview`}
           className="block h-auto w-full"
-          autoPlay
           muted
           playsInline
           loop={loop}
