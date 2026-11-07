@@ -209,6 +209,12 @@ export async function POST(req: NextRequest) {
 
     if (!serverRes.ok) {
       const errData = await serverRes.json().catch(() => ({ error: "Preview failed" }))
+      const engineDetail = typeof errData?.detail === "string" ? errData.detail : ""
+      if (/Parsed_crop|non positive size for width/i.test(engineDetail)) {
+        return NextResponse.json({
+          error: "The VPS streaming engine is outdated. Deploy the latest scripts/streaming-engine/streaming-server.js from main and restart the engine to enable 16:9 overlay previews.",
+        }, { status: 503 })
+      }
       return NextResponse.json(errData, { status: serverRes.status })
     }
 

@@ -188,6 +188,9 @@ export function OverlayManager() {
   const [selectedCanvasOverlayId, setSelectedCanvasOverlayId] = useState<string | null>(null)
   const [canvasOverlayDrafts, setCanvasOverlayDrafts] = useState<Record<string, CanvasOverlayChange>>({})
   const [canvasSaveState, setCanvasSaveState] = useState<"ready" | "editing" | "saving" | "saved" | "error">("ready")
+  const [applyingLiveLayout, setApplyingLiveLayout] = useState(false)
+  const [liveApplyMessage, setLiveApplyMessage] = useState("")
+  const [liveApplyFailed, setLiveApplyFailed] = useState(false)
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -260,6 +263,7 @@ export function OverlayManager() {
   const selectedCanvasOverlay = canvasOverlays.find((overlay) => overlay.id === selectedCanvasOverlayId)
     ?? canvasOverlays.find((overlay) => overlay.enabled)
     ?? canvasOverlays[0]
+  const overlayIds = new Set((overlays ?? []).map((overlay) => overlay.id))
 
   const resetForm = () => {
     setName("")
@@ -423,6 +427,8 @@ export function OverlayManager() {
   }
 
   const handleSave = async () => {
+    setLiveApplyMessage("")
+    setLiveApplyFailed(false)
     setCreating(true)
     try {
       const payload = {
@@ -485,6 +491,8 @@ export function OverlayManager() {
   }
 
   const handleCanvasOverlayChange = (id: string, change: CanvasOverlayChange) => {
+    setLiveApplyMessage("")
+    setLiveApplyFailed(false)
     setCanvasOverlayDrafts((current) => ({
       ...current,
       [id]: { ...current[id], ...change },
@@ -540,6 +548,40 @@ export function OverlayManager() {
     }
   }
 
+  const handleApplySavedLayout = async () => {
+    if (applyingLiveLayout || overlayIds.size === 0) return
+
+    const confirmed = window.confirm(
+      "Apply the saved overlay layout to live streams using these graphics? Each affected stream will briefly reconnect.",
+    )
+    if (!confirmed) return
+
+    setApplyingLiveLayout(true)
+    setLiveApplyMessage("")
+    setLiveApplyFailed(false)
+
+    try {
+      const response = await fetch("/api/streams/engine", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "apply_saved_overlays", overlayIds: [...overlayIds] }),
+      })
+      const result = await response.json().catch(() => null)
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.message || result?.error || "Unable to apply the saved layout to live streams.")
+      }
+
+      setLiveApplyMessage(result.message || "Saved overlays applied to live streams.")
+    } catch (applyError) {
+      setLiveApplyFailed(true)
+      setLiveApplyMessage(
+        applyError instanceof Error ? applyError.message : "Unable to apply the saved layout to live streams.",
+      )
+    } finally {
+      setApplyingLiveLayout(false)
+    }
+  }
+
   const handleDelete = async (id: string) => {
     try {
       const response = await fetch(`/api/overlays?id=${encodeURIComponent(id)}`, { method: "DELETE" })
@@ -551,6 +593,8 @@ export function OverlayManager() {
   }
 
   const handleToggleEnabled = async (overlay: Overlay) => {
+    setLiveApplyMessage("")
+    setLiveApplyFailed(false)
     try {
       const response = await fetch("/api/overlays", {
         method: "PATCH",
@@ -1169,8 +1213,21 @@ export function OverlayManager() {
               <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-primary">Stream designer</p>
               <h2 className="mt-1 text-base font-semibold text-foreground">Arrange overlays on the stream</h2>
               <p className="mt-1 text-xs leading-relaxed text-muted-foreground">Select an overlay, then drag it into position. Resize it from the corner handle.</p>
+              <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">Select the matching background clip to compare placement. Live streams keep their start-time layout until you apply saved changes; applying briefly reconnects them.</p>
             </div>
             <div className="flex flex-wrap items-center gap-3 text-xs">
+              {overlayIds.size > 0 && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void handleApplySavedLayout()}
+                  disabled={applyingLiveLayout || ["editing", "saving", "error"].includes(canvasSaveState)}
+                >
+                  {applyingLiveLayout ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <Save data-icon="inline-start" />}
+                  {applyingLiveLayout ? "Applying…" : "Apply to live streams"}
+                </Button>
+              )}
               <span aria-live="polite" className={cn(
                 "font-medium",
                 canvasSaveState === "error" ? "text-destructive" : canvasSaveState === "saved" ? "text-primary" : "text-muted-foreground",
@@ -1180,6 +1237,11 @@ export function OverlayManager() {
               <span className="rounded border border-border px-2 py-1 font-mono text-[10px] text-muted-foreground">1920 × 1080</span>
             </div>
           </header>
+          {liveApplyMessage && (
+            <p role="status" className={cn("px-4 pt-3 text-xs", liveApplyFailed ? "text-destructive" : "text-muted-foreground")}>
+              {liveApplyMessage}
+            </p>
+          )}
 
           <div className="flex min-h-0 flex-col xl:flex-row">
             <main aria-label="Stream preview canvas" className="min-w-0 flex-1 bg-secondary/30 p-4 sm:p-5">
