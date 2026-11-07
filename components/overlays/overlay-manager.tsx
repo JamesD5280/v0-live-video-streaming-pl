@@ -48,6 +48,10 @@ import { GraphicsEditor } from "./graphics-editor"
 
 const fetcher = (url: string) => fetch(url).then((r) => { if (!r.ok) throw new Error(); return r.json() })
 
+type CanvasOverlayChange = Partial<
+  Pick<Overlay, "position_x" | "position_y" | "size_percent" | "font_size" | "scroll_start_x" | "scroll_end_x">
+>
+
 const overlayTypeLabels: Record<OverlayType, string> = {
   logo: "Logo",
   bug: "Bug / Watermark",
@@ -181,6 +185,9 @@ export function OverlayManager() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [designerPanel, setDesignerPanel] = useState<"layers" | "design" | "templates">("design")
+  const [selectedCanvasOverlayId, setSelectedCanvasOverlayId] = useState<string | null>(null)
+  const [canvasOverlayDrafts, setCanvasOverlayDrafts] = useState<Record<string, CanvasOverlayChange>>({})
+  const [canvasSaveState, setCanvasSaveState] = useState<"ready" | "editing" | "saving" | "saved" | "error">("ready")
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -246,6 +253,13 @@ export function OverlayManager() {
   const designerLayers = draftOverlay
     ? [draftOverlay, ...(overlays ?? []).filter((overlay) => overlay.id !== draftOverlay.id)]
     : overlays ?? []
+  const canvasOverlays = (overlays ?? []).map((overlay) => ({
+    ...overlay,
+    ...canvasOverlayDrafts[overlay.id],
+  }))
+  const selectedCanvasOverlay = canvasOverlays.find((overlay) => overlay.id === selectedCanvasOverlayId)
+    ?? canvasOverlays.find((overlay) => overlay.enabled)
+    ?? canvasOverlays[0]
 
   const resetForm = () => {
     setName("")
@@ -468,6 +482,62 @@ export function OverlayManager() {
     if (change.font_size !== undefined) setFontSize(change.font_size)
     if (change.scroll_start_x !== undefined) setScrollStartX(change.scroll_start_x ?? 0)
     if (change.scroll_end_x !== undefined) setScrollEndX(change.scroll_end_x ?? 100)
+  }
+
+  const handleCanvasOverlayChange = (id: string, change: CanvasOverlayChange) => {
+    setCanvasOverlayDrafts((current) => ({
+      ...current,
+      [id]: { ...current[id], ...change },
+    }))
+    setCanvasSaveState("editing")
+  }
+
+  const handleCanvasOverlayCommit = async (id: string, change: CanvasOverlayChange) => {
+    const overlay = overlays?.find((item) => item.id === id)
+    if (!overlay || Object.keys(change).length === 0) return
+
+    const updates = { ...canvasOverlayDrafts[id], ...change }
+    const payload = {
+      id,
+      ...updates,
+      ...(updates.position_x !== undefined || updates.position_y !== undefined
+        ? {
+            position: getPositionFromCoordinates(
+              updates.position_x ?? overlay.position_x,
+              updates.position_y ?? overlay.position_y,
+            ),
+          }
+        : {}),
+    }
+
+    setCanvasSaveState("saving")
+    try {
+      const response = await fetch("/api/overlays", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+      if (!response.ok) throw new Error(`Request failed (${response.status})`)
+
+      setCanvasOverlayDrafts((current) => {
+        const next = { ...current }
+        delete next[id]
+        return next
+      })
+      setCanvasSaveState("saved")
+      void mutate().catch((refreshError) => {
+        console.error("Overlay list refresh error:", refreshError)
+      })
+    } catch (saveError) {
+      console.error("Overlay canvas save error:", saveError)
+      setCanvasOverlayDrafts((current) => {
+        const next = { ...current }
+        delete next[id]
+        return next
+      })
+      setCanvasSaveState("error")
+      alert("Unable to save this overlay layout. Please try again.")
+    }
   }
 
   const handleDelete = async (id: string) => {
@@ -1092,13 +1162,114 @@ export function OverlayManager() {
         </div>
       </div>
 
-      {/* Live Preview Canvas */}
       {overlays.length > 0 && (
-        <Card className="border-border bg-card">
-          <CardContent className="p-4">
-            <OverlayPreview overlays={overlays} />
-          </CardContent>
-        </Card>
+        <section aria-label="Stream graphics editor" className="dark overflow-hidden rounded-xl border border-border bg-card text-card-foreground">
+          <header className="flex flex-col gap-3 border-b border-border bg-background px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-primary">Stream designer</p>
+              <h2 className="mt-1 text-base font-semibold text-foreground">Arrange overlays on the stream</h2>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">Select an overlay, then drag it into position. Resize it from the corner handle.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-3 text-xs">
+              <span aria-live="polite" className={cn(
+                "font-medium",
+                canvasSaveState === "error" ? "text-destructive" : canvasSaveState === "saved" ? "text-primary" : "text-muted-foreground",
+              )}>
+                {canvasSaveState === "saving" ? "Saving layout…" : canvasSaveState === "saved" ? "Changes saved" : canvasSaveState === "error" ? "Save failed" : canvasSaveState === "editing" ? "Unsaved position changes" : "Ready to edit"}
+              </span>
+              <span className="rounded border border-border px-2 py-1 font-mono text-[10px] text-muted-foreground">1920 × 1080</span>
+            </div>
+          </header>
+
+          <div className="flex min-h-0 flex-col xl:flex-row">
+            <main aria-label="Stream preview canvas" className="min-w-0 flex-1 bg-secondary/30 p-4 sm:p-5">
+              <div className="mb-3 flex items-center justify-between">
+                <span className="text-xs font-medium text-foreground">Program output</span>
+                <span className="font-mono text-[10px] text-muted-foreground">16:9</span>
+              </div>
+              <OverlayPreview
+                overlays={canvasOverlays}
+                compact
+                selectedOverlayId={selectedCanvasOverlay?.id}
+                onOverlaySelect={setSelectedCanvasOverlayId}
+                onOverlayChange={handleCanvasOverlayChange}
+                onOverlayCommit={handleCanvasOverlayCommit}
+              />
+              {selectedCanvasOverlay && (
+                <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                  Selected: <span className="font-medium text-foreground">{selectedCanvasOverlay.name}</span>
+                  <span aria-hidden="true"> · </span>
+                  {Math.round(selectedCanvasOverlay.position_x ?? 50)}% horizontal, {Math.round(selectedCanvasOverlay.position_y ?? 50)}% vertical
+                  <span aria-hidden="true"> · </span>
+                  {selectedCanvasOverlay.type === "text" || selectedCanvasOverlay.type === "lower_third"
+                    ? `${selectedCanvasOverlay.font_size}px type`
+                    : selectedCanvasOverlay.type === "scrolling_text"
+                      ? `${Math.round((selectedCanvasOverlay.scroll_end_x ?? 100) - (selectedCanvasOverlay.scroll_start_x ?? 0))}% ticker zone`
+                      : `${selectedCanvasOverlay.size_percent}% width`}
+                </p>
+              )}
+            </main>
+
+            <aside aria-label="Overlay layers" className="flex w-full flex-col border-t border-border bg-background xl:w-80 xl:shrink-0 xl:border-l xl:border-t-0">
+              <div className="flex items-center justify-between border-b border-border px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <Layers className="h-4 w-4 text-primary" />
+                  <h3 className="text-sm font-semibold text-foreground">Layers</h3>
+                </div>
+                <span className="font-mono text-xs text-muted-foreground">{overlays.length}</span>
+              </div>
+
+              <ul className="flex max-h-72 flex-col gap-1 overflow-y-auto p-2 xl:max-h-[30rem]" aria-label="Overlays in stream order">
+                {overlays.map((overlay) => {
+                  const LayerIcon = overlayTypeIcons[overlay.type]
+                  const selected = selectedCanvasOverlay?.id === overlay.id
+                  return (
+                    <li key={overlay.id} className={cn(
+                      "flex items-center gap-1 rounded-md border px-1",
+                      selected ? "border-primary/50 bg-primary/10" : "border-transparent hover:bg-secondary/70",
+                    )}>
+                      <button
+                        type="button"
+                        aria-pressed={selected}
+                        onClick={() => setSelectedCanvasOverlayId(overlay.id)}
+                        className="flex min-w-0 flex-1 items-center gap-3 px-2 py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <LayerIcon className={cn("h-4 w-4 shrink-0", selected ? "text-primary" : "text-muted-foreground")} />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-medium text-foreground">{overlay.name}</span>
+                          <span className="block truncate text-xs text-muted-foreground">{overlayTypeLabels[overlay.type]}</span>
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`${overlay.enabled ? "Disable" : "Enable"} ${overlay.name}`}
+                        title={`${overlay.enabled ? "Disable" : "Enable"} ${overlay.name}`}
+                        onClick={() => void handleToggleEnabled(overlay)}
+                        className="grid size-9 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        {overlay.enabled ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+
+              {selectedCanvasOverlay && (
+                <div className="border-t border-border p-4">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Selected layer</p>
+                  <p className="mt-1 truncate text-sm font-semibold text-foreground">{selectedCanvasOverlay.name}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {positionLabels[getPositionFromCoordinates(selectedCanvasOverlay.position_x ?? 50, selectedCanvasOverlay.position_y ?? 50)]}
+                  </p>
+                  <Button type="button" variant="outline" size="sm" className="mt-3 w-full gap-2" onClick={() => openEditDialog(selectedCanvasOverlay)}>
+                    <Pencil className="h-3.5 w-3.5" />
+                    Edit properties
+                  </Button>
+                </div>
+              )}
+            </aside>
+          </div>
+        </section>
       )}
 
       {overlays.length === 0 ? (
