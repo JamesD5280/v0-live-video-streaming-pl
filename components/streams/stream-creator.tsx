@@ -34,6 +34,36 @@ const statusConfig: Record<string, { label: string; className: string; icon: typ
 
 type SourceType = "video" | "playlist" | "rtmp_pull"
 
+function formatEngineFailure(
+  data: unknown,
+  fallback: string,
+  translate: (message: string) => string,
+): string {
+  if (!data || typeof data !== "object") return translate(fallback)
+
+  const response = data as Record<string, unknown>
+  const diagnostics: string[] = []
+
+  if (typeof response.detail === "string" && response.detail.trim()) {
+    diagnostics.push(response.detail.trim())
+  }
+
+  if (Array.isArray(response.details)) {
+    response.details.forEach((entry, index) => {
+      if (!entry || typeof entry !== "object") return
+      const detail = entry as Record<string, unknown>
+      const lines = [
+        typeof detail.error === "string" ? `Destination ${index + 1}: ${detail.error}` : "",
+        typeof detail.diagnostic === "string" ? detail.diagnostic : "",
+      ].filter(Boolean)
+      if (lines.length) diagnostics.push(lines.join("\n"))
+    })
+  }
+
+  const message = typeof response.error === "string" ? response.error : fallback
+  return [translate(message), ...new Set(diagnostics)].join("\n")
+}
+
 export function StreamCreator() {
   const { t } = useLanguage()
   const { data: videos, error: videosError } = useSWR<Video[]>("/api/videos", fetcher)
@@ -125,7 +155,7 @@ export function StreamCreator() {
         const engineData = await engineRes.json()
 
         if (!engineData.success) {
-          setStartError(t(engineData.error || "Streaming engine failed to start the stream"))
+          setStartError(formatEngineFailure(engineData, "Streaming engine failed to start the stream", t))
         } else {
           // Only clear form on success
           setStreamTitle("")
@@ -171,7 +201,7 @@ export function StreamCreator() {
       })
       const engineData = await engineRes.json()
       if (!engineData.success) {
-        setStartError(t(engineData.error || "Failed to restart stream"))
+        setStartError(formatEngineFailure(engineData, "Failed to restart stream", t))
       }
     } catch (e) {
       setStartError(t(e instanceof Error ? e.message : "Failed to restart stream"))
@@ -489,7 +519,7 @@ export function StreamCreator() {
                     <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
                     <div>
                       <p className="text-sm font-medium text-destructive">{t("Failed to start stream")}</p>
-                      <p className="mt-1 text-xs text-destructive/80">{startError}</p>
+                      <p className="mt-1 whitespace-pre-wrap break-words text-xs text-destructive/80">{startError}</p>
                     </div>
                   </div>
                 </div>
