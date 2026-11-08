@@ -107,33 +107,49 @@ async function downloadToTemp(url) {
   return filePath
 }
 
-// Map font family names to fontconfig names available on Linux
-// FFmpeg 4.2 doesn't support :style=, so embed weight in font name
-function getFontName(family, weight) {
-  const fontMap = {
-    'sans': 'DejaVu Sans',
-    'serif': 'DejaVu Serif',
-    'mono': 'DejaVu Sans Mono',
-    'arial': 'Liberation Sans',
-    'times': 'Liberation Serif',
-    'courier': 'Liberation Mono',
-    'georgia': 'DejaVu Serif',
-    'verdana': 'DejaVu Sans',
-    'impact': 'Impact',
-    'viga': 'Viga',
-  }
-  const baseName = fontMap[family] || fontMap['sans']
-  // Viga only has regular weight, skip weight suffix for it
-  if (family === 'viga') {
-    return baseName
-  }
-  // Append weight to font name for fontconfig lookup
-  const weightSuffix = weight === 'bold' ? ' Bold' 
-    : weight === 'italic' ? ' Italic'
-    : weight === 'bold-italic' ? ' Bold Italic'
-    : ''
-  console.log(`[2MStream] Font: family=${family}, weight=${weight} -> ${baseName}${weightSuffix}`)
-  return baseName + weightSuffix
+const FONT_FILES = {
+  sans: {
+    normal: '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+    bold: '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+    italic: '/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf',
+    'bold-italic': '/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf',
+  },
+  serif: {
+    normal: '/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf',
+    bold: '/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf',
+    italic: '/usr/share/fonts/truetype/dejavu/DejaVuSerif-Italic.ttf',
+    'bold-italic': '/usr/share/fonts/truetype/dejavu/DejaVuSerif-BoldItalic.ttf',
+  },
+  mono: {
+    normal: '/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf',
+    bold: '/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf',
+    italic: '/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Oblique.ttf',
+    'bold-italic': '/usr/share/fonts/truetype/dejavu/DejaVuSansMono-BoldOblique.ttf',
+  },
+  arial: {
+    normal: '/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf',
+    bold: '/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf',
+    italic: '/usr/share/fonts/truetype/liberation2/LiberationSans-Italic.ttf',
+    'bold-italic': '/usr/share/fonts/truetype/liberation2/LiberationSans-BoldItalic.ttf',
+  },
+  times: {
+    normal: '/usr/share/fonts/truetype/liberation2/LiberationSerif-Regular.ttf',
+    bold: '/usr/share/fonts/truetype/liberation2/LiberationSerif-Bold.ttf',
+    italic: '/usr/share/fonts/truetype/liberation2/LiberationSerif-Italic.ttf',
+    'bold-italic': '/usr/share/fonts/truetype/liberation2/LiberationSerif-BoldItalic.ttf',
+  },
+  courier: {
+    normal: '/usr/share/fonts/truetype/liberation2/LiberationMono-Regular.ttf',
+    bold: '/usr/share/fonts/truetype/liberation2/LiberationMono-Bold.ttf',
+    italic: '/usr/share/fonts/truetype/liberation2/LiberationMono-Italic.ttf',
+    'bold-italic': '/usr/share/fonts/truetype/liberation2/LiberationMono-BoldItalic.ttf',
+  },
+}
+
+function getFontFile(family, weight) {
+  const files = Object.hasOwn(FONT_FILES, family) ? FONT_FILES[family] : FONT_FILES.sans
+  const face = Object.hasOwn(files, weight) ? weight : 'normal'
+  return files[face]
 }
 
 function formatFfmpegColor(value, opacity = 100, fallback = 'white') {
@@ -201,6 +217,19 @@ function buildOverlayFilters(overlays) {
       posCoords = posMap[overlay.position] || posMap['top-left']
     }
 
+    const legacyImagePosMap = {
+      'top-left': 'x=W*0.03:y=H*0.04',
+      'top-center': 'x=(W-w)/2:y=H*0.04',
+      'top-right': 'x=W-w-W*0.03:y=H*0.04',
+      'center': 'x=(W-w)/2:y=(H-h)/2',
+      'bottom-left': 'x=W*0.03:y=H-h-H*0.04',
+      'bottom-center': 'x=(W-w)/2:y=H-h-H*0.04',
+      'bottom-right': 'x=W-w-W*0.03:y=H-h-H*0.04',
+    }
+    const imagePosCoords = overlay.positionX !== undefined && overlay.positionY !== undefined
+      ? posCoords
+      : legacyImagePosMap[overlay.position] || legacyImagePosMap['top-left']
+
     if (overlay.type === 'scrolling_text') {
       const escapedText = (overlay.textContent || '').replace(/'/g, "'\\''").replace(/:/g, '\\:')
       const fontSize = Math.max(12, Math.min(120, Number(overlay.fontSize) || 24))
@@ -209,8 +238,8 @@ function buildOverlayFilters(overlays) {
       const hasTransparentBackground = ['transparent', 'none'].includes(String(bgColorValue).toLowerCase())
       const bgColor = formatFfmpegColor(bgColorValue, overlay.opacity ?? 100, 'black')
       const speed = Math.max(1, Math.min(500, Number(overlay.scrollSpeed) || 20))
-      const fontName = getFontName(overlay.fontFamily, overlay.fontWeight)
-      const fontParam = `font='${fontName}'`
+      const fontFile = getFontFile(overlay.fontFamily, overlay.fontWeight)
+      const fontParam = `fontfile='${fontFile}'`
 
       // For seamless loop, duplicate the text with separator
       const loopText = `${escapedText}          ${escapedText}          ${escapedText}`
@@ -282,8 +311,8 @@ function buildOverlayFilters(overlays) {
       const escapedText = (overlay.textContent || '').replace(/'/g, "'\\''").replace(/:/g, '\\:')
       const fontSize = Math.max(12, Math.min(120, Number(overlay.fontSize) || 24))
       const fontColor = formatFfmpegColor(overlay.fontColor || 'white', overlay.opacity ?? 100, 'white')
-      const txtFontName = getFontName(overlay.fontFamily, overlay.fontWeight)
-      const txtFontParam = `font='${txtFontName}'`
+      const txtFontFile = getFontFile(overlay.fontFamily, overlay.fontWeight)
+      const txtFontParam = `fontfile='${txtFontFile}'`
       
       if (overlay.type === 'lower_third') {
         const bgColor = formatFfmpegColor(overlay.bgColor || 'black', overlay.opacity ?? 100, 'black')
@@ -328,7 +357,7 @@ function buildOverlayFilters(overlays) {
       const scaleFilter = `[${inputIndex}:v]scale=${targetWidth}:-1,format=rgba,colorchannelmixer=aa=${opacityValue}[vid${i}]`
       filters.push(scaleFilter)
       // Keep the main stream flowing after a non-looping video overlay ends.
-      filters.push(`[${currentLabel}][vid${i}]overlay=${posCoords}:eof_action=pass:repeatlast=0[${outputLabel}]`)
+      filters.push(`[${currentLabel}][vid${i}]overlay=${imagePosCoords}:eof_action=pass:repeatlast=0[${outputLabel}]`)
       
       currentLabel = outputLabel
       inputIndex++
@@ -344,7 +373,7 @@ function buildOverlayFilters(overlays) {
       const scaleFilter = `[${inputIndex}:v]scale=${targetWidth}:-1,format=rgba,colorchannelmixer=aa=${opacityValue}[img${i}]`
       filters.push(scaleFilter)
       // Keep the main stream flowing after the overlay input ends.
-      filters.push(`[${currentLabel}][img${i}]overlay=${posCoords}:eof_action=pass:repeatlast=0[${outputLabel}]`)
+      filters.push(`[${currentLabel}][img${i}]overlay=${imagePosCoords}:eof_action=pass:repeatlast=0[${outputLabel}]`)
       
       currentLabel = outputLabel
       inputIndex++

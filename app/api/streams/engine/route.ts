@@ -73,7 +73,7 @@ function mapEngineOverlays(entries: StreamOverlayEntry[]) {
       fontSize: overlay.font_size,
       fontColor: overlay.font_color,
       fontFamily: overlay.font_family || "sans",
-      fontWeight: overlay.font_weight || "normal",
+      fontWeight: overlay.font_weight || (overlay.type === "scrolling_text" ? "bold" : "normal"),
       bgColor: overlay.bg_color,
       position: overlay.position,
       positionX: overlay.position_x ?? undefined,
