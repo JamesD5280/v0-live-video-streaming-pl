@@ -6,6 +6,8 @@ import { NextRequest, NextResponse } from "next/server"
 const STREAMING_SERVER_URL = process.env.STREAMING_SERVER_URL
 const STREAMING_API_SECRET = process.env.STREAMING_API_SECRET
 
+export const maxDuration = 300
+
 // Keep each uploaded chunk below the Vercel function request-body limit.
 
 /**

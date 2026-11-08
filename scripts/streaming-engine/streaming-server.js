@@ -20,7 +20,7 @@
 import express from 'express'
 import cors from 'cors'
 import { spawn, execFile } from 'child_process'
-import { existsSync, writeFileSync, unlinkSync, mkdirSync, readdirSync, statSync, createWriteStream, createReadStream, readFileSync, rmdirSync, copyFileSync, mkdtempSync, rmSync } from 'fs'
+import { existsSync, writeFileSync, unlinkSync, mkdirSync, readdirSync, statSync, lstatSync, createWriteStream, createReadStream, rmdirSync, copyFileSync, mkdtempSync, rmSync, openSync, readSync, closeSync } from 'fs'
 import { join, basename } from 'path'
 import { tmpdir } from 'os'
 import { pipeline } from 'stream/promises'
@@ -615,11 +615,21 @@ app.post('/overlays/png-sequence', async (req, res) => {
     let extractedBytes = 0
     extractedFrames.forEach((frame, index) => {
       const framePath = join(workDir, frame)
-      const stats = statSync(framePath)
+      const stats = lstatSync(framePath)
+      if (!stats.isFile()) throw new Error('Sequence frames must be regular files')
       extractedBytes += stats.size
       if (extractedBytes > 1024 * 1024 * 1024) throw new Error('Expanded PNG sequence exceeds the 1 GB limit')
-      const signature = readFileSync(framePath).subarray(0, 8)
-      if (!signature.equals(pngSignature)) throw new Error('A sequence frame is not a valid PNG')
+      const descriptor = openSync(framePath, 'r')
+      const signature = Buffer.alloc(8)
+      let bytesRead = 0
+      try {
+        bytesRead = readSync(descriptor, signature, 0, signature.length, 0)
+      } finally {
+        closeSync(descriptor)
+      }
+      if (bytesRead !== signature.length || !signature.equals(pngSignature)) {
+        throw new Error('A sequence frame is not a valid PNG')
+      }
       const stagedPath = join(workDir, `frame-${String(index).padStart(6, '0')}.png`)
       if (framePath !== stagedPath) copyFileSync(framePath, stagedPath)
     })

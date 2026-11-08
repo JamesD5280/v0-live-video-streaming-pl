@@ -398,7 +398,7 @@ export function OverlayManager() {
 
     const isPngSequence = file.name.toLowerCase().endsWith(".zip")
     if (isPngSequence && file.size > 512 * 1024 * 1024) {
-      alert("PNG sequence ZIP must be 512 MB or smaller.")
+      alert(t("PNG sequence ZIP must be 512 MB or smaller."))
       e.target.value = ""
       return
     }
@@ -443,7 +443,7 @@ export function OverlayManager() {
       }
     } catch (err) {
       console.error("Video overlay upload error:", err)
-      alert(err instanceof Error ? err.message : "Video overlay upload failed")
+      alert(t(err instanceof Error ? err.message : "Video overlay upload failed"))
     }
     setUploading(false)
     e.target.value = ""
@@ -927,15 +927,15 @@ export function OverlayManager() {
                     {designerPanel === "design" && (
                       <div>
                         <div className="mb-4">
-                          <h3 className="text-sm font-semibold text-foreground">Design properties</h3>
-                          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">Changes update the canvas as you work.</p>
+                          <h3 className="text-sm font-semibold text-foreground">{t("Design properties")}</h3>
+                          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{t("Changes update the canvas as you work.")}</p>
                         </div>
                         <div className="flex flex-col gap-4 pt-2">
               <div className="space-y-2">
-                <Label htmlFor="overlay-name">Overlay Name</Label>
+                <Label htmlFor="overlay-name">{t("Overlay Name")}</Label>
                 <Input
                   id="overlay-name"
-                  placeholder="e.g. Channel Logo"
+                  placeholder={t("e.g. Channel Logo")}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                 />
@@ -1042,7 +1042,7 @@ export function OverlayManager() {
                       {uploading ? (
                         <>
                           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                          <p className="text-sm text-muted-foreground">Uploading... {uploadProgress}%</p>
+                          <p className="text-sm text-muted-foreground">{t("Uploading...")} {uploadProgress}%</p>
                           <div className="h-1.5 w-full max-w-xs rounded-full bg-muted">
                             <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${uploadProgress}%` }} />
                           </div>
@@ -1072,8 +1072,8 @@ export function OverlayManager() {
                   <div className="flex items-center gap-3 rounded-lg border border-border bg-secondary p-3">
                     <Repeat className="h-4 w-4 text-muted-foreground" />
                     <div className="flex-1">
-                      <p className="text-sm font-medium text-foreground">Loop Video</p>
-                      <p className="text-xs text-muted-foreground">Continuously loop the overlay during the stream</p>
+                      <p className="text-sm font-medium text-foreground">{t("Loop Video")}</p>
+                      <p className="text-xs text-muted-foreground">{t("Continuously loop the overlay during the stream")}</p>
                     </div>
                     <Switch checked={loopOverlay} onCheckedChange={setLoopOverlay} />
                   </div>
