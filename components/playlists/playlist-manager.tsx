@@ -29,10 +29,12 @@ import {
 } from "lucide-react"
 import type { Playlist, Video } from "@/lib/store"
 import { formatDuration, formatFileSize } from "@/lib/store"
+import { useLanguage } from "@/components/language-provider"
 
 const fetcher = (url: string) => fetch(url).then((r) => { if (!r.ok) throw new Error(); return r.json() })
 
 export function PlaylistManager() {
+  const { t } = useLanguage()
   const { data: playlists, error, mutate } = useSWR<Playlist[]>("/api/playlists", fetcher)
   const { data: videos } = useSWR<Video[]>("/api/videos", fetcher)
   const [creating, setCreating] = useState(false)
@@ -130,8 +132,8 @@ export function PlaylistManager() {
       <Card className="border-border bg-card">
         <CardContent className="flex flex-col items-center justify-center py-12">
           <AlertCircle className="h-10 w-10 text-destructive" />
-          <p className="mt-3 text-sm font-medium text-foreground">Failed to load playlists</p>
-          <p className="mt-1 text-xs text-muted-foreground">Please try refreshing the page</p>
+          <p className="mt-3 text-sm font-medium text-foreground">{t("Failed to load playlists")}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{t("Please try refreshing the page")}</p>
         </CardContent>
       </Card>
     )
@@ -151,37 +153,37 @@ export function PlaylistManager() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-base font-semibold text-foreground">Your Playlists</h2>
+          <h2 className="text-base font-semibold text-foreground">{t("Your Playlists")}</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Create playlists to stream multiple videos in sequence or loop.
+            {t("Create playlists to stream multiple videos in sequence or loop.")}
           </p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button size="sm" className="gap-1.5" onClick={openCreateDialog}>
               <Plus className="h-3.5 w-3.5" />
-              New Playlist
+              {t("New Playlist")}
             </Button>
           </DialogTrigger>
           <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
             <DialogHeader>
-              <DialogTitle>{editingId ? "Edit Playlist" : "Create Playlist"}</DialogTitle>
+              <DialogTitle>{t(editingId ? "Edit Playlist" : "Create Playlist")}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 pt-2">
               <div className="space-y-2">
-                <Label htmlFor="playlist-name">Playlist Name</Label>
+                <Label htmlFor="playlist-name">{t("Playlist Name")}</Label>
                 <Input
                   id="playlist-name"
-                  placeholder="e.g. Friday Night Shows"
+                  placeholder={t("e.g. Friday Night Shows")}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="playlist-desc">Description (optional)</Label>
+                <Label htmlFor="playlist-desc">{t("Description (optional)")}</Label>
                 <Input
                   id="playlist-desc"
-                  placeholder="What is this playlist for?"
+                  placeholder={t("What is this playlist for?")}
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                 />
@@ -190,19 +192,19 @@ export function PlaylistManager() {
                 <div className="flex items-center gap-2">
                   <Repeat className="h-4 w-4 text-muted-foreground" />
                   <div>
-                    <p className="text-sm font-medium text-foreground">Loop Playlist</p>
-                    <p className="text-xs text-muted-foreground">Restart from beginning when all videos finish</p>
+                    <p className="text-sm font-medium text-foreground">{t("Loop Playlist")}</p>
+                    <p className="text-xs text-muted-foreground">{t("Restart from beginning when all videos finish")}</p>
                   </div>
                 </div>
                 <Switch checked={loop} onCheckedChange={setLoop} />
               </div>
 
               <div className="space-y-2">
-                <Label>Select Videos ({selectedVideos.length} selected)</Label>
+                <Label>{t("Select Videos")} ({selectedVideos.length} {t("selected")})</Label>
                 {readyVideos.length === 0 ? (
                   <div className="rounded-lg border border-dashed border-border p-6 text-center">
                     <Film className="mx-auto h-8 w-8 text-muted-foreground" />
-                    <p className="mt-2 text-sm text-muted-foreground">No videos available. Upload videos first.</p>
+                    <p className="mt-2 text-sm text-muted-foreground">{t("No videos available. Upload videos first.")}</p>
                   </div>
                 ) : (
                   <div className="max-h-72 space-y-1 overflow-y-auto rounded-lg border border-border p-2">
@@ -233,7 +235,7 @@ export function PlaylistManager() {
 
               {selectedVideos.length > 0 && (
                 <div className="space-y-2">
-                  <Label>Playback Order (drag to reorder)</Label>
+                  <Label>{t("Playback Order (drag to reorder)")}</Label>
                   <div className="space-y-1 rounded-lg border border-border p-2">
                     {selectedVideos.map((vid, index) => {
                       const video = readyVideos.find((v) => v.id === vid)
@@ -291,7 +293,7 @@ export function PlaylistManager() {
                 className="w-full"
               >
                 {creating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {editingId ? "Save Changes" : "Create Playlist"}
+                {t(editingId ? "Save Changes" : "Create Playlist")}
               </Button>
             </div>
           </DialogContent>
@@ -304,11 +306,11 @@ export function PlaylistManager() {
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-secondary">
               <ListMusic className="h-6 w-6 text-muted-foreground" />
             </div>
-            <p className="mt-3 text-sm font-medium text-foreground">No playlists yet</p>
-            <p className="mt-1 text-xs text-muted-foreground">Create a playlist to stream multiple videos in sequence</p>
+            <p className="mt-3 text-sm font-medium text-foreground">{t("No playlists yet")}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{t("Create a playlist to stream multiple videos in sequence")}</p>
             <Button size="sm" className="mt-4 gap-1.5" onClick={openCreateDialog}>
               <Plus className="h-3.5 w-3.5" />
-              Create Playlist
+              {t("Create Playlist")}
             </Button>
           </CardContent>
         </Card>
@@ -330,12 +332,12 @@ export function PlaylistManager() {
                           {playlist.name}
                         </CardTitle>
                         <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                          <span>{items.length} video{items.length !== 1 ? "s" : ""}</span>
+                          <span>{items.length} {t(items.length === 1 ? "video" : "videos")}</span>
                           <span>{formatDuration(getTotalDuration(playlist))}</span>
                           {playlist.loop && (
                             <span className="flex items-center gap-1">
                               <Repeat className="h-3 w-3" />
-                              Loop
+                              {t("Loop")}
                             </span>
                           )}
                         </div>
@@ -348,7 +350,7 @@ export function PlaylistManager() {
                         onClick={() => setExpandedId(isExpanded ? null : playlist.id)}
                         className="text-xs text-muted-foreground"
                       >
-                        {isExpanded ? "Collapse" : "Expand"}
+                        {t(isExpanded ? "Collapse" : "Expand")}
                         {isExpanded ? <ChevronUp className="ml-1 h-3 w-3" /> : <ChevronDown className="ml-1 h-3 w-3" />}
                       </Button>
                       <Button
@@ -357,7 +359,7 @@ export function PlaylistManager() {
                         onClick={() => openEditDialog(playlist)}
                         className="text-xs"
                       >
-                        Edit
+                        {t("Edit")}
                       </Button>
                       <Button
                         variant="ghost"
@@ -383,7 +385,7 @@ export function PlaylistManager() {
                           </span>
                           <Music className="h-4 w-4 shrink-0 text-muted-foreground" />
                           <span className="flex-1 truncate text-sm text-foreground">
-                            {item.video?.title || "Unknown video"}
+                            {item.video?.title || t("Unknown video")}
                           </span>
                           <span className="text-xs text-muted-foreground">
                             {formatDuration(item.video?.duration_seconds || null)}

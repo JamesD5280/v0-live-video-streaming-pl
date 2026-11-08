@@ -39,8 +39,10 @@ import {
   Repeat,
   MoveHorizontal,
   Save,
+  Clock3,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useLanguage } from "@/components/language-provider"
 import type { Overlay, OverlayType, OverlayPosition } from "@/lib/store"
 import { createClient } from "@/lib/supabase/client"
 import { OverlayPreview } from "./overlay-preview"
@@ -60,6 +62,7 @@ const overlayTypeLabels: Record<OverlayType, string> = {
   image: "Image Overlay",
   video: "Video Overlay",
   scrolling_text: "Scrolling Text (Ticker)",
+  clock: "Clock Overlay",
 }
 
 const overlayTypeIcons: Record<OverlayType, typeof ImageIcon> = {
@@ -70,6 +73,7 @@ const overlayTypeIcons: Record<OverlayType, typeof ImageIcon> = {
   image: ImageIcon,
   video: Video,
   scrolling_text: MoveHorizontal,
+  clock: Clock3,
 }
 
 const positionLabels: Record<OverlayPosition, string> = {
@@ -80,6 +84,38 @@ const positionLabels: Record<OverlayPosition, string> = {
   "bottom-left": "Bottom Left",
   "bottom-center": "Bottom Center",
   "bottom-right": "Bottom Right",
+}
+
+const broadcastTimeZones = [
+  "UTC",
+  "America/Los_Angeles",
+  "America/Denver",
+  "America/Chicago",
+  "America/New_York",
+  "America/Toronto",
+  "America/Sao_Paulo",
+  "Europe/London",
+  "Europe/Paris",
+  "Europe/Amsterdam",
+  "Africa/Abidjan",
+  "Africa/Cairo",
+  "Asia/Dubai",
+  "Asia/Karachi",
+  "Asia/Kolkata",
+  "Asia/Dhaka",
+  "Asia/Bangkok",
+  "Asia/Singapore",
+  "Asia/Tokyo",
+  "Australia/Sydney",
+]
+
+function readClockTimeZone(textContent: string | null) {
+  try {
+    const value = JSON.parse(textContent || "{}")
+    return typeof value.timeZone === "string" ? value.timeZone : "UTC"
+  } catch {
+    return "UTC"
+  }
 }
 
 function getPositionFromCoordinates(x: number, y: number): OverlayPosition {
@@ -180,6 +216,7 @@ const broadcastTemplates: Array<{
 ]
 
 export function OverlayManager() {
+  const { t } = useLanguage()
   const { data: overlays, error, mutate } = useSWR<Overlay[]>("/api/overlays", fetcher)
   const [creating, setCreating] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -217,11 +254,15 @@ export function OverlayManager() {
   const [scrollEndX, setScrollEndX] = useState(100)
   const [fontFamily, setFontFamily] = useState("sans")
   const [fontWeight, setFontWeight] = useState("normal")
+  const [clockTimeZone, setClockTimeZone] = useState("UTC")
+  const [sequenceFps, setSequenceFps] = useState(30)
 
   const isTextType = type === "text" || type === "lower_third" || type === "scrolling_text"
+  const isClockType = type === "clock"
+  const isTextAppearanceType = isTextType || isClockType
   const isVideoType = type === "video"
   const canSave = !creating && !uploading && Boolean(name.trim()) &&
-    (isTextType ? Boolean(textContent.trim()) : isVideoType ? Boolean(videoPath) : Boolean(imagePath))
+    (isTextType ? Boolean(textContent.trim()) : isClockType ? true : isVideoType ? Boolean(videoPath) : Boolean(imagePath))
   const tickerPassSeconds = Math.round(
     (1920 * (Math.max(5, scrollEndX - scrollStartX) / 100)) / Math.max(1, scrollSpeed)
   )
@@ -234,7 +275,7 @@ export function OverlayManager() {
     image_path: isVideoType ? null : imagePath || null,
     video_path: isVideoType ? videoPath || null : null,
     loop_overlay: isVideoType ? loopOverlay : true,
-    text_content: textContent || null,
+    text_content: isClockType ? JSON.stringify({ timeZone: clockTimeZone }) : textContent || null,
     font_size: fontSize,
     font_color: fontColor,
     font_family: fontFamily,
@@ -288,6 +329,8 @@ export function OverlayManager() {
     setScrollEndX(100)
     setFontFamily("sans")
     setFontWeight("normal")
+    setClockTimeZone("UTC")
+    setSequenceFps(30)
     setEditingId(null)
   }
 
@@ -320,6 +363,7 @@ export function OverlayManager() {
     setScrollEndX(overlay.scroll_end_x ?? 100)
     setFontFamily(overlay.font_family || "sans")
     setFontWeight(overlay.font_weight || "normal")
+    if (overlay.type === "clock") setClockTimeZone(readClockTimeZone(overlay.text_content))
     setDesignerPanel("design")
     setDialogOpen(true)
   }
@@ -352,10 +396,16 @@ export function OverlayManager() {
     const file = e.target.files?.[0]
     if (!file) return
 
+    const isPngSequence = file.name.toLowerCase().endsWith(".zip")
+    if (isPngSequence && file.size > 512 * 1024 * 1024) {
+      alert("PNG sequence ZIP must be 512 MB or smaller.")
+      e.target.value = ""
+      return
+    }
+
     setUploading(true)
     setUploadProgress(0)
     try {
-      // Upload video overlay to streaming server using the same chunked approach as videos
       const CHUNK_SIZE = 4 * 1024 * 1024
       const totalChunks = Math.ceil(file.size / CHUNK_SIZE)
       const uploadId = `overlay-${Date.now()}`
@@ -372,7 +422,9 @@ export function OverlayManager() {
         formData.append("uploadId", uploadId)
         formData.append("chunkIndex", String(i))
         formData.append("totalChunks", String(totalChunks))
-        formData.append("uploadPurpose", "overlay")
+        formData.append("totalSize", String(file.size))
+        formData.append("uploadPurpose", isPngSequence ? "overlay-sequence" : "overlay")
+        if (isPngSequence) formData.append("sequenceFps", String(sequenceFps))
 
         const res = await fetch("/api/videos/upload/chunk", {
           method: "POST",
@@ -391,8 +443,10 @@ export function OverlayManager() {
       }
     } catch (err) {
       console.error("Video overlay upload error:", err)
+      alert(err instanceof Error ? err.message : "Video overlay upload failed")
     }
     setUploading(false)
+    e.target.value = ""
   }
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -443,7 +497,7 @@ export function OverlayManager() {
         image_path: isVideoType ? null : (imagePath || null),
         video_path: isVideoType ? (videoPath || null) : null,
         loop_overlay: isVideoType ? loopOverlay : true,
-        text_content: textContent || null,
+        text_content: isClockType ? JSON.stringify({ timeZone: clockTimeZone }) : textContent || null,
   font_size: fontSize,
   font_color: fontColor,
   font_family: fontFamily,
@@ -888,13 +942,14 @@ export function OverlayManager() {
               </div>
 
               <div className="space-y-2">
-                <Label>Overlay Type</Label>
+                <Label>{t("Overlay Type")}</Label>
                 <Select
                         value={type}
                         onValueChange={(value) => {
                           const nextType = value as OverlayType
                           setType(nextType)
                           if (!editingId && nextType === "scrolling_text") setFontWeight("bold")
+                          if (!editingId && nextType === "clock") setClockTimeZone("UTC")
                         }}
                       >
                   <SelectTrigger>
@@ -902,15 +957,15 @@ export function OverlayManager() {
                   </SelectTrigger>
                   <SelectContent>
                     {Object.entries(overlayTypeLabels).map(([key, label]) => (
-                      <SelectItem key={key} value={key}>{label}</SelectItem>
+                      <SelectItem key={key} value={key}>{t(label)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
 
-              {!isTextType && !isVideoType && (
+              {!isTextAppearanceType && !isVideoType && (
                 <div className="space-y-2">
-                  <Label>Image</Label>
+                  <Label>{t("Image")}</Label>
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -931,7 +986,7 @@ export function OverlayManager() {
                         className="absolute bottom-2 right-2"
                         onClick={() => fileInputRef.current?.click()}
                       >
-                        Change
+                        {t("Change")}
                       </Button>
                     </div>
                   ) : (
@@ -946,7 +1001,7 @@ export function OverlayManager() {
                         <Upload className="h-8 w-8 text-muted-foreground" />
                       )}
                       <p className="text-sm text-muted-foreground">
-                        {uploading ? "Uploading..." : "Click to upload image (PNG, SVG, WEBP)"}
+                        {uploading ? t("Uploading...") : t("Click to upload image (PNG, SVG, WEBP)")}
                       </p>
                     </button>
                   )}
@@ -955,11 +1010,11 @@ export function OverlayManager() {
 
               {isVideoType && (
                 <div className="space-y-3">
-                  <Label>Video File (.MOV, .MP4)</Label>
+                  <Label>{t("Video or PNG sequence (.MOV, .MP4, .WEBM, .ZIP)")}</Label>
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".mov,.mp4,.webm"
+                    accept=".mov,.mp4,.webm,.zip"
                     className="hidden"
                     onChange={handleVideoOverlayUpload}
                   />
@@ -967,7 +1022,7 @@ export function OverlayManager() {
                     <div className="flex items-center gap-3 rounded-lg border border-border bg-secondary p-3">
                       <Video className="h-8 w-8 text-primary" />
                       <div className="flex-1">
-                        <p className="text-sm font-medium text-foreground">Video uploaded</p>
+                        <p className="text-sm font-medium text-foreground">{t("Video uploaded")}</p>
                         <p className="text-xs text-muted-foreground truncate">{videoPath.split("/").pop()}</p>
                       </div>
                       <Button
@@ -975,7 +1030,7 @@ export function OverlayManager() {
                         size="sm"
                         onClick={() => fileInputRef.current?.click()}
                       >
-                        Change
+                        {t("Change")}
                       </Button>
                     </div>
                   ) : (
@@ -995,12 +1050,25 @@ export function OverlayManager() {
                       ) : (
                         <>
                           <Upload className="h-8 w-8 text-muted-foreground" />
-                          <p className="text-sm text-muted-foreground">Click to upload rotating logo or animation (.MOV, .MP4)</p>
+                          <p className="text-sm text-muted-foreground">{t("Upload a video or numbered PNG ZIP (.MOV, .MP4, .WEBM, .ZIP)")}</p>
                         </>
                       )}
                     </button>
                   )}
 
+                  <div className="space-y-2 rounded-lg border border-border bg-secondary p-3">
+                    <Label htmlFor="overlay-sequence-fps">{t("Frames per second")}</Label>
+                    <Input
+                      id="overlay-sequence-fps"
+                      type="number"
+                      min={1}
+                      max={60}
+                      step={1}
+                      value={sequenceFps}
+                      onChange={(event) => setSequenceFps(Math.max(1, Math.min(60, Number(event.target.value) || 30)))}
+                    />
+                    <p className="text-xs leading-relaxed text-muted-foreground">{t("The ZIP must contain numbered PNG frames. It will be converted to a transparent MOV.")}</p>
+                  </div>
                   <div className="flex items-center gap-3 rounded-lg border border-border bg-secondary p-3">
                     <Repeat className="h-4 w-4 text-muted-foreground" />
                     <div className="flex-1">
@@ -1012,20 +1080,34 @@ export function OverlayManager() {
                 </div>
               )}
 
-              {isTextType && (
+              {isTextAppearanceType && (
                 <>
-                  <div className="space-y-2">
-                    <Label htmlFor="overlay-text">Text Content</Label>
+                  {isTextType && <div className="space-y-2">
+                    <Label htmlFor="overlay-text">{t("Text Content")}</Label>
                     <Input
                       id="overlay-text"
                       placeholder="e.g. Breaking News: ..."
                       value={textContent}
                       onChange={(e) => setTextContent(e.target.value)}
                     />
-                  </div>
+                  </div>}
+                  {isClockType && (
+                    <div className="space-y-2">
+                      <Label>{t("Broadcast time zone")}</Label>
+                      <Select value={clockTimeZone} onValueChange={setClockTimeZone}>
+                        <SelectTrigger className="bg-secondary border-border text-foreground"><SelectValue /></SelectTrigger>
+                        <SelectContent className="bg-card border-border">
+                          {Array.from(new Set([...broadcastTimeZones, clockTimeZone])).map((timeZone) => (
+                            <SelectItem key={timeZone} value={timeZone}>{timeZone.replaceAll("_", " ")}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs leading-relaxed text-muted-foreground">{t("The broadcast clock uses one selected time zone for every destination.")}</p>
+                    </div>
+                  )}
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-2">
-                      <Label>Font Family</Label>
+                      <Label>{t("Font Family")}</Label>
                       <Select value={fontFamily} onValueChange={setFontFamily}>
                         <SelectTrigger className="bg-secondary border-border text-foreground">
                           <SelectValue />
@@ -1042,7 +1124,7 @@ export function OverlayManager() {
                       </Select>
                     </div>
                     <div className="space-y-2">
-                      <Label>Font Weight</Label>
+                      <Label>{t("Font Weight")}</Label>
                       <Select value={fontWeight} onValueChange={setFontWeight}>
                         <SelectTrigger className="bg-secondary border-border text-foreground">
                           <SelectValue />
@@ -1058,7 +1140,7 @@ export function OverlayManager() {
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-2">
-                      <Label>Font Size</Label>
+                      <Label>{t("Font Size")}</Label>
                       <Input
                         type="number"
                         min={12}
@@ -1068,7 +1150,7 @@ export function OverlayManager() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>Font Color</Label>
+                      <Label>{t("Font Color")}</Label>
                       <div className="flex items-center gap-2">
                         <input
                           type="color"
@@ -1085,7 +1167,7 @@ export function OverlayManager() {
                     </div>
                     {type !== "text" && (
                       <div className="space-y-2">
-                        <Label>Background</Label>
+                        <Label>{t("Background")}</Label>
                         <div className="flex items-center gap-2">
                           <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
                             <input
@@ -1094,7 +1176,7 @@ export function OverlayManager() {
                               onChange={(e) => setBgColor(e.target.checked ? "transparent" : "#00000080")}
                               className="rounded border-border"
                             />
-                            No Background
+                            {t("No Background")}
                           </label>
                         </div>
                         {bgColor !== "transparent" && (
@@ -1120,7 +1202,7 @@ export function OverlayManager() {
                     <>
                       <div className="space-y-2">
                         <div className="flex items-center justify-between">
-                          <Label>Scroll Speed</Label>
+                          <Label>{t("Scroll Speed")}</Label>
                           <span className="text-xs text-muted-foreground">{scrollSpeed} px/sec</span>
                         </div>
                         <Slider
@@ -1171,10 +1253,10 @@ export function OverlayManager() {
                 </>
               )}
 
-              {!isTextType && (
+              {!isTextAppearanceType && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label>Width on stream</Label>
+                    <Label>{t("Width on stream")}</Label>
                     <span className="text-xs text-muted-foreground">{sizePercent}%</span>
                   </div>
                   <Slider
@@ -1189,7 +1271,7 @@ export function OverlayManager() {
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label>Opacity</Label>
+                  <Label>{t("Opacity")}</Label>
                   <span className="text-xs text-muted-foreground">{opacity}%</span>
                 </div>
                 <Slider
@@ -1306,7 +1388,7 @@ export function OverlayManager() {
                         <LayerIcon className={cn("h-4 w-4 shrink-0", selected ? "text-primary" : "text-muted-foreground")} />
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-sm font-medium text-foreground">{overlay.name}</span>
-                          <span className="block truncate text-xs text-muted-foreground">{overlayTypeLabels[overlay.type]}</span>
+                          <span className="block truncate text-xs text-muted-foreground">                          {t(overlayTypeLabels[overlay.type])}</span>
                         </span>
                       </button>
                       <button
@@ -1372,7 +1454,7 @@ export function OverlayManager() {
                           {overlay.name}
                         </CardTitle>
                         <p className="text-xs text-muted-foreground">
-                          {overlayTypeLabels[overlay.type]} -- {positionLabels[overlay.position]}
+                          {t(overlayTypeLabels[overlay.type])} -- {t(positionLabels[overlay.position])}
                         </p>
                       </div>
                     </div>
@@ -1395,10 +1477,13 @@ export function OverlayManager() {
                       {overlay.loop_overlay && <Repeat className="h-3.5 w-3.5 text-primary" />}
                     </div>
                   )}
-                  {overlay.text_content && (
+                  {overlay.text_content && overlay.type !== "clock" && (
                     <div className="rounded-md bg-secondary p-2">
                       <p className="truncate text-sm text-foreground">{overlay.text_content}</p>
                     </div>
+                  )}
+                  {overlay.type === "clock" && (
+                    <p className="text-xs text-muted-foreground">{t("Clock in")} {readClockTimeZone(overlay.text_content)}</p>
                   )}
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <span>Size: {overlay.size_percent}%</span>

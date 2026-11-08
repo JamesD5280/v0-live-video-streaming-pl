@@ -22,6 +22,7 @@ import {
   Film, ListMusic, Layers, Eye, EyeOff, Rss, Trash2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useLanguage } from "@/components/language-provider"
 
 const statusConfig: Record<string, { label: string; className: string; icon: typeof Radio }> = {
   live: { label: "LIVE", className: "bg-live/10 text-live border-live/20", icon: Radio },
@@ -34,6 +35,7 @@ const statusConfig: Record<string, { label: string; className: string; icon: typ
 type SourceType = "video" | "playlist" | "rtmp_pull"
 
 export function StreamCreator() {
+  const { t } = useLanguage()
   const { data: videos, error: videosError } = useSWR<Video[]>("/api/videos", fetcher)
   const { data: destinations, error: destsError } = useSWR<Destination[]>("/api/destinations", fetcher)
   const { data: playlists } = useSWR<Playlist[]>("/api/playlists", fetcher)
@@ -123,7 +125,7 @@ export function StreamCreator() {
         const engineData = await engineRes.json()
 
         if (!engineData.success) {
-          setStartError(engineData.error || "Streaming engine failed to start the stream")
+          setStartError(t(engineData.error || "Streaming engine failed to start the stream"))
         } else {
           // Only clear form on success
           setStreamTitle("")
@@ -134,10 +136,10 @@ export function StreamCreator() {
           setSelectedOverlays([])
         }
       } else {
-        setStartError(stream?.error || "Failed to create stream record")
+        setStartError(t(stream?.error || "Failed to create stream record"))
       }
     } catch (e) {
-      setStartError(e instanceof Error ? e.message : "Failed to start stream")
+      setStartError(t(e instanceof Error ? e.message : "Failed to start stream"))
     }
     setCreating(false)
     mutateStreams()
@@ -169,10 +171,10 @@ export function StreamCreator() {
       })
       const engineData = await engineRes.json()
       if (!engineData.success) {
-        setStartError(engineData.error || "Failed to restart stream")
+        setStartError(t(engineData.error || "Failed to restart stream"))
       }
     } catch (e) {
-      setStartError(e instanceof Error ? e.message : "Failed to restart stream")
+      setStartError(t(e instanceof Error ? e.message : "Failed to restart stream"))
     }
     setCreating(false)
     mutateStreams()
@@ -203,7 +205,7 @@ export function StreamCreator() {
       const data = await res.json()
       setRtmpCheckResult(data)
     } catch {
-      setRtmpCheckResult({ valid: false, error: "Failed to check RTMP stream" })
+      setRtmpCheckResult({ valid: false, error: t("Failed to check RTMP stream") })
     }
     setRtmpChecking(false)
   }
@@ -225,15 +227,15 @@ export function StreamCreator() {
       })
 
       if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: "Preview failed" }))
-        setPreviewError(err.error || "Preview generation failed")
+        const err = await res.json().catch(() => ({ error: t("Preview failed") }))
+        setPreviewError(t(err.error || "Preview generation failed"))
       } else {
         const blob = await res.blob()
         const url = URL.createObjectURL(blob)
         setPreviewUrl(url)
       }
     } catch {
-      setPreviewError("Failed to generate preview")
+      setPreviewError(t("Failed to generate preview"))
     }
     setPreviewing(false)
   }
@@ -246,22 +248,22 @@ export function StreamCreator() {
         <div className="lg:col-span-2 space-y-6">
           <Card className="border-border bg-card">
             <CardHeader>
-              <CardTitle className="text-base font-semibold text-foreground">Create New Stream</CardTitle>
+              <CardTitle className="text-base font-semibold text-foreground">{t("Create New Stream")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label className="text-foreground">Stream Title</Label>
+                <Label className="text-foreground">{t("Stream Title")}</Label>
                 <Input
                   value={streamTitle}
                   onChange={(e) => setStreamTitle(e.target.value)}
-                  placeholder="Give your stream a title..."
+                  placeholder={t("Give your stream a title...")}
                   className="bg-secondary border-border text-foreground"
                 />
               </div>
 
               {/* Source Type Toggle */}
               <div className="space-y-2">
-                <Label className="text-foreground">Source</Label>
+                <Label className="text-foreground">{t("Source")}</Label>
                 <div className="flex gap-2">
                   <Button
                     type="button"
@@ -271,7 +273,7 @@ export function StreamCreator() {
                     onClick={() => setSourceType("video")}
                   >
                     <Film className="h-3.5 w-3.5" />
-                    Single Video
+                    {t("Single Video")}
                   </Button>
                   <Button
                     type="button"
@@ -281,7 +283,7 @@ export function StreamCreator() {
                     onClick={() => setSourceType("playlist")}
                   >
                     <ListMusic className="h-3.5 w-3.5" />
-                    Playlist
+                    {t("Playlist")}
                   </Button>
                   <Button
                     type="button"
@@ -291,17 +293,17 @@ export function StreamCreator() {
                     onClick={() => setSourceType("rtmp_pull")}
                   >
                     <Rss className="h-3.5 w-3.5" />
-                    RTMP Pull
+                    {t("RTMP Pull")}
                   </Button>
                 </div>
               </div>
 
               {sourceType === "video" && (
                 <div className="space-y-2">
-                  <Label className="text-foreground">Select Video</Label>
+                  <Label className="text-foreground">{t("Select Video")}</Label>
                   <Select value={selectedVideo} onValueChange={setSelectedVideo}>
                     <SelectTrigger className="bg-secondary border-border text-foreground">
-                      <SelectValue placeholder="Choose a video to stream" />
+                      <SelectValue placeholder={t("Choose a video to stream")} />
                     </SelectTrigger>
                     <SelectContent className="bg-card border-border">
                       {readyVideos.map((video) => (
@@ -312,17 +314,17 @@ export function StreamCreator() {
                     </SelectContent>
                   </Select>
                   {readyVideos.length === 0 && (
-                    <p className="text-xs text-muted-foreground">No videos ready. Upload videos from the Video Library.</p>
+                    <p className="text-xs text-muted-foreground">{t("No videos ready. Upload videos from the Video Library.")}</p>
                   )}
                 </div>
               )}
 
               {sourceType === "playlist" && (
                 <div className="space-y-2">
-                  <Label className="text-foreground">Select Playlist</Label>
+                  <Label className="text-foreground">{t("Select Playlist")}</Label>
                   <Select value={selectedPlaylist} onValueChange={setSelectedPlaylist}>
                     <SelectTrigger className="bg-secondary border-border text-foreground">
-                      <SelectValue placeholder="Choose a playlist to stream" />
+                      <SelectValue placeholder={t("Choose a playlist to stream")} />
                     </SelectTrigger>
                     <SelectContent className="bg-card border-border">
                       {availablePlaylists.map((pl) => (
@@ -338,14 +340,14 @@ export function StreamCreator() {
                     </SelectContent>
                   </Select>
                   {availablePlaylists.length === 0 && (
-                    <p className="text-xs text-muted-foreground">No playlists yet. Create one from the Playlists page.</p>
+                    <p className="text-xs text-muted-foreground">{t("No playlists yet. Create one from the Playlists page.")}</p>
                   )}
                 </div>
               )}
 
               {sourceType === "rtmp_pull" && (
                 <div className="space-y-2">
-                  <Label className="text-foreground">RTMP Source URL</Label>
+                  <Label className="text-foreground">{t("RTMP Source URL")}</Label>
                   <div className="flex gap-2">
                     <Input
                       value={rtmpPullUrl}
@@ -361,7 +363,7 @@ export function StreamCreator() {
                       onClick={handleCheckRtmp}
                     >
                       {rtmpChecking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Rss className="h-3.5 w-3.5" />}
-                      {rtmpChecking ? "Testing..." : "Test Stream"}
+                      {t(rtmpChecking ? "Testing..." : "Test Stream")}
                     </Button>
                   </div>
                   {rtmpCheckResult && (
@@ -374,7 +376,7 @@ export function StreamCreator() {
                       {rtmpCheckResult.valid ? (
                         <span className="flex items-center gap-1.5">
                           <CheckCircle2 className="h-3.5 w-3.5" />
-                          Stream is active
+                          {t("Stream is active")}
                           {rtmpCheckResult.hasVideo && " (video"}
                           {rtmpCheckResult.hasVideo && rtmpCheckResult.hasAudio && " + audio)"}
                           {rtmpCheckResult.hasVideo && !rtmpCheckResult.hasAudio && " only)"}
@@ -382,19 +384,19 @@ export function StreamCreator() {
                       ) : (
                         <span className="flex items-center gap-1.5">
                           <AlertCircle className="h-3.5 w-3.5" />
-                          {rtmpCheckResult.error || "Stream not reachable"}
+                          {t(rtmpCheckResult.error || "Stream not reachable")}
                         </span>
                       )}
                     </div>
                   )}
                   <p className="text-xs text-muted-foreground">
-                    Enter the RTMP URL and click Test Stream to verify it is active before going live.
+                    {t("Enter the RTMP URL and click Test Stream to verify it is active before going live.")}
                   </p>
                 </div>
               )}
 
               <div className="space-y-3">
-                <Label className="text-foreground">Destinations</Label>
+                <Label className="text-foreground">{t("Destinations")}</Label>
                 <div className="space-y-2">
                   {enabledDestinations.map((dest) => (
                     <div
@@ -422,7 +424,7 @@ export function StreamCreator() {
                     </div>
                   ))}
                   {enabledDestinations.length === 0 && (
-                    <p className="text-sm text-muted-foreground">No enabled destinations. Add one from the Destinations page.</p>
+                    <p className="text-sm text-muted-foreground">{t("No enabled destinations. Add one from the Destinations page.")}</p>
                   )}
                 </div>
               </div>
@@ -432,7 +434,7 @@ export function StreamCreator() {
                 <div className="space-y-3">
                   <Label className="flex items-center gap-2 text-foreground">
                     <Layers className="h-4 w-4" />
-                    Overlays (optional)
+                    {t("Overlays (optional)")}
                   </Label>
                   <div className="space-y-2">
                     {enabledOverlays.map((overlay) => (
@@ -486,7 +488,7 @@ export function StreamCreator() {
                   <div className="flex items-start gap-2">
                     <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
                     <div>
-                      <p className="text-sm font-medium text-destructive">Failed to start stream</p>
+                      <p className="text-sm font-medium text-destructive">{t("Failed to start stream")}</p>
                       <p className="mt-1 text-xs text-destructive/80">{startError}</p>
                     </div>
                   </div>
@@ -496,7 +498,7 @@ export function StreamCreator() {
               {/* Preview Player */}
               {previewUrl && (
                 <div className="space-y-2">
-                  <Label className="text-foreground">Stream Preview (5-second clip with overlays)</Label>
+                  <Label className="text-foreground">{t("Stream Preview (5-second clip with overlays)")}</Label>
                   <div className="relative rounded-lg overflow-hidden border border-border bg-black">
                     <video
                       src={previewUrl}
@@ -506,7 +508,7 @@ export function StreamCreator() {
                     />
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    This is a 5-second preview of how your stream will look with overlays applied.
+                    {t("This is a 5-second preview of how your stream will look with overlays applied.")}
                   </p>
                 </div>
               )}
@@ -515,7 +517,7 @@ export function StreamCreator() {
                   <div className="flex items-start gap-2">
                     <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
                     <div>
-                      <p className="text-sm font-medium text-destructive">Preview failed</p>
+                      <p className="text-sm font-medium text-destructive">{t("Preview failed")}</p>
                       <p className="mt-1 text-xs text-destructive/80">{previewError}</p>
                     </div>
                   </div>
@@ -530,7 +532,7 @@ export function StreamCreator() {
                   className="gap-2"
                 >
                   {previewing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
-                  {previewing ? "Generating Preview..." : "Preview Stream"}
+                  {t(previewing ? "Generating Preview..." : "Preview Stream")}
                 </Button>
                 <Button
                   disabled={!canStart || creating}
@@ -538,7 +540,7 @@ export function StreamCreator() {
                   className="gap-2 bg-live text-foreground hover:bg-live/90"
                 >
                   {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-                  Go Live Now
+                  {t("Go Live Now")}
                 </Button>
               </div>
             </CardContent>
@@ -548,7 +550,7 @@ export function StreamCreator() {
         <div>
           <Card className="border-border bg-card">
             <CardHeader>
-              <CardTitle className="text-base font-semibold text-foreground">How It Works</CardTitle>
+              <CardTitle className="text-base font-semibold text-foreground">{t("How It Works")}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
@@ -563,8 +565,8 @@ export function StreamCreator() {
                       {item.step}
                     </div>
                     <div>
-                      <p className="text-sm font-medium text-foreground">{item.title}</p>
-                      <p className="text-xs text-muted-foreground">{item.desc}</p>
+                      <p className="text-sm font-medium text-foreground">{t(item.title)}</p>
+                      <p className="text-xs text-muted-foreground">{t(item.desc)}</p>
                     </div>
                   </div>
                 ))}
@@ -576,7 +578,7 @@ export function StreamCreator() {
 
       <Card className="border-border bg-card">
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base font-semibold text-foreground">All Streams</CardTitle>
+          <CardTitle className="text-base font-semibold text-foreground">{t("All Streams")}</CardTitle>
           {stoppedCount > 0 && (
             <Button
               variant="outline"
@@ -585,7 +587,7 @@ export function StreamCreator() {
               onClick={handleDeleteAllStopped}
             >
               <Trash2 className="h-3 w-3" />
-              Delete Stopped ({stoppedCount})
+              {t("Delete Stopped")} ({stoppedCount})
             </Button>
           )}
         </CardHeader>
@@ -595,7 +597,7 @@ export function StreamCreator() {
           ) : streams.length === 0 ? (
             <div className="rounded-lg border border-dashed border-border p-8 text-center">
               <Radio className="mx-auto h-8 w-8 text-muted-foreground" />
-              <p className="mt-2 text-sm text-muted-foreground">No streams yet. Create one above.</p>
+              <p className="mt-2 text-sm text-muted-foreground">{t("No streams yet. Create one above.")}</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -661,7 +663,7 @@ export function StreamCreator() {
                         </Button>
                       )}
                       <Badge variant="outline" className={cn("text-xs", config.className)}>
-                        {config.label}
+                          {t(config.label)}
                       </Badge>
                     </div>
                   </div>

@@ -1,4 +1,7 @@
+"use client"
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { useLanguage } from "@/components/language-provider"
 import { Globe } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { Destination } from "@/lib/store"
@@ -22,17 +25,19 @@ interface PlatformHealthProps {
 }
 
 export function PlatformHealth({ destinations }: PlatformHealthProps) {
+  const { t } = useLanguage()
+
   return (
     <Card className="border-border bg-card">
       <CardHeader className="pb-3">
-        <CardTitle className="text-base font-semibold text-foreground">Destinations Status</CardTitle>
+        <CardTitle className="text-base font-semibold text-foreground">{t("Destinations Status")}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         {destinations.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border p-8 text-center">
             <Globe className="mx-auto h-8 w-8 text-muted-foreground" />
-            <p className="mt-2 text-sm text-muted-foreground">No destinations configured</p>
-            <p className="text-xs text-muted-foreground">Add a streaming destination to get started</p>
+            <p className="mt-2 text-sm text-muted-foreground">{t("No destinations configured")}</p>
+            <p className="text-xs text-muted-foreground">{t("Add a streaming destination to get started")}</p>
           </div>
         ) : (
           destinations.map((dest) => (
@@ -62,7 +67,7 @@ export function PlatformHealth({ destinations }: PlatformHealthProps) {
                   )}
                 />
                 <span className="text-xs text-muted-foreground">
-                  {dest.enabled ? "Enabled" : "Disabled"}
+                  {t(dest.enabled ? "Enabled" : "Disabled")}
                 </span>
               </div>
             </div>

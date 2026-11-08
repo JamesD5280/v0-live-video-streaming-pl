@@ -11,8 +11,10 @@ import { fetcher } from "@/lib/fetcher"
 import type { Stream, Overlay } from "@/lib/store"
 import { Radio, Users, Gauge, Clock, StopCircle, Activity, Server, Wifi, Loader2, Layers, Image as ImageIcon, Type, Video, RefreshCw } from "lucide-react"
 import { OverlayPreview } from "@/components/overlays/overlay-preview"
+import { useLanguage } from "@/components/language-provider"
 
 export function StreamMonitor() {
+  const { t } = useLanguage()
   const { data: streams, error: streamsError, mutate } = useSWR<Stream[]>("/api/streams", fetcher, { refreshInterval: 5000 })
   const { data: allOverlays } = useSWR<Overlay[]>("/api/overlays", fetcher)
   const liveStreams = Array.isArray(streams) ? streams.filter((s) => s.status === "live") : []
@@ -58,7 +60,7 @@ export function StreamMonitor() {
       })
       const updateData = await updateResponse.json()
       if (!updateResponse.ok || !updateData.success) {
-        throw new Error(updateData.error || "Failed to save overlay settings")
+        throw new Error(t(updateData.error || "Failed to save overlay settings"))
       }
 
       setActiveOverlayIds(newIds)
@@ -72,13 +74,13 @@ export function StreamMonitor() {
       const restartData = await restartResponse.json()
       if (!restartResponse.ok || !restartData.success) {
         throw new Error(
-          `Overlay settings were saved, but the stream could not restart: ${restartData.error || "Unknown error"}`
+          t(`Overlay settings were saved, but the stream could not restart: ${restartData.error || "Unknown error"}`)
         )
       }
 
       mutate()
     } catch (error) {
-      setOverlayError(error instanceof Error ? error.message : "Network error updating overlays")
+      setOverlayError(t(error instanceof Error ? error.message : "Network error updating overlays"))
     } finally {
       setUpdatingOverlays(false)
     }
@@ -125,7 +127,7 @@ export function StreamMonitor() {
 
   // Force stop: updates database status without calling the engine (for orphaned streams)
   const handleForceStop = async (streamId: string) => {
-    if (!confirm("Force stop will mark this stream as stopped in the database. Use this only if the normal stop isn't working. Continue?")) {
+    if (!confirm(t("Force stop will mark this stream as stopped in the database. Use this only if the normal stop isn't working. Continue?"))) {
       return
     }
     setForceStoppingId(streamId)
@@ -154,7 +156,7 @@ export function StreamMonitor() {
           <div className="flex h-16 w-16 items-center justify-center rounded-full bg-destructive/10">
             <Radio className="h-8 w-8 text-destructive" />
           </div>
-          <p className="mt-4 text-lg font-medium text-foreground">Failed to load streams</p>
+          <p className="mt-4 text-lg font-medium text-foreground">{t("Failed to load streams")}</p>
           <p className="mt-1 text-sm text-muted-foreground">Please try refreshing the page</p>
         </CardContent>
       </Card>
@@ -172,9 +174,9 @@ export function StreamMonitor() {
           <div className="flex h-16 w-16 items-center justify-center rounded-full bg-secondary">
             <Radio className="h-8 w-8 text-muted-foreground" />
           </div>
-          <p className="mt-4 text-lg font-medium text-foreground">No Active Streams</p>
+          <p className="mt-4 text-lg font-medium text-foreground">{t("No Active Streams")}</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Start a stream from the Streams page to see live monitoring here.
+            {t("Start a stream from the Streams page to see live monitoring here.")}
           </p>
         </CardContent>
       </Card>
@@ -197,7 +199,7 @@ export function StreamMonitor() {
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="text-lg font-semibold text-foreground">{liveStream.title}</h2>
-                  <Badge className="bg-live text-foreground border-none">LIVE</Badge>
+                  <Badge className="bg-live text-foreground border-none">{t("LIVE")}</Badge>
                 </div>
                 <p className="text-sm text-muted-foreground">{liveStream.video?.title || "Unknown video"}</p>
               </div>
@@ -210,7 +212,7 @@ export function StreamMonitor() {
                 disabled={stopping}
               >
                 {stopping ? <Loader2 className="h-4 w-4 animate-spin" /> : <StopCircle className="h-4 w-4" />}
-                Stop Stream
+                  {t("Stop Stream")}
               </Button>
               <Button 
                 variant="ghost" 
@@ -218,7 +220,7 @@ export function StreamMonitor() {
                 className="text-muted-foreground hover:text-destructive"
                 onClick={() => handleForceStop(liveStream.id)}
                 disabled={forceStoppingId === liveStream.id}
-                title="Force stop (use if normal stop fails)"
+                title={t("Force stop (use if normal stop fails)")}
               >
                 {forceStoppingId === liveStream.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               </Button>
@@ -235,7 +237,7 @@ export function StreamMonitor() {
                 <Users className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Current Viewers</p>
+                <p className="text-xs text-muted-foreground">{t("Current Viewers")}</p>
                 <p className="text-xl font-bold text-foreground font-mono">{(liveStream.viewer_count || 0).toLocaleString()}</p>
               </div>
             </div>
@@ -248,7 +250,7 @@ export function StreamMonitor() {
                 <Clock className="h-5 w-5 text-warning" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Uptime</p>
+                <p className="text-xs text-muted-foreground">{t("Uptime")}</p>
                 <p className="text-xl font-bold text-foreground font-mono">{formatUptime(uptimeSeconds)}</p>
               </div>
             </div>
@@ -261,7 +263,7 @@ export function StreamMonitor() {
                 <Gauge className="h-5 w-5 text-chart-2" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Destinations</p>
+                <p className="text-xs text-muted-foreground">{t("Destinations")}</p>
                 <p className="text-xl font-bold text-foreground font-mono">{destNames.length}</p>
               </div>
             </div>
@@ -274,8 +276,8 @@ export function StreamMonitor() {
                 <Activity className="h-5 w-5 text-live" />
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Status</p>
-                <p className="text-xl font-bold text-success font-mono">Healthy</p>
+                <p className="text-xs text-muted-foreground">{t("Status")}</p>
+                <p className="text-xl font-bold text-success font-mono">{t("Healthy")}</p>
               </div>
             </div>
           </CardContent>
@@ -288,11 +290,11 @@ export function StreamMonitor() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base font-semibold text-foreground">
               <Layers className="h-4 w-4" />
-              Live Overlay Controls
+              {t("Live Overlay Controls")}
               {updatingOverlays && <RefreshCw className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
             </CardTitle>
             <p className="text-xs text-muted-foreground">
-              Toggle overlays on or off in real time. The stream will briefly restart (~1-2s) when you make a change.
+              {t("Toggle overlays on or off in real time. The stream will briefly restart (~1-2s) when you make a change.")}
             </p>
           </CardHeader>
           <CardContent>
@@ -313,7 +315,7 @@ export function StreamMonitor() {
             <div className="grid gap-3 sm:grid-cols-2">
               {allOverlays.filter(o => o.enabled).map((overlay) => {
                 const isActive = activeOverlayIds.has(overlay.id)
-                const OverlayIcon = overlay.type === "text" || overlay.type === "lower_third" ? Type
+                const OverlayIcon = overlay.type === "text" || overlay.type === "lower_third" || overlay.type === "clock" ? Type
                   : overlay.type === "video" ? Video
                   : ImageIcon
                 return (
@@ -339,7 +341,7 @@ export function StreamMonitor() {
                         {overlay.name}
                       </p>
                       <p className="text-xs text-muted-foreground truncate">
-                        {overlay.type} -- {overlay.position}
+                        {t(overlay.type)} -- {t(overlay.position)}
                       </p>
                     </div>
                     <Switch
@@ -353,7 +355,7 @@ export function StreamMonitor() {
             </div>
             {allOverlays.filter(o => o.enabled).length === 0 && (
               <p className="text-sm text-muted-foreground text-center py-4">
-                No enabled overlays. Create overlays from the Overlays page.
+                {t("No enabled overlays. Create overlays from the Overlays page.")}
               </p>
             )}
           </CardContent>
@@ -363,7 +365,7 @@ export function StreamMonitor() {
       <div className="grid gap-6 lg:grid-cols-2">
         <Card className="border-border bg-card">
           <CardHeader>
-            <CardTitle className="text-base font-semibold text-foreground">Destination Health</CardTitle>
+            <CardTitle className="text-base font-semibold text-foreground">{t("Destination Health")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             {destNames.map((dest) => {
@@ -387,19 +389,19 @@ export function StreamMonitor() {
 
         <Card className="border-border bg-card">
           <CardHeader>
-            <CardTitle className="text-base font-semibold text-foreground">Cloud Server Status</CardTitle>
+            <CardTitle className="text-base font-semibold text-foreground">{t("Cloud Server Status")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2"><Server className="h-4 w-4 text-primary" /><span className="text-sm text-foreground">CPU Usage</span></div>
+                <div className="flex items-center gap-2"><Server className="h-4 w-4 text-primary" /><span className="text-sm text-foreground">{t("CPU Usage")}</span></div>
                 <span className="text-xs font-mono text-muted-foreground">{cpuUsage.toFixed(1)}%</span>
               </div>
               <Progress value={cpuUsage} className="h-1.5" />
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2"><Activity className="h-4 w-4 text-chart-2" /><span className="text-sm text-foreground">Bandwidth</span></div>
+                <div className="flex items-center gap-2"><Activity className="h-4 w-4 text-chart-2" /><span className="text-sm text-foreground">{t("Bandwidth")}</span></div>
                 <span className="text-xs font-mono text-muted-foreground">{bandwidth.toFixed(1)} Mbps</span>
               </div>
               <Progress value={(bandwidth / 50) * 100} className="h-1.5" />

@@ -3,6 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Upload, Radio, Globe, Calendar } from "lucide-react"
 import Link from "next/link"
+import { useLanguage } from "@/components/language-provider"
 
 const actions = [
   {
@@ -36,10 +37,12 @@ const actions = [
 ]
 
 export function QuickActions() {
+  const { t } = useLanguage()
+
   return (
     <Card className="border-border bg-card">
       <CardHeader className="pb-3">
-        <CardTitle className="text-base font-semibold text-foreground">Quick Actions</CardTitle>
+        <CardTitle className="text-base font-semibold text-foreground">{t("Quick Actions")}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-2">
         {actions.map((action) => (
@@ -52,8 +55,8 @@ export function QuickActions() {
               <action.icon className="h-4 w-4" />
             </div>
             <div>
-              <p className="text-sm font-medium text-foreground">{action.label}</p>
-              <p className="text-xs text-muted-foreground">{action.description}</p>
+              <p className="text-sm font-medium text-foreground">{t(action.label)}</p>
+              <p className="text-xs text-muted-foreground">{t(action.description)}</p>
             </div>
           </Link>
         ))}

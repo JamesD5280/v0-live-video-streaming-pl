@@ -19,14 +19,16 @@
 
 import express from 'express'
 import cors from 'cors'
-import { spawn } from 'child_process'
-import { existsSync, writeFileSync, unlinkSync, mkdirSync, readdirSync, statSync, createWriteStream, createReadStream, readFileSync, rmdirSync } from 'fs'
+import { spawn, execFile } from 'child_process'
+import { existsSync, writeFileSync, unlinkSync, mkdirSync, readdirSync, statSync, createWriteStream, createReadStream, readFileSync, rmdirSync, copyFileSync, mkdtempSync, rmSync } from 'fs'
 import { join, basename } from 'path'
 import { tmpdir } from 'os'
 import { pipeline } from 'stream/promises'
 import { Readable } from 'stream'
 import { createHmac } from 'crypto'
+import { promisify } from 'util'
 
+const execFileAsync = promisify(execFile)
 const app = express()
 app.use(cors())
 // JSON body parser for command endpoints (not upload -- that streams raw)
@@ -158,6 +160,26 @@ function getFontFile(family, weight) {
   return files[face]
 }
 
+function getOverlayTimeZone(overlays = []) {
+  const clock = overlays.find(overlay => overlay.type === 'clock')
+  if (!clock?.textContent) return undefined
+
+  try {
+    const settings = JSON.parse(clock.textContent)
+    const timeZone = typeof settings.timeZone === 'string' ? settings.timeZone : 'UTC'
+    new Intl.DateTimeFormat('en-US', { timeZone }).format()
+    return timeZone
+  } catch {
+    return 'UTC'
+  }
+}
+
+function spawnFfmpeg(args, timeZone) {
+  const options = { stdio: ['pipe', 'pipe', 'pipe'] }
+  if (timeZone) options.env = { ...process.env, TZ: timeZone }
+  return spawn('ffmpeg', args, options)
+}
+
 function formatFfmpegColor(value, opacity = 100, fallback = 'white') {
   let color = typeof value === 'string' ? value.trim() : ''
   let intrinsicAlpha = 1
@@ -189,7 +211,7 @@ function buildOverlayFilters(overlays) {
   // Sort overlays for correct layer order (processed last = on top)
   // Order: image (backgrounds) -> scrolling_text -> text -> video (logos on top)
   const sortedOverlays = [...overlays].sort((a, b) => {
-    const order = { 'image': 0, 'scrolling_text': 1, 'text': 2, 'video': 3 }
+    const order = { 'image': 0, 'scrolling_text': 1, 'text': 2, 'clock': 3, 'video': 4 }
     return (order[a.type] ?? 1) - (order[b.type] ?? 1)
   })
   console.log(`[2MStream] Overlay render order: ${sortedOverlays.map(o => o.type).join(' -> ')}`)
@@ -247,9 +269,6 @@ function buildOverlayFilters(overlays) {
       const fontFile = getFontFile(overlay.fontFamily, overlay.fontWeight)
       const fontParam = `fontfile='${fontFile}'`
 
-      // For seamless loop, duplicate the text with separator
-      const loopText = `${escapedText}          ${escapedText}          ${escapedText}`
-
       const barHeight = fontSize + 16
 
       // Position Y is the vertical center, matching the overlay editor.
@@ -273,23 +292,12 @@ function buildOverlayFilters(overlays) {
       const scrollStartX = Math.round(1920 * startPercent / 100)
       const scrollEndX = Math.round(1920 * endPercent / 100)
       const scrollZoneWidth = Math.max(96, scrollEndX - scrollStartX)
+      const estimatedChunkWidth = Math.max(1, (overlay.textContent || '').length * fontSize * 0.55 + fontSize * 3)
+      const loopCopyCount = Math.max(3, Math.min(300, Math.ceil((scrollZoneWidth + 100) / estimatedChunkWidth) + 2))
+      const loopText = `${escapedText}          `.repeat(loopCopyCount)
+      const scrollFormula = `'w-mod(t*${speed}\\,text_w/${loopCopyCount})'`
       
-      console.log(`[2MStream] Scrolling text: centerY=${scrollCenterY}px, top=${scrollTop}px, zone X=${scrollStartX}-${scrollEndX}px (width=${scrollZoneWidth}), speed=${speed}`)
-      
-      // To properly clip text within the scroll zone, we:
-      // 1. Split video into two streams (both synced from same source)
-      // 2. Draw scrolling text on one stream (text extends full width)
-      // 3. Crop just the zone area (this clips the text)
-      // 4. Overlay the cropped area back onto the base stream
-      
-      // Seamless loop: Draw the text TWICE with offset so when one exits, another enters
-      // The key is both text instances move at same speed, separated by exactly tw (text width)
-      // First text: starts at right edge (w), moves left
-      // Second text: follows behind first text by exactly tw pixels
-      // When first text exits left, second text is exactly where first started
-      // Formula uses tw (text width) to create proper spacing
-      const scrollFormula1 = `'w-mod(t*${speed}\\,w+tw)'`
-      const scrollFormula2 = `'w+tw-mod(t*${speed}\\,w+tw)'`
+      console.log(`[2MStream] Scrolling text: centerY=${scrollCenterY}px, top=${scrollTop}px, zone X=${scrollStartX}-${scrollEndX}px (width=${scrollZoneWidth}), speed=${speed}, copies=${loopCopyCount}`)
       
       const splitBase = `splitbase${i}`
       const splitText = `splittext${i}`
@@ -298,20 +306,42 @@ function buildOverlayFilters(overlays) {
       // Split the current video into base and text layer
       filters.push(`[${currentLabel}]split=2[${splitBase}][${splitText}]`)
       
-      // Draw background and two text instances for seamless looping
+      // The repeated track shifts by one identical text chunk, so the reset frame matches exactly.
       if (hasTransparentBackground) {
         filters.push(
-          `[${splitText}]crop=${scrollZoneWidth}:${barHeight}:${scrollStartX}:${scrollTop},drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula1},drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula2}[${textCropped}]`
+          `[${splitText}]crop=${scrollZoneWidth}:${barHeight}:${scrollStartX}:${scrollTop},drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula}[${textCropped}]`
         )
       } else {
         filters.push(
-          `[${splitText}]crop=${scrollZoneWidth}:${barHeight}:${scrollStartX}:${scrollTop},drawbox=x=0:y=0:w=iw:h=ih:color=${bgColor}:t=fill,drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula1},drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula2}[${textCropped}]`
+          `[${splitText}]crop=${scrollZoneWidth}:${barHeight}:${scrollStartX}:${scrollTop},drawbox=x=0:y=0:w=iw:h=ih:color=${bgColor}:t=fill,drawtext=text='${loopText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:y=(h-${fontSize})/2:x=${scrollFormula}[${textCropped}]`
         )
       }
       
       // Overlay cropped text area back onto base at the zone position
       filters.push(`[${splitBase}][${textCropped}]overlay=x=${scrollStartX}:y=${scrollTop}[${outputLabel}]`)
 
+      currentLabel = outputLabel
+    } else if (overlay.type === 'clock') {
+      const fontSize = Math.max(12, Math.min(120, Number(overlay.fontSize) || 32))
+      const fontColor = formatFfmpegColor(overlay.fontColor || 'white', overlay.opacity ?? 100, 'white')
+      const fontFile = getFontFile(overlay.fontFamily, overlay.fontWeight)
+      const fontParam = `fontfile='${fontFile}'`
+      let textX, textY
+      if (overlay.positionX !== undefined && overlay.positionY !== undefined) {
+        textX = `w*${overlay.positionX / 100}-tw/2`
+        textY = `h*${overlay.positionY / 100}-th/2`
+      } else {
+        textX = posCoords.split(':')[0].replace('x=', '').replace('W', 'w')
+        textY = posCoords.split(':')[1]?.replace('y=', '').replace('H', 'h') || '10'
+      }
+      const hasTransparentBackground = ['transparent', 'none'].includes(String(overlay.bgColor || '').toLowerCase())
+      const clockBox = hasTransparentBackground
+        ? ''
+        : `:box=1:boxcolor=${formatFfmpegColor(overlay.bgColor || 'black', overlay.opacity ?? 100, 'black')}:boxborderw=8`
+      const clockText = '%{localtime\\:%H\\:%M\\:%S %Z}'
+      filters.push(
+        `[${currentLabel}]drawtext=text='${clockText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:x=${textX}:y=${textY}${clockBox}[${outputLabel}]`
+      )
       currentLabel = outputLabel
     } else if (overlay.type === 'text' || overlay.type === 'lower_third') {
       const escapedText = (overlay.textContent || '').replace(/'/g, "'\\''").replace(/:/g, '\\:')
@@ -515,6 +545,106 @@ app.post('/upload/chunk', async (req, res) => {
   } catch (err) {
     console.error(`[2MStream] Chunk upload failed:`, err.message)
     res.status(500).json({ error: `Chunk upload failed: ${err.message}` })
+  }
+})
+
+app.post('/overlays/png-sequence', async (req, res) => {
+  const filename = basename(String(req.body.filename || ''))
+  const fps = Number(req.body.fps)
+  if (!/^overlay-[a-zA-Z0-9-]+\.zip$/i.test(filename) || !Number.isInteger(fps) || fps < 1 || fps > 60) {
+    return res.status(400).json({ error: 'Invalid PNG sequence request' })
+  }
+
+  const archivePath = join(VIDEO_DIR, filename)
+  if (!existsSync(archivePath)) return res.status(404).json({ error: 'Sequence archive not found' })
+  if (statSync(archivePath).size > 512 * 1024 * 1024) {
+    return res.status(413).json({ error: 'PNG sequence ZIP exceeds the 512 MB limit' })
+  }
+
+  const workDir = mkdtempSync(join(tmpdir(), '2mstream-png-sequence-'))
+  try {
+    const { stdout: listing } = await execFileAsync('unzip', ['-Z1', archivePath], { maxBuffer: 1024 * 1024 })
+    const entries = listing.split(/\r?\n/).filter(Boolean)
+    const frameEntries = []
+    const seenNames = new Set()
+
+    for (const entry of entries) {
+      const normalized = entry.replaceAll('\\', '/')
+      const frameName = basename(normalized)
+      if (normalized.startsWith('__MACOSX/') || frameName === '.DS_Store' || frameName.startsWith('._')) continue
+      if (normalized.startsWith('/') || normalized.split('/').includes('..')) {
+        return res.status(400).json({ error: 'ZIP contains an unsafe path' })
+      }
+      if (normalized.endsWith('/')) continue
+      if (!/\.png$/i.test(frameName) || !/\d+/.test(frameName)) {
+        return res.status(400).json({ error: 'ZIP must contain only numbered PNG frames' })
+      }
+      if (seenNames.has(frameName.toLowerCase())) {
+        return res.status(400).json({ error: 'ZIP contains duplicate frame names' })
+      }
+      seenNames.add(frameName.toLowerCase())
+      frameEntries.push(normalized)
+    }
+
+    if (frameEntries.length < 2 || frameEntries.length > 600) {
+      return res.status(400).json({ error: 'PNG sequences must contain between 2 and 600 frames' })
+    }
+
+    const { stdout: details } = await execFileAsync('unzip', ['-l', archivePath], { maxBuffer: 2 * 1024 * 1024 })
+    const uncompressedBytes = details.split(/\r?\n/).reduce((total, line) => {
+      const match = line.match(/^\s*(\d+)\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+(.+)$/)
+      if (!match) return total
+      const entryName = match[2].replaceAll('\\', '/')
+      if (!/\.png$/i.test(basename(entryName))) return total
+      return total + Number(match[1])
+    }, 0)
+    if (uncompressedBytes > 1024 * 1024 * 1024) {
+      return res.status(413).json({ error: 'Expanded PNG sequence exceeds the 1 GB limit' })
+    }
+
+    await execFileAsync('unzip', ['-j', '-q', archivePath, '-d', workDir], { timeout: 120_000 })
+    const extractedFrames = readdirSync(workDir)
+      .filter((entry) => /\.png$/i.test(entry))
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
+
+    if (extractedFrames.length !== frameEntries.length) {
+      return res.status(400).json({ error: 'Could not extract every PNG frame' })
+    }
+
+    const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])
+    let extractedBytes = 0
+    extractedFrames.forEach((frame, index) => {
+      const framePath = join(workDir, frame)
+      const stats = statSync(framePath)
+      extractedBytes += stats.size
+      if (extractedBytes > 1024 * 1024 * 1024) throw new Error('Expanded PNG sequence exceeds the 1 GB limit')
+      const signature = readFileSync(framePath).subarray(0, 8)
+      if (!signature.equals(pngSignature)) throw new Error('A sequence frame is not a valid PNG')
+      const stagedPath = join(workDir, `frame-${String(index).padStart(6, '0')}.png`)
+      if (framePath !== stagedPath) copyFileSync(framePath, stagedPath)
+    })
+
+    const outputName = filename.replace(/\.zip$/i, '.mov')
+    const outputPath = join(VIDEO_DIR, outputName)
+    await execFileAsync('ffmpeg', [
+      '-framerate', String(fps),
+      '-start_number', '0',
+      '-i', join(workDir, 'frame-%06d.png'),
+      '-an',
+      '-c:v', 'qtrle',
+      '-pix_fmt', 'argb',
+      '-movflags', '+faststart',
+      '-y', outputPath,
+    ], { timeout: 300_000, maxBuffer: 8 * 1024 * 1024 })
+
+    unlinkSync(archivePath)
+    const outputStats = statSync(outputPath)
+    res.json({ success: true, filename: outputName, path: outputPath, frames: extractedFrames.length, fps, size: outputStats.size })
+  } catch (error) {
+    console.error('[2MStream] PNG sequence conversion failed:', error.message)
+    res.status(500).json({ error: 'PNG sequence conversion failed' })
+  } finally {
+    rmSync(workDir, { recursive: true, force: true })
   }
 })
 
@@ -779,7 +909,7 @@ function buildFFmpegArgs(inputArgs, overlayResult, rtmpTarget) {
  * Plays one file at a time. When a file finishes (exit code 0), starts the next.
  * Each file gets a clean FFmpeg process -- no concat demuxer, no H264 boundary errors.
  */
-function startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop, tempFiles, resumePosition = null) {
+function startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop, tempFiles, resumePosition = null, timeZone) {
   const rtmpTarget = `${dest.rtmpUrl}/${dest.streamKey}`
   // Resume from saved position if available
   let currentIndex = resumePosition?.fileIndex || 0
@@ -832,7 +962,7 @@ function startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop,
 
     console.log(`[2MStream] Playing file ${currentIndex + 1}/${videoSources.length}: ${source.title || source.path || source.url}${currentSeekTime > 0 ? ` (from ${Math.floor(currentSeekTime)}s)` : ''}`)
 
-    const proc = spawn('ffmpeg', ffmpegArgs, { stdio: ['pipe', 'pipe', 'pipe'] })
+    const proc = spawnFfmpeg(ffmpegArgs, timeZone)
     currentProc = proc
 
     // Update the procEntry in activeStreams so status checks work
@@ -1016,6 +1146,7 @@ app.post('/start', async (req, res) => {
   }
 
   // Build overlay filters
+  const timeZone = getOverlayTimeZone(overlays || [])
   const overlayResult = buildOverlayFilters(overlays)
 
   const processes = []
@@ -1039,7 +1170,7 @@ app.post('/start', async (req, res) => {
       const procEntry = { proc: dummyProc, destId: dest.id, killed: false, restartCount: 0 }
       processes.push(procEntry)
 
-      const controller = startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop, tempFiles)
+      const controller = startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop, tempFiles, null, timeZone)
       playlistControllers.push(controller)
 
     } else if (isRtmpPull && rtmpPullUrl) {
@@ -1050,7 +1181,7 @@ app.post('/start', async (req, res) => {
       const inputArgs = ['-rw_timeout', '10000000', '-i', rtmpPullUrl]
       const ffmpegArgs = buildFFmpegArgs(inputArgs, overlayResult, rtmpTarget)
 
-      const proc = spawn('ffmpeg', ffmpegArgs, { stdio: ['pipe', 'pipe', 'pipe'] })
+      const proc = spawnFfmpeg(ffmpegArgs, timeZone)
       const procEntry = { proc, destId: dest.id, killed: false, restartCount: 0, hasProducedFrames: false }
       proc.stderr.on('data', (data) => {
         const msg = data.toString()
@@ -1061,7 +1192,7 @@ app.post('/start', async (req, res) => {
       })
 
       // Auto-restart for RTMP pull (source may disconnect temporarily)
-      setupAutoRestart(streamId, dest.id, ffmpegArgs, procEntry)
+      setupAutoRestart(streamId, dest.id, ffmpegArgs, procEntry, timeZone)
       proc.on('error', (err) => {
         console.error(`[2MStream] FFmpeg spawn error: ${err.message}`)
         errors.push({ destinationId: dest.id, error: err.message })
@@ -1090,13 +1221,13 @@ app.post('/start', async (req, res) => {
         processes.push(procEntry)
 
         const singleSource = [source || { url: videoUrl, path: videoPath }]
-        const controller = startPlaylistForDest(streamId, dest, singleSource, overlayResult, true, tempFiles)
+        const controller = startPlaylistForDest(streamId, dest, singleSource, overlayResult, true, tempFiles, null, timeZone)
         playlistControllers.push(controller)
       } else {
         const inputArgs = ['-re', '-i', inputSource]
         const ffmpegArgs = buildFFmpegArgs(inputArgs, overlayResult, rtmpTarget)
 
-        const proc = spawn('ffmpeg', ffmpegArgs, { stdio: ['pipe', 'pipe', 'pipe'] })
+        const proc = spawnFfmpeg(ffmpegArgs, timeZone)
         const procEntry = { proc, destId: dest.id, killed: false, restartCount: 0, hasProducedFrames: false }
         proc.stderr.on('data', (data) => {
           const msg = data.toString()
@@ -1178,7 +1309,7 @@ app.post('/start', async (req, res) => {
  * Auto-restart for non-playlist streams (RTMP pull, single video no-loop).
  * For playlists, the sequential player handles its own restarts.
  */
-function setupAutoRestart(streamId, destId, ffmpegArgs, procEntry) {
+function setupAutoRestart(streamId, destId, ffmpegArgs, procEntry, timeZone) {
   procEntry.proc.on('close', (code) => {
     console.log(`[2MStream] FFmpeg for ${streamId}/${destId} exited code=${code}`)
     const streamEntry = activeStreams.get(streamId)
@@ -1194,7 +1325,7 @@ function setupAutoRestart(streamId, destId, ffmpegArgs, procEntry) {
       const current = activeStreams.get(streamId)
       if (!current || current.stopping) return
       try {
-        const newProc = spawn('ffmpeg', ffmpegArgs, { stdio: ['pipe', 'pipe', 'pipe'] })
+        const newProc = spawnFfmpeg(ffmpegArgs, timeZone)
         newProc.stderr.on('data', (d) => {
           const m = d.toString()
           if (m.includes('Error') || m.includes('error')) console.log(`[FFmpeg ${streamId}/${destId}] ${m.trim()}`)
@@ -1202,7 +1333,7 @@ function setupAutoRestart(streamId, destId, ffmpegArgs, procEntry) {
         newProc.on('error', (err) => console.error(`[2MStream] FFmpeg spawn error: ${err.message}`))
         procEntry.proc = newProc
         procEntry.killed = false
-        setupAutoRestart(streamId, destId, ffmpegArgs, procEntry)
+        setupAutoRestart(streamId, destId, ffmpegArgs, procEntry, timeZone)
       } catch (e) {
         console.error(`[2MStream] Restart failed: ${e.message}`)
       }
@@ -1280,6 +1411,7 @@ app.post('/preview', async (req, res) => {
     }
   }
 
+  const timeZone = getOverlayTimeZone(overlays || [])
   const overlayResult = buildOverlayFilters(overlays || [])
 
   let ffmpegArgs = [...inputArgs]
@@ -1305,7 +1437,7 @@ app.post('/preview', async (req, res) => {
 
   console.log(`[2MStream] Generating preview ${previewId}`)
 
-  const proc = spawn('ffmpeg', ffmpegArgs, { stdio: ['pipe', 'pipe', 'pipe'] })
+  const proc = spawnFfmpeg(ffmpegArgs, timeZone)
   let stderr = ''
   proc.stderr.on('data', (data) => { stderr += data.toString() })
 
@@ -1395,6 +1527,7 @@ app.post('/restart', async (req, res) => {
     }
   }
 
+  const timeZone = getOverlayTimeZone(updatedConfig.overlays || [])
   const overlayResult = buildOverlayFilters(updatedConfig.overlays)
   const processes = []
   const playlistControllers = []
@@ -1412,21 +1545,21 @@ app.post('/restart', async (req, res) => {
       const procEntry = { proc: dummyProc, destId: dest.id, killed: false, restartCount: 0 }
       processes.push(procEntry)
 
-      const controller = startPlaylistForDest(streamId, dest, sources, overlayResult, updatedConfig.loop, tempFiles, resumePosition)
+      const controller = startPlaylistForDest(streamId, dest, sources, overlayResult, updatedConfig.loop, tempFiles, resumePosition, timeZone)
       playlistControllers.push(controller)
 
     } else if (updatedConfig.isRtmpPull && updatedConfig.rtmpPullUrl) {
       const inputArgs = ['-rw_timeout', '10000000', '-i', updatedConfig.rtmpPullUrl]
       const ffmpegArgs = buildFFmpegArgs(inputArgs, overlayResult, rtmpTarget)
 
-      const proc = spawn('ffmpeg', ffmpegArgs, { stdio: ['pipe', 'pipe', 'pipe'] })
+      const proc = spawnFfmpeg(ffmpegArgs, timeZone)
       proc.stderr.on('data', (data) => {
         const msg = data.toString()
         if (msg.includes('Error') || msg.includes('error')) console.log(`[FFmpeg ${streamId}/${dest.id}] ${msg.trim()}`)
       })
 
       const procEntry = { proc, destId: dest.id, killed: false, restartCount: 0 }
-      setupAutoRestart(streamId, dest.id, ffmpegArgs, procEntry)
+      setupAutoRestart(streamId, dest.id, ffmpegArgs, procEntry, timeZone)
       processes.push(procEntry)
 
     } else {
@@ -1435,7 +1568,7 @@ app.post('/restart', async (req, res) => {
       const inputArgs = ['-re', '-i', inputSource]
       const ffmpegArgs = buildFFmpegArgs(inputArgs, overlayResult, rtmpTarget)
 
-      const proc = spawn('ffmpeg', ffmpegArgs, { stdio: ['pipe', 'pipe', 'pipe'] })
+      const proc = spawnFfmpeg(ffmpegArgs, timeZone)
       proc.stderr.on('data', (data) => {
         const msg = data.toString()
         if (msg.includes('Error') || msg.includes('error')) console.log(`[FFmpeg ${streamId}/${dest.id}] ${msg.trim()}`)

@@ -4,7 +4,7 @@ export type StreamStatus = "pending" | "live" | "completed" | "error" | "stopped
 export type Platform = "youtube" | "facebook" | "twitch" | "custom"
 export type RepeatMode = "none" | "daily" | "weekly" | "monthly"
 export type EventStatus = "idle" | "pending" | "scheduled" | "running" | "completed" | "cancelled" | "error"
-export type OverlayType = "logo" | "bug" | "lower_third" | "text" | "image" | "video" | "scrolling_text"
+export type OverlayType = "logo" | "bug" | "lower_third" | "text" | "image" | "video" | "scrolling_text" | "clock"
 export type OverlayPosition = "top-left" | "top-right" | "top-center" | "bottom-left" | "bottom-right" | "bottom-center" | "center"
 
 export interface Video {
