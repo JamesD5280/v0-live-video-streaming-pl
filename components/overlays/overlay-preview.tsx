@@ -113,8 +113,8 @@ const engineLayerOrder: Partial<Record<Overlay["type"], number>> = {
   image: 0,
   scrolling_text: 1,
   text: 2,
-  clock: 3,
-  video: 4,
+  video: 3,
+  clock: 4,
 }
 
 function VideoOverlayPreview({
