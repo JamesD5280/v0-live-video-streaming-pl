@@ -180,6 +180,25 @@ function spawnFfmpeg(args, timeZone) {
   return spawn('ffmpeg', args, options)
 }
 
+function recordFfmpegStderr(procEntry, chunk) {
+  procEntry.ffmpegStderrTail = `${procEntry.ffmpegStderrTail || ''}${chunk.toString()}`.slice(-4096)
+}
+
+function getSafeFfmpegDiagnostic(procEntry) {
+  return String(procEntry.ffmpegStderrTail || '')
+    .replace(/\r/g, '\n')
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => /error|invalid|failed|not found|no such file|unable|could not|cannot|refused|timed out|forbidden|\b40[134]\b/i.test(line))
+    .map(line => line
+      .replace(/(?:https?|rtmps?):\/\/[^\s'"<>]+/gi, '[URL redacted]')
+      .replace(/\b((?:token|secret|password|stream[_-]?key)\b\s*[=:]\s*)[^\s,;]+/gi, '$1[redacted]')
+      .replace(/\b(Bearer\s+)[^\s,;]+/gi, '$1[redacted]'))
+    .slice(-8)
+    .join('\n')
+    .slice(-1200)
+}
+
 function formatFfmpegColor(value, opacity = 100, fallback = 'white') {
   let color = typeof value === 'string' ? value.trim() : ''
   let intrinsicAlpha = 1
@@ -983,6 +1002,8 @@ function startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop,
         pe.proc = proc
         pe.killed = false
         pe.hasProducedFrames = false
+        pe.ffmpegStderrTail = ''
+        pe.spawnError = undefined
       }
     }
 
@@ -991,6 +1012,7 @@ function startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop,
       const msg = data.toString()
       const currentEntry = activeStreams.get(streamId)
       const trackedProcess = currentEntry?.processes.find(p => p.destId === dest.id)
+      if (trackedProcess) recordFfmpegStderr(trackedProcess, data)
       if (trackedProcess && /\bframe=\s*\d+/.test(msg)) trackedProcess.hasProducedFrames = true
       if (msg.includes('Error') || msg.includes('error') || msg.includes('No such file') || msg.includes('Invalid')) {
         console.log(`[FFmpeg ${streamId}/${dest.id}] ${msg.trim()}`)
@@ -1004,6 +1026,9 @@ function startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop,
     })
 
     proc.on('error', (err) => {
+      const currentEntry = activeStreams.get(streamId)
+      const trackedProcess = currentEntry?.processes.find(p => p.destId === dest.id)
+      if (trackedProcess) trackedProcess.spawnError = err.message
       console.error(`[2MStream] FFmpeg spawn error: ${err.message}`)
     })
 
@@ -1195,6 +1220,7 @@ app.post('/start', async (req, res) => {
       const procEntry = { proc, destId: dest.id, killed: false, restartCount: 0, hasProducedFrames: false }
       proc.stderr.on('data', (data) => {
         const msg = data.toString()
+        recordFfmpegStderr(procEntry, data)
         if (/\bframe=\s*\d+/.test(msg)) procEntry.hasProducedFrames = true
         if (msg.includes('Error') || msg.includes('error') || msg.includes('Opening')) {
           console.log(`[FFmpeg ${streamId}/${dest.id}] ${msg.trim()}`)
@@ -1241,12 +1267,14 @@ app.post('/start', async (req, res) => {
         const procEntry = { proc, destId: dest.id, killed: false, restartCount: 0, hasProducedFrames: false }
         proc.stderr.on('data', (data) => {
           const msg = data.toString()
+          recordFfmpegStderr(procEntry, data)
           if (/\bframe=\s*\d+/.test(msg)) procEntry.hasProducedFrames = true
           if (msg.includes('Error') || msg.includes('error')) {
             console.log(`[FFmpeg ${streamId}/${dest.id}] ${msg.trim()}`)
           }
         })
         proc.on('error', (err) => {
+          procEntry.spawnError = err.message
           errors.push({ destinationId: dest.id, error: err.message })
         })
         processes.push(procEntry)
@@ -1286,13 +1314,16 @@ app.post('/start', async (req, res) => {
   if (activeProcesses.length === 0 && !producedFrames) {
     const processErrors = startedStream?.processes.map(p => ({
       destinationId: p.destId,
-      error: p.proc?.exitCode !== null && p.proc?.exitCode !== undefined
-        ? `FFmpeg exited with code ${p.proc.exitCode}`
-        : p.proc?.signalCode
-          ? `FFmpeg stopped by ${p.proc.signalCode}`
-          : 'FFmpeg did not start',
+      error: p.spawnError
+        ? `FFmpeg failed to start: ${p.spawnError}`
+        : p.proc?.exitCode !== null && p.proc?.exitCode !== undefined
+          ? `FFmpeg exited with code ${p.proc.exitCode}`
+          : p.proc?.signalCode
+            ? `FFmpeg stopped by ${p.proc.signalCode}`
+            : 'FFmpeg did not start',
       exitCode: p.proc?.exitCode ?? null,
       signal: p.proc?.signalCode ?? null,
+      diagnostic: getSafeFfmpegDiagnostic(p) || undefined,
     })) || []
     stopStream(streamId)
     return res.status(502).json({
