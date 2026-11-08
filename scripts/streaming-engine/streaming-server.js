@@ -21,7 +21,7 @@ import express from 'express'
 import cors from 'cors'
 import { spawn, execFile } from 'child_process'
 import { existsSync, writeFileSync, unlinkSync, mkdirSync, readdirSync, statSync, lstatSync, createWriteStream, createReadStream, rmdirSync, copyFileSync, mkdtempSync, rmSync, openSync, readSync, closeSync } from 'fs'
-import { join, basename, dirname } from 'path'
+import { join, basename, dirname, extname } from 'path'
 import { fileURLToPath } from 'url'
 import { tmpdir } from 'os'
 import { pipeline } from 'stream/promises'
@@ -425,8 +425,14 @@ function buildOverlayFilters(overlays) {
       currentLabel = outputLabel
       inputIndex++
     } else if (overlay.imagePath) {
-      // -loop 1 makes image repeat infinitely, -framerate matches output
-      inputArgs.push('-loop', '1', '-framerate', '30', '-i', overlay.imagePath)
+      const imageExtension = extname(overlay.imagePath).toLowerCase()
+      const usesAnimatedImageDemuxer = ['.gif', '.webp', '.apng'].includes(imageExtension)
+
+      if (usesAnimatedImageDemuxer) {
+        inputArgs.push('-stream_loop', '-1', '-i', overlay.imagePath)
+      } else {
+        inputArgs.push('-loop', '1', '-framerate', '30', '-i', overlay.imagePath)
+      }
       
       const scalePercent = overlay.sizePercent || 20
       const opacityValue = (overlay.opacity || 100) / 100
