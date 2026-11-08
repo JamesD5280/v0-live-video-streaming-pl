@@ -63,7 +63,7 @@ function getFontStyle(overlay: Overlay): React.CSSProperties {
     times: "Times New Roman, serif",
     courier: "Courier New, monospace",
   }
-  const weight = overlay.font_weight || "normal"
+  const weight = overlay.font_weight || (overlay.type === "scrolling_text" ? "bold" : "normal")
 
   return {
     fontFamily: familyMap[family] || familyMap.sans,
@@ -74,7 +74,10 @@ function getFontStyle(overlay: Overlay): React.CSSProperties {
 
 function getPositionStyle(overlay: Overlay): React.CSSProperties {
   // Use X/Y percentage positioning if available
-  if (overlay.position_x !== undefined && overlay.position_y !== undefined) {
+  if (
+    overlay.position_x !== undefined && overlay.position_x !== null &&
+    overlay.position_y !== undefined && overlay.position_y !== null
+  ) {
     return {
       left: `${overlay.position_x}%`,
       top: `${overlay.position_y}%`,
@@ -624,9 +627,13 @@ export function OverlayPreview({
             ...(isTicker ? { height: `${(fontSize + 16) * 100 / 1920}cqw` } : {}),
           }
 
-          if (!isTicker && !isTextOverlay && measuredBounds) {
-            const x = overlay.position_x ?? 50
-            const y = overlay.position_y ?? 50
+          if (
+            !isTicker && !isTextOverlay && measuredBounds &&
+            overlay.position_x !== undefined && overlay.position_x !== null &&
+            overlay.position_y !== undefined && overlay.position_y !== null
+          ) {
+            const x = overlay.position_x
+            const y = overlay.position_y
             overlayStyle.left = `${Math.max(0, Math.min(100 - measuredBounds.widthPercent, x - measuredBounds.widthPercent / 2))}%`
             overlayStyle.top = `${Math.max(0, Math.min(100 - measuredBounds.heightPercent, y - measuredBounds.heightPercent / 2))}%`
             overlayStyle.transform = "none"

@@ -889,7 +889,14 @@ export function OverlayManager() {
 
               <div className="space-y-2">
                 <Label>Overlay Type</Label>
-                <Select value={type} onValueChange={(v) => setType(v as OverlayType)}>
+                <Select
+                        value={type}
+                        onValueChange={(value) => {
+                          const nextType = value as OverlayType
+                          setType(nextType)
+                          if (!editingId && nextType === "scrolling_text") setFontWeight("bold")
+                        }}
+                      >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -1232,7 +1239,7 @@ export function OverlayManager() {
                 "font-medium",
                 canvasSaveState === "error" ? "text-destructive" : canvasSaveState === "saved" ? "text-primary" : "text-muted-foreground",
               )}>
-                {canvasSaveState === "saving" ? "Saving layout…" : canvasSaveState === "saved" ? "Changes saved" : canvasSaveState === "error" ? "Save failed" : canvasSaveState === "editing" ? "Unsaved position changes" : "Ready to edit"}
+                {canvasSaveState === "saving" ? "Saving layout…" : canvasSaveState === "saved" ? "Saved; apply to live streams to publish" : canvasSaveState === "error" ? "Save failed" : canvasSaveState === "editing" ? "Unsaved position changes" : "Ready to edit"}
               </span>
               <span className="rounded border border-border px-2 py-1 font-mono text-[10px] text-muted-foreground">1920 × 1080</span>
             </div>
