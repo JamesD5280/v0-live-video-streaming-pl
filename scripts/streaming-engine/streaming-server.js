@@ -371,7 +371,11 @@ function buildOverlayFilters(overlays) {
       const clockBox = hasTransparentBackground
         ? ''
         : `:box=1:boxcolor=${formatFfmpegColor(overlay.bgColor || 'black', overlay.opacity ?? 100, 'black')}:boxborderw=8`
-      const clockText = '%{localtime\\:%H\\:%M\\:%S %Z}'
+      // Use the default localtime expansion to avoid nested strftime escaping.
+      const clockText = '%{localtime}'
+      console.log(
+        `[2MStream] Clock render: size=${fontSize}, color=${fontColor}, opacity=${overlay.opacity ?? 100}, font=${fontFile ? basename(fontFile) : 'fontconfig'}, x=${textX}, y=${textY}`,
+      )
       filters.push(
         `[${currentLabel}]drawtext=text='${clockText}':${fontParam}:fontsize=${fontSize}:fontcolor=${fontColor}:x=${textX}:y=${textY}${clockBox}[${outputLabel}]`
       )
