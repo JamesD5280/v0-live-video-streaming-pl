@@ -305,6 +305,8 @@ export default function SettingsPage() {
 # Download the latest streaming server
 curl -L "${typeof window !== "undefined" ? window.location.origin : ""}/api/download-server" -o streaming-server.js
 curl -L "${typeof window !== "undefined" ? window.location.origin : ""}/api/download-server?file=package.json" -o package.json
+mkdir -p fonts
+curl -L "${typeof window !== "undefined" ? window.location.origin : ""}/api/download-server?file=Viga-Regular.ttf" -o fonts/Viga-Regular.ttf
 npm install
 # Restart the server (using pm2 or systemd)
 pm2 restart streaming-server || node streaming-server.js`}

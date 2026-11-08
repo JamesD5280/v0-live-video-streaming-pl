@@ -21,7 +21,8 @@ import express from 'express'
 import cors from 'cors'
 import { spawn, execFile } from 'child_process'
 import { existsSync, writeFileSync, unlinkSync, mkdirSync, readdirSync, statSync, lstatSync, createWriteStream, createReadStream, rmdirSync, copyFileSync, mkdtempSync, rmSync, openSync, readSync, closeSync } from 'fs'
-import { join, basename } from 'path'
+import { join, basename, dirname } from 'path'
+import { fileURLToPath } from 'url'
 import { tmpdir } from 'os'
 import { pipeline } from 'stream/promises'
 import { Readable } from 'stream'
@@ -109,12 +110,15 @@ async function downloadToTemp(url) {
   return filePath
 }
 
+const ENGINE_DIRECTORY = dirname(fileURLToPath(import.meta.url))
+const VIGA_FONT_FILE = join(ENGINE_DIRECTORY, 'fonts', 'Viga-Regular.ttf')
+
 const FONT_FILES = {
   viga: {
-    normal: '/app/fonts/Viga-Regular.ttf',
-    bold: '/app/fonts/Viga-Regular.ttf',
-    italic: '/app/fonts/Viga-Regular.ttf',
-    'bold-italic': '/app/fonts/Viga-Regular.ttf',
+    normal: VIGA_FONT_FILE,
+    bold: VIGA_FONT_FILE,
+    italic: VIGA_FONT_FILE,
+    'bold-italic': VIGA_FONT_FILE,
   },
   sans: {
     normal: '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
@@ -157,7 +161,11 @@ const FONT_FILES = {
 function getFontFile(family, weight) {
   const files = Object.hasOwn(FONT_FILES, family) ? FONT_FILES[family] : FONT_FILES.sans
   const face = Object.hasOwn(files, weight) ? weight : 'normal'
-  return files[face]
+  const requestedFont = files[face] || files.normal
+  if (requestedFont && existsSync(requestedFont)) return requestedFont
+
+  const fallbackFonts = [files.normal, FONT_FILES.sans[face], FONT_FILES.sans.normal]
+  return fallbackFonts.find(fontPath => fontPath && existsSync(fontPath)) || null
 }
 
 function getOverlayTimeZone(overlays = []) {
@@ -286,7 +294,7 @@ function buildOverlayFilters(overlays) {
       const bgColor = formatFfmpegColor(bgColorValue, overlay.opacity ?? 100, 'black')
       const speed = Math.max(1, Math.min(500, Number(overlay.scrollSpeed) || 20))
       const fontFile = getFontFile(overlay.fontFamily, overlay.fontWeight)
-      const fontParam = `fontfile='${fontFile}'`
+      const fontParam = fontFile ? `fontfile='${fontFile}'` : "font='Sans'"
 
       const barHeight = fontSize + 16
 
@@ -344,7 +352,7 @@ function buildOverlayFilters(overlays) {
       const fontSize = Math.max(12, Math.min(120, Number(overlay.fontSize) || 32))
       const fontColor = formatFfmpegColor(overlay.fontColor || 'white', overlay.opacity ?? 100, 'white')
       const fontFile = getFontFile(overlay.fontFamily, overlay.fontWeight)
-      const fontParam = `fontfile='${fontFile}'`
+      const fontParam = fontFile ? `fontfile='${fontFile}'` : "font='Sans'"
       let textX, textY
       if (overlay.positionX !== undefined && overlay.positionY !== undefined) {
         textX = `w*${overlay.positionX / 100}-tw/2`
@@ -367,7 +375,7 @@ function buildOverlayFilters(overlays) {
       const fontSize = Math.max(12, Math.min(120, Number(overlay.fontSize) || 24))
       const fontColor = formatFfmpegColor(overlay.fontColor || 'white', overlay.opacity ?? 100, 'white')
       const txtFontFile = getFontFile(overlay.fontFamily, overlay.fontWeight)
-      const txtFontParam = `fontfile='${txtFontFile}'`
+      const txtFontParam = txtFontFile ? `fontfile='${txtFontFile}'` : "font='Sans'"
       
       if (overlay.type === 'lower_third') {
         const bgColor = formatFfmpegColor(overlay.bgColor || 'black', overlay.opacity ?? 100, 'black')
