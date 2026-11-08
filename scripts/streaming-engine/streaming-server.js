@@ -193,11 +193,17 @@ function recordFfmpegStderr(procEntry, chunk) {
 }
 
 function getSafeFfmpegDiagnostic(procEntry) {
-  return String(procEntry.ffmpegStderrTail || '')
+  const lines = String(procEntry?.ffmpegStderrTail || '')
     .replace(/\r/g, '\n')
     .split('\n')
     .map(line => line.trim())
-    .filter(line => /error|invalid|failed|not found|no such file|unable|could not|cannot|refused|timed out|forbidden|\b40[134]\b/i.test(line))
+    .filter(Boolean)
+  const errorLines = lines.filter(line => /error|invalid|failed|not found|no such file|unable|could not|cannot|refused|timed out|forbidden|\b40[134]\b/i.test(line))
+  const diagnosticLines = errorLines.length > 0
+    ? errorLines
+    : lines.filter(line => !/frame=\s*\d+/i.test(line))
+
+  return diagnosticLines
     .map(line => line
       .replace(/(?:https?|rtmps?):\/\/[^\s'"<>]+/gi, '[URL redacted]')
       .replace(/\b((?:token|secret|password|stream[_-]?key)\b\s*[=:]\s*)[^\s,;]+/gi, '$1[redacted]')
@@ -427,6 +433,7 @@ function buildOverlayFilters(overlays) {
     } else if (overlay.imagePath) {
       const imageExtension = extname(overlay.imagePath).toLowerCase()
       const usesAnimatedImageDemuxer = ['.gif', '.webp', '.apng'].includes(imageExtension)
+      console.log(`[2MStream] Image overlay input: ${imageExtension || '(no extension)'} via ${usesAnimatedImageDemuxer ? 'stream loop' : 'image2 loop'}`)
 
       if (usesAnimatedImageDemuxer) {
         inputArgs.push('-stream_loop', '-1', '-i', overlay.imagePath)
@@ -1065,6 +1072,10 @@ function startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop,
         restartCount = 0
         setTimeout(advanceToNext, 2000)
       } else {
+        const failedProcess = entry.processes.find(p => p.destId === dest.id)
+        const diagnostic = getSafeFfmpegDiagnostic(failedProcess)
+        if (diagnostic) console.error(`[FFmpeg ${streamId}/${dest.id}] stderr:\n${diagnostic}`)
+
         // FFmpeg crashed early -- retry same file, skip after 10 failures
         restartCount++
         if (restartCount > 10) {
@@ -1700,6 +1711,6 @@ process.on('SIGINT', () => {
 app.listen(PORT, () => {
   console.log(`[2MStream] Streaming engine listening on port ${PORT}`)
   console.log(`[2MStream] Video directory: ${VIDEO_DIR}`)
-  console.log(`[2MStream] Supports: playlists (sequential), overlays (image + video + text), multi-destination`)
+  console.log(`[2MStream] Supports: playlists, overlays (image/video/text/clock/scrolling text; GIF/WebP/APNG), multi-destination`)
   console.log(`[2MStream] Waiting for stream commands...`)
 })
