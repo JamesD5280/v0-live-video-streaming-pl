@@ -23,6 +23,8 @@ import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/theme-toggle"
+import { LanguageToggle } from "@/components/language-toggle"
+import { useLanguage } from "@/components/language-provider"
 import type { Stream } from "@/lib/store"
 
 const navigation = [
@@ -47,6 +49,7 @@ interface AppSidebarProps {
 export function AppSidebar({ userEmail, displayName, liveStreams = [] }: AppSidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
+  const { t } = useLanguage()
   const [mobileOpen, setMobileOpen] = useState(false)
 
   // Close mobile sidebar on route change
@@ -86,7 +89,7 @@ export function AppSidebar({ userEmail, displayName, liveStreams = [] }: AppSide
           className="h-8 w-8 lg:hidden text-muted-foreground hover:text-foreground"
         >
           <X className="h-5 w-5" />
-          <span className="sr-only">Close menu</span>
+          <span className="sr-only">{t("Close menu")}</span>
         </Button>
       </div>
 
@@ -110,7 +113,7 @@ export function AppSidebar({ userEmail, displayName, liveStreams = [] }: AppSide
               )}
             >
               <item.icon className="h-4 w-4" />
-              {item.name}
+              {t(item.name)}
             </Link>
           )
         })}
@@ -122,10 +125,10 @@ export function AppSidebar({ userEmail, displayName, liveStreams = [] }: AppSide
             <div className="flex items-center gap-2">
               <div className="h-2 w-2 rounded-full bg-success animate-pulse" />
               <span className="text-xs font-medium text-foreground">
-                {liveCount} Stream{liveCount > 1 ? "s" : ""} Live
+                {liveCount} {t(liveCount > 1 ? "Streams Live" : "Stream Live")}
               </span>
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">Cloud server active</p>
+              <p className="mt-1 text-xs text-muted-foreground">{t("Cloud server active")}</p>
           </div>
         </div>
       )}
@@ -134,13 +137,14 @@ export function AppSidebar({ userEmail, displayName, liveStreams = [] }: AppSide
         <div className="flex items-center justify-between">
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium text-foreground">
-              {displayName || "User"}
+              {displayName || t("User")}
             </p>
             <p className="truncate text-xs text-muted-foreground">
               {userEmail || ""}
             </p>
           </div>
           <div className="flex items-center gap-1">
+            <LanguageToggle />
             <ThemeToggle />
             <Button
               variant="ghost"
@@ -149,7 +153,7 @@ export function AppSidebar({ userEmail, displayName, liveStreams = [] }: AppSide
               className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
             >
               <LogOut className="h-4 w-4" />
-              <span className="sr-only">Sign out</span>
+              <span className="sr-only">{t("Sign out")}</span>
             </Button>
           </div>
         </div>
@@ -168,7 +172,7 @@ export function AppSidebar({ userEmail, displayName, liveStreams = [] }: AppSide
           className="h-9 w-9 text-muted-foreground hover:text-foreground"
         >
           <Menu className="h-5 w-5" />
-          <span className="sr-only">Open menu</span>
+          <span className="sr-only">{t("Open menu")}</span>
         </Button>
         <Image
           src="/images/2mstream-logo.png"
@@ -180,7 +184,7 @@ export function AppSidebar({ userEmail, displayName, liveStreams = [] }: AppSide
         {liveCount > 0 && (
           <div className="ml-auto flex items-center gap-1.5">
             <div className="h-2 w-2 rounded-full bg-success animate-pulse" />
-            <span className="text-xs font-medium text-foreground">{liveCount} Live</span>
+            <span className="text-xs font-medium text-foreground">{liveCount} {t("Live")}</span>
           </div>
         )}
       </div>

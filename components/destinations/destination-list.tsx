@@ -26,6 +26,7 @@ import { type Destination, type Platform, platformRtmpUrls } from "@/lib/store"
 import { fetcher } from "@/lib/fetcher"
 import { Plus, Trash2, Eye, EyeOff, Globe, Loader2, Pencil } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useLanguage } from "@/components/language-provider"
 
 const platformConfig: Record<Platform, { label: string; abbr: string; color: string }> = {
   youtube: { label: "YouTube", abbr: "YT", color: "bg-red-500/10 text-red-400 border-red-500/20" },
@@ -35,6 +36,7 @@ const platformConfig: Record<Platform, { label: string; abbr: string; color: str
 }
 
 export function DestinationList() {
+  const { t } = useLanguage()
   const { data: destinations, error: fetchError, mutate } = useSWR<Destination[]>("/api/destinations", fetcher)
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({})
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -114,8 +116,8 @@ export function DestinationList() {
     return (
       <div className="rounded-lg border border-dashed border-border p-12 text-center">
         <Globe className="mx-auto h-10 w-10 text-destructive" />
-        <p className="mt-3 text-sm font-medium text-foreground">Failed to load destinations</p>
-        <p className="mt-1 text-xs text-muted-foreground">Please try refreshing the page</p>
+        <p className="mt-3 text-sm font-medium text-foreground">{t("Failed to load destinations")}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{t("Please try refreshing the page")}</p>
       </div>
     )
   }
@@ -132,25 +134,25 @@ export function DestinationList() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-base font-semibold text-foreground">Streaming Destinations</h2>
+          <h2 className="text-base font-semibold text-foreground">{t("Streaming Destinations")}</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Configure where your videos will be streamed. Enable or disable destinations per stream.
+            {t("Configure where your videos will be streamed. Enable or disable destinations per stream.")}
           </p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button size="sm" className="gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90">
               <Plus className="h-3.5 w-3.5" />
-              Add Destination
+              {t("Add Destination")}
             </Button>
           </DialogTrigger>
           <DialogContent className="bg-card border-border">
             <DialogHeader>
-              <DialogTitle className="text-foreground">Add Streaming Destination</DialogTitle>
+              <DialogTitle className="text-foreground">{t("Add Streaming Destination")}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label className="text-foreground">Platform</Label>
+                <Label className="text-foreground">{t("Platform")}</Label>
                 <Select
                   value={newDest.platform}
                   onValueChange={(val: Platform) =>
@@ -168,21 +170,21 @@ export function DestinationList() {
                     <SelectItem value="youtube">YouTube</SelectItem>
                     <SelectItem value="twitch">Twitch</SelectItem>
                     <SelectItem value="facebook">Facebook</SelectItem>
-                    <SelectItem value="custom">Custom RTMP</SelectItem>
+                    <SelectItem value="custom">{t("Custom RTMP")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label className="text-foreground">Display Name</Label>
+                <Label className="text-foreground">{t("Display Name")}</Label>
                 <Input
                   value={newDest.name}
                   onChange={(e) => setNewDest({ ...newDest, name: e.target.value })}
-                  placeholder="My YouTube Channel"
+                  placeholder={t("My YouTube Channel")}
                   className="bg-secondary border-border text-foreground"
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-foreground">Server URL</Label>
+                <Label className="text-foreground">{t("Server URL")}</Label>
                 <Input
                   value={newDest.rtmp_url}
                   onChange={(e) => setNewDest({ ...newDest, rtmp_url: e.target.value })}
@@ -191,11 +193,11 @@ export function DestinationList() {
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-foreground">Stream Key</Label>
+                <Label className="text-foreground">{t("Stream Key")}</Label>
                 <Input
                   value={newDest.stream_key}
                   onChange={(e) => setNewDest({ ...newDest, stream_key: e.target.value })}
-                  placeholder="Enter your stream key"
+                  placeholder={t("Enter your stream key")}
                   type="password"
                   className="bg-secondary border-border font-mono text-sm text-foreground"
                 />
@@ -206,7 +208,7 @@ export function DestinationList() {
                 className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Add Destination
+                {t("Add Destination")}
               </Button>
             </div>
           </DialogContent>
@@ -216,8 +218,8 @@ export function DestinationList() {
       {destinations.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border p-12 text-center">
           <Globe className="mx-auto h-10 w-10 text-muted-foreground" />
-          <p className="mt-3 text-sm font-medium text-foreground">No destinations yet</p>
-          <p className="mt-1 text-xs text-muted-foreground">Add your first streaming destination to get started</p>
+          <p className="mt-3 text-sm font-medium text-foreground">{t("No destinations yet")}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{t("Add your first streaming destination to get started")}</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -240,7 +242,7 @@ export function DestinationList() {
                         <div className="flex items-center gap-2">
                           <p className="text-sm font-medium text-foreground">{dest.name}</p>
                           <Badge variant="outline" className={cn("text-xs", config.color)}>
-                            {config.label}
+                            {t(config.label)}
                           </Badge>
                         </div>
                         <code className="mt-1 block text-xs font-mono text-muted-foreground">
@@ -248,7 +250,7 @@ export function DestinationList() {
                         </code>
                         <div className="mt-1 flex items-center gap-1">
                           <code className="text-xs font-mono text-muted-foreground">
-                            Key: {showKeys[dest.id] ? dest.stream_key : "****-****-****"}
+                            {t("Key")}: {showKeys[dest.id] ? dest.stream_key : "****-****-****"}
                           </code>
                           <Button
                             variant="ghost"
@@ -257,7 +259,7 @@ export function DestinationList() {
                             onClick={() => toggleShowKey(dest.id)}
                           >
                             {showKeys[dest.id] ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-                            <span className="sr-only">Toggle key visibility</span>
+                            <span className="sr-only">{t("Toggle key visibility")}</span>
                           </Button>
                         </div>
                       </div>
@@ -266,7 +268,7 @@ export function DestinationList() {
                       <Switch
                         checked={dest.enabled}
                         onCheckedChange={() => toggleEnabled(dest)}
-                        aria-label={`Toggle ${dest.name}`}
+                        aria-label={`${t("Toggle")} ${dest.name}`}
                       />
                       <Button
                         variant="ghost"
@@ -275,7 +277,7 @@ export function DestinationList() {
                         onClick={() => openEdit(dest)}
                       >
                         <Pencil className="h-4 w-4" />
-                        <span className="sr-only">Edit destination</span>
+                        <span className="sr-only">{t("Edit destination")}</span>
                       </Button>
                       <Button
                         variant="ghost"
@@ -284,7 +286,7 @@ export function DestinationList() {
                         onClick={() => removeDestination(dest.id)}
                       >
                         <Trash2 className="h-4 w-4" />
-                        <span className="sr-only">Delete destination</span>
+                        <span className="sr-only">{t("Delete destination")}</span>
                       </Button>
                     </div>
                   </div>
@@ -299,12 +301,12 @@ export function DestinationList() {
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
         <DialogContent className="bg-card border-border">
           <DialogHeader>
-            <DialogTitle className="text-foreground">Edit Destination</DialogTitle>
+            <DialogTitle className="text-foreground">{t("Edit Destination")}</DialogTitle>
           </DialogHeader>
           {editDest && (
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label className="text-foreground">Platform</Label>
+                <Label className="text-foreground">{t("Platform")}</Label>
                 <Select
                   value={editDest.platform}
                   onValueChange={(val: Platform) =>
@@ -322,12 +324,12 @@ export function DestinationList() {
                     <SelectItem value="youtube">YouTube</SelectItem>
                     <SelectItem value="twitch">Twitch</SelectItem>
                     <SelectItem value="facebook">Facebook</SelectItem>
-                    <SelectItem value="custom">Custom RTMP</SelectItem>
+                    <SelectItem value="custom">{t("Custom RTMP")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label className="text-foreground">Display Name</Label>
+                <Label className="text-foreground">{t("Display Name")}</Label>
                 <Input
                   value={editDest.name}
                   onChange={(e) => setEditDest({ ...editDest, name: e.target.value })}
@@ -335,7 +337,7 @@ export function DestinationList() {
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-foreground">Server URL</Label>
+                <Label className="text-foreground">{t("Server URL")}</Label>
                 <Input
                   value={editDest.rtmp_url}
                   onChange={(e) => setEditDest({ ...editDest, rtmp_url: e.target.value })}
@@ -343,7 +345,7 @@ export function DestinationList() {
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-foreground">Stream Key</Label>
+                <Label className="text-foreground">{t("Stream Key")}</Label>
                 <Input
                   value={editDest.stream_key}
                   onChange={(e) => setEditDest({ ...editDest, stream_key: e.target.value })}
@@ -358,14 +360,14 @@ export function DestinationList() {
                   className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90"
                 >
                   {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  Save Changes
+                  {t("Save Changes")}
                 </Button>
                 <Button
                   variant="outline"
                   className="border-border text-foreground"
                   onClick={() => setEditDialogOpen(false)}
                 >
-                  Cancel
+                  {t("Cancel")}
                 </Button>
               </div>
             </div>

@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { cn } from "@/lib/utils"
+import { useLanguage } from "@/components/language-provider"
 
 interface UploadFile {
   id: string
@@ -20,6 +21,7 @@ interface UploadFile {
 }
 
 export function VideoUpload({ onUploadComplete }: { onUploadComplete?: () => void }) {
+  const { t } = useLanguage()
   const [isDragging, setIsDragging] = useState(false)
   const [uploads, setUploads] = useState<UploadFile[]>([])
 
@@ -202,10 +204,10 @@ export function VideoUpload({ onUploadComplete }: { onUploadComplete?: () => voi
           </div>
           <div>
             <p className="text-sm font-medium text-foreground">
-              Drop your video files here, or click to browse
+              {t("Drop your video files here, or click to browse")}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Supports MP4, MKV, MOV, AVI, FLV up to 10 GB -- uploads directly to Bunny CDN storage
+              {t("Supports MP4, MKV, MOV, AVI, FLV up to 10 GB -- uploads directly to Bunny CDN storage")}
             </p>
           </div>
         </div>
@@ -233,10 +235,10 @@ export function VideoUpload({ onUploadComplete }: { onUploadComplete?: () => voi
                       {file.status === "complete" ? (
                         <CheckCircle2 className="h-4 w-4 text-success" />
                       ) : file.status === "error" ? (
-                        <span className="text-xs text-destructive">{file.errorMessage || "Failed"}</span>
+                        <span className="text-xs text-destructive">{file.errorMessage || t("Failed")}</span>
                       ) : (
                         <span className="text-xs text-muted-foreground">
-                          {file.status === "saving" ? "Saving..." : `${file.progress}%`}
+                          {file.status === "saving" ? t("Saving...") : `${file.progress}%`}
                         </span>
                       )}
                       <Button
@@ -253,7 +255,7 @@ export function VideoUpload({ onUploadComplete }: { onUploadComplete?: () => voi
                         }}
                       >
                         <X className="h-3 w-3" />
-                        <span className="sr-only">{file.status === "uploading" ? "Cancel upload" : "Remove"}</span>
+                        <span className="sr-only">{t(file.status === "uploading" ? "Cancel upload" : "Remove")}</span>
                       </Button>
                     </div>
                   </div>

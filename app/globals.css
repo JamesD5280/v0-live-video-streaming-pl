@@ -17,8 +17,8 @@
 }
 
 @keyframes scrollText {
-  0% { transform: translate(100cqw, -50%); }
-  100% { transform: translate(-100%, -50%); }
+  from { transform: translate(0, -50%); }
+  to { transform: translate(var(--ticker-shift), -50%); }
 }
 
 @layer base {

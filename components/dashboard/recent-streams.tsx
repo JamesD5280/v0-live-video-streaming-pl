@@ -1,4 +1,7 @@
+"use client"
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { useLanguage } from "@/components/language-provider"
 import { Badge } from "@/components/ui/badge"
 import { Radio, Clock, CheckCircle2, Calendar, AlertTriangle } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -17,17 +20,19 @@ interface RecentStreamsProps {
 }
 
 export function RecentStreams({ streams }: RecentStreamsProps) {
+  const { t } = useLanguage()
+
   return (
     <Card className="border-border bg-card">
       <CardHeader className="pb-3">
-        <CardTitle className="text-base font-semibold text-foreground">Recent Streams</CardTitle>
+        <CardTitle className="text-base font-semibold text-foreground">{t("Recent Streams")}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         {streams.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border p-8 text-center">
             <Radio className="mx-auto h-8 w-8 text-muted-foreground" />
-            <p className="mt-2 text-sm text-muted-foreground">No streams yet</p>
-            <p className="text-xs text-muted-foreground">Create your first stream to get started</p>
+            <p className="mt-2 text-sm text-muted-foreground">{t("No streams yet")}</p>
+            <p className="text-xs text-muted-foreground">{t("Create your first stream to get started")}</p>
           </div>
         ) : (
           streams.map((stream) => {
@@ -58,18 +63,18 @@ export function RecentStreams({ streams }: RecentStreamsProps) {
                   <div>
                     <p className="text-sm font-medium text-foreground">{stream.title}</p>
                     <p className="text-xs text-muted-foreground">
-                      {destNames.length > 0 ? destNames.join(", ") : "No destinations"}
+                      {destNames.length > 0 ? destNames.join(", ") : t("No destinations")}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
                   {stream.status === "live" && (
                     <span className="text-xs font-mono text-muted-foreground">
-                      {(stream.viewer_count || 0).toLocaleString()} viewers
+                      {(stream.viewer_count || 0).toLocaleString()} {t("viewers")}
                     </span>
                   )}
                   <Badge variant="outline" className={cn("text-xs", config.className)}>
-                    {config.label}
+                    {t(config.label)}
                   </Badge>
                 </div>
               </div>

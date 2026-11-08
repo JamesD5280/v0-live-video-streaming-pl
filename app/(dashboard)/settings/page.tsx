@@ -20,8 +20,10 @@ import { fetcher } from "@/lib/fetcher"
 import type { UserSettings } from "@/lib/store"
 import { Loader2, CheckCircle2, Server, Wifi, WifiOff, RefreshCw, Trash2, HardDrive } from "lucide-react"
 import { TeamManager } from "@/components/team/team-manager"
+import { useLanguage } from "@/components/language-provider"
 
 export default function SettingsPage() {
+  const { t } = useLanguage()
   const { data: settings, error: settingsError, mutate } = useSWR<UserSettings>("/api/settings", fetcher)
   const { data: engineStatus, mutate: mutateEngine } = useSWR("/api/streams/engine", (url) =>
     fetch(url, {
@@ -93,7 +95,7 @@ export default function SettingsPage() {
   }
 
   const deleteAllVideos = async () => {
-    if (!confirm("Are you sure you want to delete ALL videos? This cannot be undone.")) return
+    if (!confirm(t("Are you sure you want to delete ALL videos? This cannot be undone."))) return
     
     setDeletingVideos(true)
     setDeleteVideosResult(null)
@@ -210,8 +212,8 @@ export default function SettingsPage() {
       <div className="flex flex-col">
         <TopHeader title="Settings" />
         <div className="flex flex-col items-center justify-center py-16">
-          <p className="text-sm font-medium text-foreground">Failed to load settings</p>
-          <p className="mt-1 text-xs text-muted-foreground">Please try refreshing the page</p>
+          <p className="text-sm font-medium text-foreground">{t("Failed to load settings")}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{t("Please try refreshing the page")}</p>
         </div>
       </div>
     )
@@ -236,7 +238,7 @@ export default function SettingsPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base font-semibold text-foreground">
               <Server className="h-4 w-4" />
-              Streaming Engine
+              {t("Streaming Engine")}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -247,9 +249,9 @@ export default function SettingsPage() {
                     <Wifi className="h-4 w-4 text-primary" />
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-foreground">Connected</p>
+                    <p className="text-sm font-medium text-foreground">{t("Connected")}</p>
                     <p className="text-xs text-muted-foreground">
-                      {engineStatus.activeStreams || 0} active stream(s)
+                      {engineStatus.activeStreams || 0} {t("active stream(s)")}
                     </p>
                   </div>
                 </>
@@ -259,8 +261,8 @@ export default function SettingsPage() {
                     <WifiOff className="h-4 w-4 text-muted-foreground" />
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-foreground">Not Configured</p>
-                    <p className="text-xs text-muted-foreground">Set STREAMING_SERVER_URL in environment variables</p>
+                    <p className="text-sm font-medium text-foreground">{t("Not Configured")}</p>
+                    <p className="text-xs text-muted-foreground">{t("Set STREAMING_SERVER_URL in environment variables")}</p>
                   </div>
                 </>
               ) : (
@@ -269,8 +271,8 @@ export default function SettingsPage() {
                     <WifiOff className="h-4 w-4 text-destructive" />
                   </div>
                   <div>
-                    <p className="text-sm font-medium text-foreground">Offline</p>
-                    <p className="text-xs text-muted-foreground">The streaming engine is not responding. Make sure it is running on your server.</p>
+                    <p className="text-sm font-medium text-foreground">{t("Offline")}</p>
+                    <p className="text-xs text-muted-foreground">{t("The streaming engine is not responding. Make sure it is running on your server.")}</p>
                   </div>
                 </>
               )}
@@ -278,7 +280,7 @@ export default function SettingsPage() {
             <div className="mt-4 flex items-center gap-3">
               <Button variant="outline" size="sm" onClick={testConnection} disabled={testing}>
                 {testing ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <RefreshCw className="mr-2 h-3 w-3" />}
-                Test Connection
+                {t("Test Connection")}
               </Button>
               <span className="text-xs text-muted-foreground">
                 URL: {engineStatus?.serverUrl || "not configured"}
@@ -286,7 +288,7 @@ export default function SettingsPage() {
             </div>
             {testError && (
               <div className="mt-3 rounded-md bg-destructive/10 p-3">
-                <p className="text-xs font-medium text-destructive">Connection Error:</p>
+                <p className="text-xs font-medium text-destructive">{t("Connection Error:")}</p>
                 <p className="mt-1 font-mono text-xs text-destructive/80">{testError}</p>
               </div>
             )}
@@ -294,9 +296,9 @@ export default function SettingsPage() {
             <Separator className="my-4 bg-border" />
 
             <div className="space-y-3">
-              <p className="text-sm font-medium text-foreground">Deploy / Update Streaming Engine</p>
+              <p className="text-sm font-medium text-foreground">{t("Deploy / Update Streaming Engine")}</p>
               <p className="text-xs text-muted-foreground">
-                Run these commands on your VPS to install or update the streaming engine:
+                {t("Run these commands on your VPS to install or update the streaming engine:")}
               </p>
               <pre className="overflow-x-auto rounded-md bg-secondary p-3 text-xs text-foreground font-mono leading-relaxed">
 {`cd /opt/2mstream
@@ -312,11 +314,11 @@ pm2 restart streaming-server || node streaming-server.js`}
             <Separator className="my-4 bg-border" />
 
             <div className="space-y-3">
-              <p className="text-sm font-medium text-foreground">Diagnostics</p>
+              <p className="text-sm font-medium text-foreground">{t("Diagnostics")}</p>
               <div className="flex items-center gap-3">
                 <Button variant="outline" size="sm" onClick={runDiagnostics} disabled={diagnosing}>
                   {diagnosing ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <Server className="mr-2 h-3 w-3" />}
-                  Run Diagnostics
+                  {t("Run Diagnostics")}
                 </Button>
               </div>
               {diagResult && (
@@ -332,21 +334,21 @@ pm2 restart streaming-server || node streaming-server.js`}
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base font-semibold text-foreground">
               <HardDrive className="h-4 w-4" />
-              Bunny CDN Storage
+              {t("Bunny CDN Storage")}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
               <div>
-                <p className="text-sm font-medium text-foreground">Cleanup Temporary Uploads</p>
+                <p className="text-sm font-medium text-foreground">{t("Cleanup Temporary Uploads")}</p>
                 <p className="text-xs text-muted-foreground">
-                  Delete incomplete upload chunks from Bunny storage. This won&apos;t affect completed videos.
+                  {t("Delete incomplete upload chunks from Bunny storage. This won't affect completed videos.")}
                 </p>
               </div>
               <div className="flex items-center gap-3">
                 {tempFileCount !== null && tempFileCount > 0 && (
                   <span className="text-xs text-muted-foreground">
-                    {tempFileCount} temp file(s) found
+                    {tempFileCount} {t("temp file(s) found")}
                   </span>
                 )}
                 <Button 
@@ -360,7 +362,7 @@ pm2 restart streaming-server || node streaming-server.js`}
                   ) : (
                     <Trash2 className="mr-2 h-3 w-3" />
                   )}
-                  {cleaningUp ? "Deleting..." : "Delete All Temp Files"}
+                  {t(cleaningUp ? "Deleting..." : "Delete All Temp Files")}
                 </Button>
                 <Button variant="ghost" size="sm" onClick={checkTempFiles}>
                   <RefreshCw className="h-3 w-3" />
@@ -372,7 +374,7 @@ pm2 restart streaming-server || node streaming-server.js`}
                     <p className="text-xs text-destructive">{cleanupResult.error}</p>
                   ) : (
                     <p className="text-xs text-primary">
-                      Successfully deleted {cleanupResult.deleted} of {cleanupResult.total} temp files
+                      {t("Successfully deleted ")}{cleanupResult.deleted} {t("of")} {cleanupResult.total} {t("temp files")}
                     </p>
                   )}
                 </div>
@@ -385,21 +387,21 @@ pm2 restart streaming-server || node streaming-server.js`}
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base font-semibold text-foreground">
               <Trash2 className="h-4 w-4" />
-              Delete All Videos
+              {t("Delete All Videos")}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
               <div>
-                <p className="text-sm font-medium text-foreground">Remove All Videos</p>
+                <p className="text-sm font-medium text-foreground">{t("Remove All Videos")}</p>
                 <p className="text-xs text-muted-foreground">
-                  This will delete all video records from your database. Use this to clean up incomplete uploads or unwanted videos.
+                  {t("This will delete all video records from your database. Use this to clean up incomplete uploads or unwanted videos.")}
                 </p>
               </div>
               <div className="flex items-center gap-3">
                 {videoCount !== null && videoCount > 0 && (
                   <span className="text-xs text-muted-foreground">
-                    {videoCount} video(s) found
+                    {videoCount} {t("video(s) found")}
                   </span>
                 )}
                 <Button 
@@ -413,7 +415,7 @@ pm2 restart streaming-server || node streaming-server.js`}
                   ) : (
                     <Trash2 className="mr-2 h-3 w-3" />
                   )}
-                  {deletingVideos ? "Deleting..." : "Delete All Videos"}
+                  {t(deletingVideos ? "Deleting..." : "Delete All Videos")}
                 </Button>
                 <Button variant="ghost" size="sm" onClick={checkVideoCount}>
                   <RefreshCw className="h-3 w-3" />
@@ -436,12 +438,12 @@ pm2 restart streaming-server || node streaming-server.js`}
 
         <Card className="border-border bg-card">
           <CardHeader>
-            <CardTitle className="text-base font-semibold text-foreground">Stream Defaults</CardTitle>
+            <CardTitle className="text-base font-semibold text-foreground">{t("Stream Defaults")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label className="text-foreground">Default Resolution</Label>
+                <Label className="text-foreground">{t("Default Resolution")}</Label>
                 <Select value={localSettings.default_resolution || "1080p"} onValueChange={(v) => updateSetting("default_resolution", v)}>
                   <SelectTrigger className="bg-secondary border-border text-foreground"><SelectValue /></SelectTrigger>
                   <SelectContent className="bg-card border-border">
@@ -453,7 +455,7 @@ pm2 restart streaming-server || node streaming-server.js`}
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label className="text-foreground">Default Bitrate</Label>
+                <Label className="text-foreground">{t("Default Bitrate")}</Label>
                 <Select value={localSettings.default_bitrate || "4500"} onValueChange={(v) => updateSetting("default_bitrate", v)}>
                   <SelectTrigger className="bg-secondary border-border text-foreground"><SelectValue /></SelectTrigger>
                   <SelectContent className="bg-card border-border">
@@ -466,7 +468,7 @@ pm2 restart streaming-server || node streaming-server.js`}
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label className="text-foreground">Frame Rate</Label>
+                <Label className="text-foreground">{t("Frame Rate")}</Label>
                 <Select value={localSettings.default_framerate || "30"} onValueChange={(v) => updateSetting("default_framerate", v)}>
                   <SelectTrigger className="bg-secondary border-border text-foreground"><SelectValue /></SelectTrigger>
                   <SelectContent className="bg-card border-border">
@@ -477,7 +479,7 @@ pm2 restart streaming-server || node streaming-server.js`}
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label className="text-foreground">Audio Bitrate</Label>
+                <Label className="text-foreground">{t("Audio Bitrate")}</Label>
                 <Select value={localSettings.default_audio_bitrate || "128"} onValueChange={(v) => updateSetting("default_audio_bitrate", v)}>
                   <SelectTrigger className="bg-secondary border-border text-foreground"><SelectValue /></SelectTrigger>
                   <SelectContent className="bg-card border-border">
@@ -494,37 +496,37 @@ pm2 restart streaming-server || node streaming-server.js`}
 
         <Card className="border-border bg-card">
           <CardHeader>
-            <CardTitle className="text-base font-semibold text-foreground">Notifications</CardTitle>
+            <CardTitle className="text-base font-semibold text-foreground">{t("Notifications")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-foreground">Stream Started</p>
-                <p className="text-xs text-muted-foreground">Notify when a scheduled stream starts</p>
+                <p className="text-sm font-medium text-foreground">{t("Stream Started")}</p>
+                <p className="text-xs text-muted-foreground">{t("Notify when a scheduled stream starts")}</p>
               </div>
               <Switch checked={localSettings.notify_stream_start ?? true} onCheckedChange={(v) => updateSetting("notify_stream_start", v)} aria-label="Toggle stream start notification" />
             </div>
             <Separator className="bg-border" />
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-foreground">Stream Ended</p>
-                <p className="text-xs text-muted-foreground">Notify when a stream completes</p>
+                <p className="text-sm font-medium text-foreground">{t("Stream Ended")}</p>
+                <p className="text-xs text-muted-foreground">{t("Notify when a stream completes")}</p>
               </div>
               <Switch checked={localSettings.notify_stream_end ?? true} onCheckedChange={(v) => updateSetting("notify_stream_end", v)} aria-label="Toggle stream end notification" />
             </div>
             <Separator className="bg-border" />
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-foreground">Stream Errors</p>
-                <p className="text-xs text-muted-foreground">Notify on stream failures or issues</p>
+                <p className="text-sm font-medium text-foreground">{t("Stream Errors")}</p>
+                <p className="text-xs text-muted-foreground">{t("Notify on stream failures or issues")}</p>
               </div>
               <Switch checked={localSettings.notify_stream_error ?? true} onCheckedChange={(v) => updateSetting("notify_stream_error", v)} aria-label="Toggle stream error notification" />
             </div>
             <Separator className="bg-border" />
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-foreground">Schedule Reminders</p>
-                <p className="text-xs text-muted-foreground">Remind before scheduled streams</p>
+                <p className="text-sm font-medium text-foreground">{t("Schedule Reminders")}</p>
+                <p className="text-xs text-muted-foreground">{t("Remind before scheduled streams")}</p>
               </div>
               <Switch checked={localSettings.notify_schedule_reminder ?? true} onCheckedChange={(v) => updateSetting("notify_schedule_reminder", v)} aria-label="Toggle schedule reminder notification" />
             </div>
@@ -533,18 +535,18 @@ pm2 restart streaming-server || node streaming-server.js`}
 
         <Card className="border-border bg-card">
           <CardHeader>
-            <CardTitle className="text-base font-semibold text-foreground">Webhook Notifications</CardTitle>
+            <CardTitle className="text-base font-semibold text-foreground">{t("Webhook Notifications")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label className="text-foreground">Webhook URL</Label>
+              <Label className="text-foreground">{t("Webhook URL")}</Label>
               <Input
                 value={localSettings.webhook_url || ""}
                 onChange={(e) => updateSetting("webhook_url", e.target.value || null)}
                 placeholder="https://your-server.com/webhook"
                 className="bg-secondary border-border font-mono text-sm text-foreground"
               />
-              <p className="text-xs text-muted-foreground">Receive POST notifications for stream events at this URL.</p>
+              <p className="text-xs text-muted-foreground">{t("Receive POST notifications for stream events at this URL.")}</p>
             </div>
           </CardContent>
         </Card>
@@ -552,12 +554,12 @@ pm2 restart streaming-server || node streaming-server.js`}
         <div className="flex items-center gap-3">
           <Button onClick={saveSettings} disabled={saving} className="bg-primary text-primary-foreground hover:bg-primary/90">
             {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-            Save All Settings
+            {t("Save All Settings")}
           </Button>
           {saved && (
             <span className="flex items-center gap-1 text-sm text-success">
               <CheckCircle2 className="h-4 w-4" />
-              Saved
+              {t("Saved")}
             </span>
           )}
         </div>

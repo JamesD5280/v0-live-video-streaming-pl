@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils"
 import { fetcher } from "@/lib/fetcher"
 import { formatFileSize, formatDuration, type Video } from "@/lib/store"
 import { VideoPreviewDialog } from "./video-preview-dialog"
+import { useLanguage } from "@/components/language-provider"
 
 const statusConfig: Record<string, { label: string; className: string; icon: typeof CheckCircle2 }> = {
   ready: { label: "Ready", className: "bg-primary/10 text-primary border-primary/20", icon: CheckCircle2 },
@@ -25,6 +26,7 @@ const statusConfig: Record<string, { label: string; className: string; icon: typ
 }
 
 export function VideoList() {
+  const { locale, t } = useLanguage()
   const { data: videos, error, mutate } = useSWR<Video[]>("/api/videos", fetcher)
   const [previewVideo, setPreviewVideo] = useState<Video | null>(null)
 
@@ -37,8 +39,8 @@ export function VideoList() {
     return (
       <div className="rounded-lg border border-dashed border-border p-12 text-center">
         <AlertCircle className="mx-auto h-10 w-10 text-destructive" />
-        <p className="mt-3 text-sm font-medium text-foreground">Failed to load videos</p>
-        <p className="mt-1 text-xs text-muted-foreground">Please try refreshing the page</p>
+        <p className="mt-3 text-sm font-medium text-foreground">{t("Failed to load videos")}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{t("Please try refreshing the page")}</p>
       </div>
     )
   }
@@ -55,8 +57,8 @@ export function VideoList() {
     return (
       <div className="rounded-lg border border-dashed border-border p-12 text-center">
         <Film className="mx-auto h-10 w-10 text-muted-foreground" />
-        <p className="mt-3 text-sm font-medium text-foreground">No videos yet</p>
-        <p className="mt-1 text-xs text-muted-foreground">Upload your first video to get started</p>
+        <p className="mt-3 text-sm font-medium text-foreground">{t("No videos yet")}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{t("Upload your first video to get started")}</p>
       </div>
     )
   }
@@ -105,34 +107,34 @@ export function VideoList() {
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant="outline" className={cn("text-xs", config.className)}>
-                      {config.label}
+                      {t(config.label)}
                     </Badge>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
                           <MoreVertical className="h-4 w-4" />
-                          <span className="sr-only">Video actions</span>
+                          <span className="sr-only">{t("Video actions")}</span>
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="bg-card border-border">
                         <DropdownMenuItem className="gap-2 text-foreground" onClick={() => setPreviewVideo(video)}>
                           <Play className="h-4 w-4" />
-                          Preview
+                          {t("Preview")}
                         </DropdownMenuItem>
                         <DropdownMenuItem className="gap-2 text-foreground">
                           <Radio className="h-4 w-4" />
-                          Stream Now
+                          {t("Stream Now")}
                         </DropdownMenuItem>
                         <DropdownMenuItem className="gap-2 text-destructive" onClick={() => handleDelete(video.id)}>
                           <Trash2 className="h-4 w-4" />
-                          Delete
+                          {t("Delete")}
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Uploaded {new Date(video.created_at).toLocaleDateString()}
+                  {t("Uploaded")} {new Date(video.created_at).toLocaleDateString(locale === "fr" ? "fr-FR" : "en-US")}
                 </p>
               </div>
             </CardContent>

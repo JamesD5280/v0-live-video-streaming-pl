@@ -6,6 +6,8 @@ import { NextRequest, NextResponse } from "next/server"
 const STREAMING_SERVER_URL = process.env.STREAMING_SERVER_URL
 const STREAMING_API_SECRET = process.env.STREAMING_API_SECRET
 
+export const maxDuration = 300
+
 // Keep each uploaded chunk below the Vercel function request-body limit.
 
 /**
@@ -30,6 +32,8 @@ export async function POST(req: NextRequest) {
     const chunkIndex = formData.get("chunkIndex")
     const totalChunks = formData.get("totalChunks")
     const uploadPurpose = formData.get("uploadPurpose")
+    const sequenceFps = Number(formData.get("sequenceFps"))
+    const totalSize = Number(formData.get("totalSize"))
 
     if (
       !(chunk instanceof Blob) ||
@@ -43,11 +47,15 @@ export async function POST(req: NextRequest) {
 
     let streamingFilename = filename
     let streamingUploadId = uploadId
-    if (uploadPurpose === "overlay") {
+    if (uploadPurpose === "overlay" || uploadPurpose === "overlay-sequence") {
       const extension = extname(filename).slice(1).toLowerCase()
       const safeUploadId = uploadId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80)
-      if (!safeUploadId || !["mov", "mp4", "webm"].includes(extension)) {
-        return NextResponse.json({ error: "Invalid overlay video upload" }, { status: 400 })
+      const isSequence = uploadPurpose === "overlay-sequence"
+      if (!safeUploadId || (isSequence ? extension !== "zip" : !["mov", "mp4", "webm"].includes(extension))) {
+        return NextResponse.json({ error: "Invalid overlay media upload" }, { status: 400 })
+      }
+      if (isSequence && (!Number.isInteger(sequenceFps) || sequenceFps < 1 || sequenceFps > 60 || !Number.isFinite(totalSize) || totalSize < 1 || totalSize > 512 * 1024 * 1024)) {
+        return NextResponse.json({ error: "Invalid PNG sequence settings or ZIP size" }, { status: 400 })
       }
       streamingFilename = `overlay-${user.id}-${safeUploadId}.${extension}`
       streamingUploadId = `overlay-${user.id}-${safeUploadId}`
@@ -80,12 +88,33 @@ export async function POST(req: NextRequest) {
 
     const data = await res.json()
     if (data.complete && data.path) {
-      data.serverPath = data.path
+      if (uploadPurpose === "overlay-sequence") {
+        const convertResponse = await fetch(`${STREAMING_SERVER_URL}/overlays/png-sequence`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${STREAMING_API_SECRET}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ filename: data.filename, fps: sequenceFps }),
+          signal: AbortSignal.timeout(5 * 60 * 1000),
+        })
+        if (!convertResponse.ok) {
+          const convertError = await convertResponse.json().catch(() => ({}))
+          return NextResponse.json({ error: convertError.error || "PNG sequence conversion failed" }, { status: convertResponse.status })
+        }
+        const converted = await convertResponse.json()
+        data.filename = converted.filename
+        data.serverPath = converted.path
+        data.sequenceFrames = converted.frames
+        data.sequenceFps = converted.fps
+      } else {
+        data.serverPath = data.path
+      }
 
-      if (uploadPurpose === "overlay" && typeof data.filename === "string") {
+      if ((uploadPurpose === "overlay" || uploadPurpose === "overlay-sequence") && typeof data.filename === "string") {
         const filename = data.filename
         const supportedExtension = /\.(mov|mp4|webm)$/i.test(filename)
-        const safeFilename = filename.startsWith("overlay-") && !/[\\/\u0000-\u001f\u007f]/.test(filename)
+        const safeFilename = filename.startsWith(`overlay-${user.id}-`) && !/[\\/\u0000-\u001f\u007f]/.test(filename)
         if (supportedExtension && safeFilename) {
           const expires = String(Math.floor(Date.now() / 1000) + 2 * 60 * 60)
           const token = createHmac("sha256", STREAMING_API_SECRET)

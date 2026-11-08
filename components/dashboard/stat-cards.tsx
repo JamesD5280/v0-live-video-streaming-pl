@@ -1,4 +1,7 @@
+"use client"
+
 import { Radio, Upload, Eye, Clock } from "lucide-react"
+import { useLanguage } from "@/components/language-provider"
 import { Card, CardContent } from "@/components/ui/card"
 
 interface StatCardsProps {
@@ -9,6 +12,7 @@ interface StatCardsProps {
 }
 
 export function StatCards({ liveCount, videoCount, totalViewers, totalHours }: StatCardsProps) {
+  const { t } = useLanguage()
   const stats = [
     {
       label: "Active Streams",
@@ -50,13 +54,13 @@ export function StatCards({ liveCount, videoCount, totalViewers, totalHours }: S
         <Card key={stat.label} className="border-border bg-card">
           <CardContent className="p-5">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-muted-foreground">{stat.label}</p>
+              <p className="text-sm font-medium text-muted-foreground">{t(stat.label)}</p>
               <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${stat.bgAccent}`}>
                 <stat.icon className={`h-4 w-4 ${stat.accent}`} />
               </div>
             </div>
             <p className="mt-2 text-2xl font-bold text-foreground">{stat.value}</p>
-            <p className="mt-1 text-xs text-muted-foreground">{stat.description}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{t(stat.description)}</p>
           </CardContent>
         </Card>
       ))}

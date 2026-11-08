@@ -6,6 +6,7 @@ import type { Overlay, OverlayPosition, Video } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { Eye, EyeOff, Video as VideoIcon, Type, Film, Play, Pause, ChevronDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { useLanguage } from "@/components/language-provider"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -50,6 +51,17 @@ interface OverlayPreviewProps {
   onOverlaySelect?: (overlayId: string) => void
   onOverlayChange?: (overlayId: string, change: DraftOverlayChange) => void
   onOverlayCommit?: (overlayId: string, change: DraftOverlayChange) => void
+}
+
+function getClockTimeZone(textContent: string | null) {
+  try {
+    const settings = JSON.parse(textContent || "{}")
+    const timeZone = typeof settings.timeZone === "string" ? settings.timeZone : "UTC"
+    new Intl.DateTimeFormat("en-US", { timeZone }).format()
+    return timeZone
+  } catch {
+    return "UTC"
+  }
 }
 
 function getFontStyle(overlay: Overlay): React.CSSProperties {
@@ -101,7 +113,8 @@ const engineLayerOrder: Partial<Record<Overlay["type"], number>> = {
   image: 0,
   scrolling_text: 1,
   text: 2,
-  video: 3,
+  clock: 3,
+  video: 4,
 }
 
 function VideoOverlayPreview({
@@ -183,6 +196,7 @@ export function OverlayPreview({
   onOverlayChange,
   onOverlayCommit,
 }: OverlayPreviewProps) {
+  const { locale, t } = useLanguage()
   const { data: videos } = useSWR<Video[]>("/api/videos", fetcher)
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
@@ -198,6 +212,7 @@ export function OverlayPreview({
   const [isPlaying, setIsPlaying] = useState(false)
   const [videoError, setVideoError] = useState<string | null>(null)
   const [tickerPaused, setTickerPaused] = useState(false)
+  const [clockNow, setClockNow] = useState<number | null>(null)
   const enabledOverlays = previewOverlays
     .map((overlay, index) => ({ overlay, index }))
     .filter(({ overlay }) => overlay.enabled)
@@ -208,6 +223,17 @@ export function OverlayPreview({
     .map(({ overlay }) => overlay)
   const enabledOverlayIds = enabledOverlays.map((overlay) => overlay.id).join("\u0000")
   const scrollingOverlays = enabledOverlays.filter((overlay) => overlay.type === "scrolling_text")
+  const hasClock = enabledOverlays.some((overlay) => overlay.type === "clock")
+
+  useEffect(() => {
+    if (!hasClock) {
+      setClockNow(null)
+      return
+    }
+    setClockNow(Date.now())
+    const interval = window.setInterval(() => setClockNow(Date.now()), 1000)
+    return () => window.clearInterval(interval)
+  }, [hasClock])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -415,8 +441,8 @@ export function OverlayPreview({
       const start = clamp(overlay.scroll_start_x ?? 0, 0, 95)
       const end = clamp(overlay.scroll_end_x ?? 100, start + 5, 100)
       applyOverlayChange(overlay.id, { scroll_end_x: roundPercent(clamp(end + direction * step, start + 5, 100)) }, true)
-    } else if (overlay.type === "text" || overlay.type === "lower_third") {
-      applyOverlayChange(overlay.id, { font_size: Math.round(clamp((overlay.font_size || 24) + direction * step, 12, 120)) }, true)
+    } else if (overlay.type === "text" || overlay.type === "lower_third" || overlay.type === "clock") {
+        applyOverlayChange(overlay.id, { font_size: Math.round(clamp((overlay.font_size || 24) + direction * step, 12, 120)) }, true)
     } else {
       applyOverlayChange(overlay.id, { size_percent: Math.round(clamp((overlay.size_percent || 20) + direction * step, 5, 100)) }, true)
     }
@@ -475,14 +501,14 @@ export function OverlayPreview({
   return (
     <div className="w-full space-y-3">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-foreground">Overlay Preview</h3>
+        <h3 className="text-sm font-semibold text-foreground">{t("Overlay Preview")}</h3>
         <div className="flex items-center gap-2">
           {/* Video selector for background */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="gap-1.5 text-xs h-7">
                 <Film className="h-3 w-3" />
-                {selectedVideo ? selectedVideo.title : "Select video background"}
+                {selectedVideo ? selectedVideo.title : t("Select video background")}
                 <ChevronDown className="h-3 w-3" />
               </Button>
             </DropdownMenuTrigger>
@@ -491,7 +517,7 @@ export function OverlayPreview({
                 className="text-xs text-foreground"
                 onClick={() => { setSelectedVideo(null); setIsPlaying(false) }}
               >
-                No video (pattern background)
+                {t("No video (pattern background)")}
               </DropdownMenuItem>
               {readyVideos.map((video) => (
                 <DropdownMenuItem
@@ -503,7 +529,7 @@ export function OverlayPreview({
                 </DropdownMenuItem>
               ))}
               {readyVideos.length === 0 && (
-                <p className="px-2 py-1.5 text-xs text-muted-foreground">No videos uploaded yet</p>
+                <p className="px-2 py-1.5 text-xs text-muted-foreground">{t("No videos uploaded yet")}</p>
               )}
             </DropdownMenuContent>
           </DropdownMenu>
@@ -584,16 +610,19 @@ export function OverlayPreview({
           const isHighlighted = highlightedId === overlay.id || isSelected
           if (!isVisible) return null
 
-          const isTicker = overlay.type === "scrolling_text"
-          const isTextOverlay = overlay.type === "text" || overlay.type === "lower_third"
-          const isLowerThird = overlay.type === "lower_third"
+      const isTicker = overlay.type === "scrolling_text"
+      const isClockOverlay = overlay.type === "clock"
+      const isTextOverlay = overlay.type === "text" || overlay.type === "lower_third" || isClockOverlay
+      const isLowerThird = overlay.type === "lower_third"
           const tickerStart = clamp(overlay.scroll_start_x ?? 0, 0, 95)
           const tickerEnd = Math.max(tickerStart + 5, Math.min(100, overlay.scroll_end_x ?? 100))
           const tickerWidth = tickerEnd - tickerStart
           const tickerSpeed = Math.max(1, overlay.scroll_speed ?? 20)
           const fontSize = clamp(overlay.font_size || 24, 12, 120)
           const estimatedTextWidth = (overlay.text_content?.length || 0) * fontSize * 0.58
-          const tickerDuration = (1920 * (tickerWidth / 100) + estimatedTextWidth) / tickerSpeed
+          const tickerChunkWidth = estimatedTextWidth + fontSize * 3
+          const tickerCopies = Math.max(3, Math.min(300, Math.ceil((1920 * tickerWidth / 100 + 100) / Math.max(1, tickerChunkWidth)) + 2))
+          const tickerDuration = tickerChunkWidth / tickerSpeed
           const tickerCenterY = clamp(overlay.position_y ?? 92, (fontSize / 1080) * 100, ((1080 - fontSize - 10) / 1080) * 100)
           const positionStyle = isTicker
             ? {
@@ -694,7 +723,31 @@ export function OverlayPreview({
               )}
 
               {/* Text overlay */}
-              {(overlay.type === "text" || overlay.type === "lower_third") && overlay.text_content && (
+              {isClockOverlay && (
+            <div
+              className="whitespace-nowrap rounded px-2 py-1 leading-none"
+              style={{
+                ...fontStyle,
+                color: overlay.font_color,
+                backgroundColor: ["transparent", "none"].includes((overlay.bg_color || "").toLowerCase()) ? "transparent" : overlay.bg_color,
+                fontSize: `${fontSize * 100 / 1920}cqw`,
+                lineHeight: 1,
+              }}
+            >
+              {clockNow === null
+                ? "--:--:--"
+                : new Intl.DateTimeFormat(locale === "fr" ? "fr-FR" : "en-US", {
+                    timeZone: getClockTimeZone(overlay.text_content),
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit",
+                    hourCycle: "h23",
+                    timeZoneName: "short",
+                  }).format(clockNow)}
+            </div>
+          )}
+
+          {(overlay.type === "text" || overlay.type === "lower_third") && overlay.text_content && (
                 <div
                   className={cn("whitespace-nowrap leading-none", isLowerThird && "flex w-full items-center")}
                   style={{
@@ -722,7 +775,8 @@ export function OverlayPreview({
                   style={{ backgroundColor: overlay.bg_color }}
                 >
                   <span
-                    className="absolute left-0 top-1/2 inline-block -translate-y-1/2 whitespace-nowrap"
+                    aria-label={overlay.text_content}
+                    className="absolute left-0 top-1/2 flex min-w-max -translate-y-1/2 whitespace-nowrap"
                     style={{
                       ...fontStyle,
                       color: overlay.font_color,
@@ -730,9 +784,14 @@ export function OverlayPreview({
                       lineHeight: 1,
                       animation: `scrollText ${Math.max(1, tickerDuration)}s linear infinite`,
                       animationPlayState: tickerPaused ? "paused" : "running",
-                    }}
+                      "--ticker-shift": `-${100 / tickerCopies}%`,
+                    } as React.CSSProperties}
                   >
-                    {overlay.text_content}
+                    {Array.from({ length: tickerCopies }, (_, copyIndex) => (
+                      <span key={copyIndex} aria-hidden={copyIndex > 0} className="shrink-0 pr-8">
+                        {overlay.text_content}
+                      </span>
+                    ))}
                   </span>
                 </div>
               )}
@@ -778,7 +837,7 @@ export function OverlayPreview({
           className="gap-2"
         >
           {tickerPaused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
-          {tickerPaused ? "Resume ticker" : "Pause ticker"}
+          {t(tickerPaused ? "Resume ticker" : "Pause ticker")}
         </Button>
       )}
 

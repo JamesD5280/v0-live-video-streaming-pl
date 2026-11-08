@@ -21,6 +21,7 @@ import { fetcher } from "@/lib/fetcher"
 import type { Video, Destination, ScheduledEvent, Overlay, Playlist } from "@/lib/store"
 import { Calendar, Clock, Plus, Trash2, Video as VideoIcon, Radio, Repeat, Loader2, Rss, Film, ListVideo, Layers, Pencil } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useLanguage } from "@/components/language-provider"
 
 type ScheduleSourceType = "video" | "playlist" | "rtmp_pull"
 
@@ -38,6 +39,7 @@ function toLocalTimeInput(date: Date): string {
 }
 
 export function StreamScheduler() {
+  const { locale, t } = useLanguage()
   const { data: videos } = useSWR<Video[]>("/api/videos", fetcher)
   const { data: playlists } = useSWR<Playlist[]>("/api/playlists", fetcher)
   const { data: destinations } = useSWR<Destination[]>("/api/destinations", fetcher)
@@ -127,38 +129,38 @@ export function StreamScheduler() {
     setScheduleError(null)
     const localDate = new Date(`${newEvent.date}T${newEvent.time}:00`)
     if (!newEvent.title.trim()) {
-      setScheduleError("Enter a stream title.")
+      setScheduleError(t("Enter a stream title."))
       return
     }
     if (Number.isNaN(localDate.getTime())) {
-      setScheduleError("Choose a valid date and time.")
+      setScheduleError(t("Choose a valid date and time."))
       return
     }
     if (localDate.getTime() <= Date.now()) {
-      setScheduleError("Choose a time in the future.")
+      setScheduleError(t("Choose a time in the future."))
       return
     }
     if (newEvent.destinations.length === 0) {
-      setScheduleError("Select at least one destination.")
+      setScheduleError(t("Select at least one destination."))
       return
     }
     if (newEvent.sourceType === "video" && !newEvent.videoId) {
-      setScheduleError("Select a video source.")
+      setScheduleError(t("Select a video source."))
       return
     }
     if (newEvent.sourceType === "playlist" && !newEvent.playlistId) {
-      setScheduleError("Select a playlist source.")
+      setScheduleError(t("Select a playlist source."))
       return
     }
     if (newEvent.sourceType === "rtmp_pull") {
       try {
         const sourceUrl = new URL(newEvent.rtmpPullUrl)
         if (sourceUrl.protocol !== "rtmp:" && sourceUrl.protocol !== "rtmps:") {
-          setScheduleError("RTMP sources must use rtmp:// or rtmps://.")
+          setScheduleError(t("RTMP sources must use rtmp:// or rtmps://."))
           return
         }
       } catch {
-        setScheduleError("Enter a valid RTMP source URL.")
+        setScheduleError(t("Enter a valid RTMP source URL."))
         return
       }
     }
@@ -188,7 +190,7 @@ export function StreamScheduler() {
         if (!res.ok) {
           const err = await res.json()
           console.error("Schedule update failed:", err)
-          setScheduleError(err.error || "Failed to update schedule.")
+          setScheduleError(t(err.error || "Failed to update schedule."))
           setSaving(false)
           return
         }
@@ -202,14 +204,14 @@ export function StreamScheduler() {
         if (!res.ok) {
           const err = await res.json()
           console.error("Schedule create failed:", err)
-          setScheduleError(err.error || "Failed to create schedule.")
+          setScheduleError(t(err.error || "Failed to create schedule."))
           setSaving(false)
           return
         }
       }
     } catch (e) {
       console.error("Schedule save error:", e)
-      setScheduleError("Failed to save schedule. Please try again.")
+      setScheduleError(t("Failed to save schedule. Please try again."))
       setSaving(false)
       return
     }
@@ -230,18 +232,18 @@ export function StreamScheduler() {
     const nowDate = new Date(now.getFullYear(), now.getMonth(), now.getDate())
     const targetDate = new Date(target.getFullYear(), target.getMonth(), target.getDate())
     const diffDays = Math.round((targetDate.getTime() - nowDate.getTime()) / (1000 * 60 * 60 * 24))
-    if (diffDays <= 0) return "Today"
-    if (diffDays === 1) return "Tomorrow"
-    return `In ${diffDays} days`
+    if (diffDays <= 0) return t("Today")
+    if (diffDays === 1) return t("Tomorrow")
+    return locale === "fr" ? `Dans ${diffDays} jours` : `In ${diffDays} days`
   }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-base font-semibold text-foreground">Scheduled Streams</h2>
+          <h2 className="text-base font-semibold text-foreground">{t("Scheduled Streams")}</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Schedule your streams in advance. They will automatically start at the configured time.
+            {t("Schedule your streams in advance. They will automatically start at the configured time.")}
           </p>
         </div>
         <Button
@@ -250,7 +252,7 @@ export function StreamScheduler() {
           onClick={() => setShowForm(!showForm)}
         >
           <Plus className="h-3.5 w-3.5" />
-          Schedule Stream
+          {t("Schedule Stream")}
         </Button>
       </div>
 
@@ -258,22 +260,22 @@ export function StreamScheduler() {
         <Card className="border-primary/20 bg-card">
           <CardHeader>
             <CardTitle className="text-base font-semibold text-foreground">
-              {editingId ? "Edit Scheduled Stream" : "New Scheduled Stream"}
+              {t(editingId ? "Edit Scheduled Stream" : "New Scheduled Stream")}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label className="text-foreground">Stream Title</Label>
+                <Label className="text-foreground">{t("Stream Title")}</Label>
                 <Input
                   value={newEvent.title}
                   onChange={(e) => setNewEvent({ ...newEvent, title: e.target.value })}
-                  placeholder="Title for the scheduled stream"
+                  placeholder={t("Title for the scheduled stream")}
                   className="bg-secondary border-border text-foreground"
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-foreground">Source Type</Label>
+                <Label className="text-foreground">{t("Source Type")}</Label>
                 <ToggleGroup
                   type="single"
                   value={newEvent.sourceType}
@@ -287,15 +289,15 @@ export function StreamScheduler() {
                 >
                   <ToggleGroupItem value="video" aria-label="Video file" className="gap-1.5">
                     <Film className="h-3.5 w-3.5" />
-                    Video File
+                    {t("Video File")}
                   </ToggleGroupItem>
                   <ToggleGroupItem value="playlist" aria-label="Video playlist" className="gap-1.5">
                     <ListVideo className="h-3.5 w-3.5" />
-                    Playlist
+                    {t("Playlist")}
                   </ToggleGroupItem>
                   <ToggleGroupItem value="rtmp_pull" aria-label="RTMP pull" className="gap-1.5">
                     <Rss className="h-3.5 w-3.5" />
-                    RTMP Pull
+                    {t("RTMP Pull")}
                   </ToggleGroupItem>
                 </ToggleGroup>
               </div>
@@ -304,7 +306,7 @@ export function StreamScheduler() {
               <div className="space-y-2">
                 <Label htmlFor="scheduled-video-source" className="text-foreground">Video</Label>
                 <Select value={newEvent.videoId} onValueChange={(val) => setNewEvent({ ...newEvent, videoId: val })}>
-                  <SelectTrigger id="scheduled-video-source" className="bg-secondary border-border text-foreground"><SelectValue placeholder="Select video" /></SelectTrigger>
+                  <SelectTrigger id="scheduled-video-source" className="bg-secondary border-border text-foreground"><SelectValue placeholder={t("Select video")} /></SelectTrigger>
                   <SelectContent className="bg-card border-border">
                     <SelectGroup>
                       {readyVideos.map((video) => (
@@ -319,7 +321,7 @@ export function StreamScheduler() {
                 <Label htmlFor="scheduled-playlist-source" className="text-foreground">Video playlist</Label>
                 <Select value={newEvent.playlistId} onValueChange={(val) => setNewEvent({ ...newEvent, playlistId: val })}>
                   <SelectTrigger id="scheduled-playlist-source" className="bg-secondary border-border text-foreground">
-                    <SelectValue placeholder={playlists ? "No ready playlists" : "Loading playlists"} />
+                    <SelectValue placeholder={t(playlists ? "No ready playlists" : "Loading playlists")} />
                   </SelectTrigger>
                   <SelectContent className="bg-card border-border">
                     <SelectGroup>
@@ -333,13 +335,13 @@ export function StreamScheduler() {
                 </Select>
                 <p className="text-xs leading-relaxed text-muted-foreground">
                   {playlists && readyPlaylists.length === 0
-                    ? "Create a playlist with at least one ready video before scheduling it."
-                    : "Plays the playlist in order and follows its loop setting. Every video must be ready."}
+                    ? t("Create a playlist with at least one ready video before scheduling it.")
+                    : t("Plays the playlist in order and follows its loop setting. Every video must be ready.")}
                 </p>
               </div>
             ) : (
               <div className="space-y-2">
-                <Label htmlFor="scheduled-rtmp-source" className="text-foreground">RTMP Source URL</Label>
+                <Label htmlFor="scheduled-rtmp-source" className="text-foreground">{t("RTMP Source URL")}</Label>
                 <Input
                   id="scheduled-rtmp-source"
                   value={newEvent.rtmpPullUrl}
@@ -348,38 +350,38 @@ export function StreamScheduler() {
                   className="bg-secondary border-border text-foreground font-mono text-sm"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Enter the RTMP URL of the stream to pull and restream at the scheduled time.
+                  {t("Enter the RTMP URL of the stream to pull and restream at the scheduled time.")}
                 </p>
               </div>
             )}
 
             <div className="grid gap-4 sm:grid-cols-3">
               <div className="space-y-2">
-                <Label className="text-foreground">Date</Label>
+                <Label className="text-foreground">{t("Date")}</Label>
                 <Input type="date" value={newEvent.date} onChange={(e) => setNewEvent({ ...newEvent, date: e.target.value })} className="bg-secondary border-border text-foreground" />
               </div>
               <div className="space-y-2">
-                <Label className="text-foreground">Time</Label>
+                <Label className="text-foreground">{t("Time")}</Label>
                 <Input type="time" value={newEvent.time} onChange={(e) => setNewEvent({ ...newEvent, time: e.target.value })} className="bg-secondary border-border text-foreground" />
               </div>
               <div className="space-y-2">
-                <Label className="text-foreground">Repeat</Label>
+                <Label className="text-foreground">{t("Repeat")}</Label>
                 <Select value={newEvent.repeat} onValueChange={(val) => setNewEvent({ ...newEvent, repeat: val })}>
                   <SelectTrigger className="bg-secondary border-border text-foreground"><SelectValue /></SelectTrigger>
                   <SelectContent className="bg-card border-border">
-                    <SelectItem value="none">No Repeat</SelectItem>
-                    <SelectItem value="daily">Daily</SelectItem>
-                    <SelectItem value="weekly">Weekly</SelectItem>
-                    <SelectItem value="monthly">Monthly</SelectItem>
+                    <SelectItem value="none">{t("No Repeat")}</SelectItem>
+                    <SelectItem value="daily">{t("Daily")}</SelectItem>
+                    <SelectItem value="weekly">{t("Weekly")}</SelectItem>
+                    <SelectItem value="monthly">{t("Monthly")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <p className="text-xs leading-relaxed text-muted-foreground">
-              Times use {timeZone}. Start timing follows your deployment&apos;s supported cron interval and may be delayed by the execution window.
+              {t("Times use")} {timeZone}. {t("Start timing follows your deployment&apos;s supported cron interval and may be delayed by the execution window.")}
             </p>
             <div className="space-y-2">
-              <Label className="text-foreground">Destinations</Label>
+              <Label className="text-foreground">{t("Destinations")}</Label>
               <div className="grid gap-2 sm:grid-cols-2">
                 {enabledDests.map((dest) => (
                   <div
@@ -400,7 +402,7 @@ export function StreamScheduler() {
               <div className="space-y-2">
                 <Label className="text-foreground flex items-center gap-1.5">
                   <Layers className="h-3.5 w-3.5" />
-                  Overlays
+                  {t("Overlays")}
                 </Label>
                 <div className="grid gap-2 sm:grid-cols-2">
                   {enabledOverlays.map((overlay) => (
@@ -428,9 +430,9 @@ export function StreamScheduler() {
             <div className="flex gap-2">
               <Button onClick={saveEvent} disabled={!newEvent.title.trim() || (newEvent.sourceType === "video" ? !newEvent.videoId : newEvent.sourceType === "playlist" ? !newEvent.playlistId : !newEvent.rtmpPullUrl.trim()) || !newEvent.date || !newEvent.time || newEvent.destinations.length === 0 || saving} className="bg-primary text-primary-foreground hover:bg-primary/90">
                 {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                {editingId ? "Update" : "Schedule"}
+                {t(editingId ? "Update" : "Schedule")}
               </Button>
-              <Button variant="outline" className="border-border text-foreground" onClick={resetForm}>Cancel</Button>
+              <Button variant="outline" className="border-border text-foreground" onClick={resetForm}>{t("Cancel")}</Button>
             </div>
           </CardContent>
         </Card>
@@ -439,7 +441,7 @@ export function StreamScheduler() {
       {eventsError ? (
         <div className="rounded-lg border border-dashed border-border p-12 text-center">
           <Calendar className="mx-auto h-10 w-10 text-destructive" />
-          <p className="mt-3 text-sm font-medium text-foreground">Failed to load schedule</p>
+          <p className="mt-3 text-sm font-medium text-foreground">{t("Failed to load schedule")}</p>
           <p className="mt-1 text-xs text-muted-foreground">Please try refreshing the page</p>
         </div>
       ) : !events ? (
@@ -447,8 +449,8 @@ export function StreamScheduler() {
       ) : events.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border p-12 text-center">
           <Calendar className="mx-auto h-10 w-10 text-muted-foreground" />
-          <p className="mt-3 text-sm font-medium text-foreground">No scheduled streams</p>
-          <p className="mt-1 text-xs text-muted-foreground">Schedule your first stream to automate your broadcasts</p>
+          <p className="mt-3 text-sm font-medium text-foreground">{t("No scheduled streams")}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{t("Schedule your first stream to automate your broadcasts")}</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -475,7 +477,7 @@ export function StreamScheduler() {
                                 : "border-border text-muted-foreground"
                           )}
                         >
-                          {event.status}
+                          {t(event.status)}
                         </Badge>
                         {event.repeat_mode !== "none" && (
                           <Badge variant="outline" className="gap-1 text-xs text-muted-foreground border-border">
@@ -507,17 +509,17 @@ export function StreamScheduler() {
                     <div className="text-right">
                       <p className="text-sm font-medium text-foreground flex items-center gap-1.5">
                         <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-                        {new Date(event.scheduled_at).toLocaleDateString()} at {new Date(event.scheduled_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        {new Date(event.scheduled_at).toLocaleDateString(locale === "fr" ? "fr-FR" : "en-US")} {t("at")} {new Date(event.scheduled_at).toLocaleTimeString(locale === "fr" ? "fr-FR" : "en-US", { hour: "2-digit", minute: "2-digit" })}
                       </p>
                       <p className="text-xs text-muted-foreground">{getDaysUntil(event.scheduled_at)}</p>
                     </div>
                     <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => startEdit(event)}>
                       <Pencil className="h-4 w-4" />
-                      <span className="sr-only">Edit schedule</span>
+                      <span className="sr-only">{t("Edit schedule")}</span>
                     </Button>
                     <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => removeEvent(event.id)}>
                       <Trash2 className="h-4 w-4" />
-                      <span className="sr-only">Remove schedule</span>
+                      <span className="sr-only">{t("Remove schedule")}</span>
                     </Button>
                   </div>
                 </CardContent>
