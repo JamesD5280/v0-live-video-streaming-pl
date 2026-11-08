@@ -606,7 +606,7 @@ export function OverlayManager() {
     if (applyingLiveLayout || overlayIds.size === 0) return
 
     const confirmed = window.confirm(
-      "Apply the saved overlay layout to live streams using these graphics? Each affected stream will briefly reconnect.",
+      "Publish all saved overlays to every live stream? Each stream will briefly reconnect.",
     )
     if (!confirmed) return
 
@@ -1302,7 +1302,7 @@ export function OverlayManager() {
               <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-primary">Stream designer</p>
               <h2 className="mt-1 text-base font-semibold text-foreground">Arrange overlays on the stream</h2>
               <p className="mt-1 text-xs leading-relaxed text-muted-foreground">Select an overlay, then drag it into position. Resize it from the corner handle.</p>
-              <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">Select the matching background clip to compare placement. Live streams keep their start-time layout until you apply saved changes; applying briefly reconnects them.</p>
+              <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">Select a background clip to compare placement. Saved overlays reach every active stream only after you apply them; each stream briefly reconnects.</p>
             </div>
             <div className="flex flex-wrap items-center gap-3 text-xs">
               {overlayIds.size > 0 && (

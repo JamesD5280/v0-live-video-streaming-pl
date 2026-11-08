@@ -279,30 +279,86 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Provide between 1 and 250 overlay ids" }, { status: 400 })
       }
 
+      const { data: accessibleOverlays, error: overlayAccessError } = await supabase
+        .from("overlays")
+        .select("id")
+        .in("id", requestedOverlayIds)
+
+      if (overlayAccessError) {
+        return NextResponse.json({ error: "Unable to verify saved overlays" }, { status: 500 })
+      }
+
+      if ((accessibleOverlays || []).length !== requestedOverlayIds.length) {
+        return NextResponse.json({ error: "One or more saved overlays are unavailable" }, { status: 403 })
+      }
+
       const { data: liveStreams, error: liveStreamsError } = await supabase
         .from("streams")
-        .select("id, title, stream_overlays(overlay_id, overlay:overlays(*))")
+        .select("id, title")
         .eq("status", "live")
 
       if (liveStreamsError) {
         return NextResponse.json({ error: "Unable to find live streams" }, { status: 500 })
       }
 
-      const streamsWithOverlays = (liveStreams || []) as Array<{
+      const liveStreamIds = (liveStreams || []).map((stream) => stream.id)
+      if (liveStreamIds.length === 0) {
+        return NextResponse.json({
+          success: true,
+          restartedCount: 0,
+          affectedCount: 0,
+          message: "No live streams are running. Saved overlays will be used the next time a stream starts.",
+        })
+      }
+
+      const { data: existingLinks, error: existingLinksError } = await supabase
+        .from("stream_overlays")
+        .select("stream_id, overlay_id")
+        .in("stream_id", liveStreamIds)
+
+      if (existingLinksError) {
+        return NextResponse.json({ error: "Unable to read current live overlay assignments" }, { status: 500 })
+      }
+
+      const existingAssignments = new Set(
+        (existingLinks || []).map((link) => `${link.stream_id}:${link.overlay_id}`),
+      )
+      const assignmentsToAdd = liveStreamIds.flatMap((streamId) =>
+        requestedOverlayIds
+          .filter((overlayId) => !existingAssignments.has(`${streamId}:${overlayId}`))
+          .map((overlayId) => ({ stream_id: streamId, overlay_id: overlayId })),
+      )
+
+      if (assignmentsToAdd.length > 0) {
+        const { error: assignmentError } = await supabase.from("stream_overlays").insert(assignmentsToAdd)
+        if (assignmentError) {
+          console.error("[v0] Failed to attach saved overlays to live streams:", assignmentError.message)
+          return NextResponse.json({ error: "Unable to attach saved overlays to live streams" }, { status: 500 })
+        }
+      }
+
+      const { data: streamsWithOverlays, error: reloadError } = await supabase
+        .from("streams")
+        .select("id, title, stream_overlays(overlay_id, overlay:overlays(*))")
+        .eq("status", "live")
+        .in("id", liveStreamIds)
+
+      if (reloadError) {
+        return NextResponse.json({ error: "Unable to load the saved live overlay layout" }, { status: 500 })
+      }
+
+      const affectedStreams = (streamsWithOverlays || []) as Array<{
         id: string
         title: string
         stream_overlays?: StreamOverlayEntry[]
       }>
-      const affectedStreams = streamsWithOverlays.filter((stream) =>
-        stream.stream_overlays?.some((entry) => requestedOverlayIds.includes(entry.overlay_id)),
-      )
 
       if (affectedStreams.length === 0) {
         return NextResponse.json({
           success: true,
           restartedCount: 0,
           affectedCount: 0,
-          message: "No live streams currently use these overlays.",
+          message: "No live streams are running. Saved overlays will be used the next time a stream starts.",
         })
       }
 
