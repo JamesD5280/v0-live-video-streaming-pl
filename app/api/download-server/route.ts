@@ -23,6 +23,27 @@ export async function GET(req: Request) {
     })
   }
 
+  if (file === "Viga-Regular.ttf") {
+    try {
+      const filePath = join(process.cwd(), "scripts", "streaming-engine", "fonts", "Viga-Regular.ttf")
+      const content = readFileSync(filePath)
+      return new Response(new Uint8Array(content), {
+        headers: {
+          "Content-Type": "font/ttf",
+          "Content-Disposition": 'attachment; filename="Viga-Regular.ttf"',
+        },
+      })
+    } catch (err) {
+      return new Response(JSON.stringify({
+        error: "Font file not found in serverless bundle",
+        detail: String(err),
+      }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      })
+    }
+  }
+
   if (file === "streaming-server.js") {
     try {
       const filePath = join(process.cwd(), "scripts", "streaming-engine", "streaming-server.js")
