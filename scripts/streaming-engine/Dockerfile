@@ -5,8 +5,9 @@ RUN apt-get -o Acquire::AllowInsecureRepositories=true update && apt-get --allow
 
 WORKDIR /app
 
-# Copy server file
+# Copy server code and the licensed Viga font used by scrolling overlays
 COPY streaming-server.js package.json ./
+COPY fonts ./fonts
 
 # Install dependencies
 RUN npm install --production

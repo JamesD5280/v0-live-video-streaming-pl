@@ -108,6 +108,12 @@ async function downloadToTemp(url) {
 }
 
 const FONT_FILES = {
+  viga: {
+    normal: '/app/fonts/Viga-Regular.ttf',
+    bold: '/app/fonts/Viga-Regular.ttf',
+    italic: '/app/fonts/Viga-Regular.ttf',
+    'bold-italic': '/app/fonts/Viga-Regular.ttf',
+  },
   sans: {
     normal: '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
     bold: '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
