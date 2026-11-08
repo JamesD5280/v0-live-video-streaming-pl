@@ -242,9 +242,9 @@ function buildOverlayFilters(overlays) {
   if (!overlays || overlays.length === 0) return null
 
   // Sort overlays for correct layer order (processed last = on top)
-  // Order: image (backgrounds) -> scrolling_text -> text -> video (logos on top)
+  // Keep clock text above media overlays so video layers cannot cover it.
   const sortedOverlays = [...overlays].sort((a, b) => {
-    const order = { 'image': 0, 'scrolling_text': 1, 'text': 2, 'clock': 3, 'video': 4 }
+    const order = { 'image': 0, 'scrolling_text': 1, 'text': 2, 'video': 3, 'clock': 4 }
     return (order[a.type] ?? 1) - (order[b.type] ?? 1)
   })
   console.log(`[2MStream] Overlay render order: ${sortedOverlays.map(o => o.type).join(' -> ')}`)
