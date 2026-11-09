@@ -7,9 +7,16 @@ export type EventStatus = "idle" | "pending" | "scheduled" | "running" | "comple
 export type OverlayType = "logo" | "bug" | "lower_third" | "text" | "image" | "video" | "scrolling_text" | "clock"
 export type OverlayPosition = "top-left" | "top-right" | "top-center" | "bottom-left" | "bottom-right" | "bottom-center" | "center"
 
+export interface VideoCategory {
+  id: string
+  name: string
+  created_at: string
+}
+
 export interface Video {
   id: string
   user_id: string
+  category_id?: string | null
   title: string
   filename: string
   file_size: number
