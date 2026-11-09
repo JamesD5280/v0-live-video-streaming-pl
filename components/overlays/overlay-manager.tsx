@@ -222,6 +222,7 @@ export function OverlayManager() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [designerPanel, setDesignerPanel] = useState<"layers" | "design" | "templates">("design")
+  const [showSafeZones, setShowSafeZones] = useState(true)
   const [selectedCanvasOverlayId, setSelectedCanvasOverlayId] = useState<string | null>(null)
   const [canvasOverlayDrafts, setCanvasOverlayDrafts] = useState<Record<string, CanvasOverlayChange>>({})
   const [canvasSaveState, setCanvasSaveState] = useState<"ready" | "editing" | "saving" | "saved" | "error">("ready")
@@ -835,6 +836,8 @@ export function OverlayManager() {
                         draftVideoPreviewUrl={isVideoType ? videoPreviewUrl || (editingId ? `/api/overlays/preview?overlayId=${encodeURIComponent(editingId)}` : undefined) : undefined}
                         editableDraft
                         onDraftChange={handleDraftChange}
+                        showSafeZones={showSafeZones}
+                        onToggleSafeZones={() => setShowSafeZones((visible) => !visible)}
                         compact
                       />
                     </div>
@@ -1345,6 +1348,8 @@ export function OverlayManager() {
                 onOverlaySelect={setSelectedCanvasOverlayId}
                 onOverlayChange={handleCanvasOverlayChange}
                 onOverlayCommit={handleCanvasOverlayCommit}
+                showSafeZones={showSafeZones}
+                onToggleSafeZones={() => setShowSafeZones((visible) => !visible)}
               />
               {selectedCanvasOverlay && (
                 <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
