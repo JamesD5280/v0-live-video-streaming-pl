@@ -51,6 +51,8 @@ interface OverlayPreviewProps {
   onOverlaySelect?: (overlayId: string) => void
   onOverlayChange?: (overlayId: string, change: DraftOverlayChange) => void
   onOverlayCommit?: (overlayId: string, change: DraftOverlayChange) => void
+  showSafeZones?: boolean
+  onToggleSafeZones?: () => void
 }
 
 function getClockTimeZone(textContent: string | null) {
@@ -195,6 +197,8 @@ export function OverlayPreview({
   onOverlaySelect,
   onOverlayChange,
   onOverlayCommit,
+  showSafeZones = false,
+  onToggleSafeZones,
 }: OverlayPreviewProps) {
   const { locale, t } = useLanguage()
   const { data: videos } = useSWR<Video[]>("/api/videos", fetcher)
@@ -503,6 +507,19 @@ export function OverlayPreview({
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-foreground">{t("Overlay Preview")}</h3>
         <div className="flex items-center gap-2">
+          {onToggleSafeZones && (
+            <Button
+              type="button"
+              variant={showSafeZones ? "secondary" : "outline"}
+              size="sm"
+              aria-pressed={showSafeZones}
+              title={t(showSafeZones ? "Hide safe-zone guides" : "Show safe-zone guides")}
+              onClick={onToggleSafeZones}
+              className="h-7 px-2"
+            >
+              {t("Safe zones")}
+            </Button>
+          )}
           {/* Video selector for background */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -600,6 +617,21 @@ export function OverlayPreview({
             </div>
           )}
         </div>
+
+        {showSafeZones && (
+          <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-30">
+            <div className="absolute border border-dashed border-primary/80" style={{ inset: "5%" }}>
+              <span className="absolute left-1 top-1 rounded bg-background/85 px-1.5 py-1 text-sm font-medium leading-none text-foreground">
+                {t("Action safe · 90%")}
+              </span>
+            </div>
+            <div className="absolute border border-dashed border-foreground/70" style={{ inset: "10%" }}>
+              <span className="absolute left-1 top-1 rounded bg-background/85 px-1.5 py-1 text-sm font-medium leading-none text-foreground">
+                {t("Title safe · 80%")}
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Render each visible overlay */}
         {enabledOverlays.map((overlay, layerIndex) => {
