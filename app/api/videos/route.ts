@@ -52,6 +52,54 @@ export async function POST(req: NextRequest) {
   }
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i
+
+export async function PATCH(req: NextRequest) {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+
+    const body = (await req.json().catch(() => null)) as {
+      id?: unknown
+      category_id?: unknown
+    } | null
+
+    if (
+      !body ||
+      typeof body.id !== "string" ||
+      !UUID_PATTERN.test(body.id) ||
+      !(body.category_id === null || (typeof body.category_id === "string" && UUID_PATTERN.test(body.category_id)))
+    ) {
+      return NextResponse.json({ error: "Invalid video or category" }, { status: 400 })
+    }
+
+    const { data, error } = await supabase
+      .from("videos")
+      .update({ category_id: body.category_id })
+      .eq("id", body.id)
+      .select("id")
+      .maybeSingle()
+
+    if (error) {
+      const status = error.code === "42501" ? 403 : error.code === "23503" ? 400 : 500
+      if (status === 500) console.error("Videos PATCH error:", error)
+      return NextResponse.json(
+        { error: status === 403 ? "Only editors and admins can manage categories" : "Could not update video category" },
+        { status },
+      )
+    }
+    if (!data) {
+      return NextResponse.json({ error: "Only editors and admins can manage categories" }, { status: 403 })
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (e) {
+    console.error("Videos PATCH error:", e)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+  }
+}
+
 export async function DELETE(req: NextRequest) {
   try {
     const supabase = await createClient()
