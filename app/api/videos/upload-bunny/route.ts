@@ -22,14 +22,23 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     const formData = await req.formData()
-    const chunk = formData.get("chunk") as Blob
-    const filename = formData.get("filename") as string
-    const uploadId = formData.get("uploadId") as string
-    const chunkIndex = parseInt(formData.get("chunkIndex") as string)
-    const totalChunks = parseInt(formData.get("totalChunks") as string)
+    const chunk = formData.get("chunk")
+    const filename = formData.get("filename")
+    const uploadId = formData.get("uploadId")
+    const chunkIndex = Number(formData.get("chunkIndex"))
+    const totalChunks = Number(formData.get("totalChunks"))
 
-    if (!chunk || !filename || !uploadId) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
+    if (!(chunk instanceof Blob) || typeof filename !== "string" || !filename || typeof uploadId !== "string" || !UUID_PATTERN.test(uploadId)) {
+      return NextResponse.json({ error: "Missing or invalid required fields" }, { status: 400 })
+    }
+    if (
+      !Number.isSafeInteger(chunkIndex) ||
+      !Number.isSafeInteger(totalChunks) ||
+      totalChunks < 1 ||
+      chunkIndex < 0 ||
+      chunkIndex >= totalChunks
+    ) {
+      return NextResponse.json({ error: "Invalid chunk index" }, { status: 400 })
     }
 
     const buffer = Buffer.from(await chunk.arrayBuffer())
@@ -67,7 +76,7 @@ export async function POST(req: NextRequest) {
 
 /**
  * PUT /api/videos/upload-bunny
- * Called after all chunks are uploaded to combine them and save metadata
+ * Called after all chunks are uploaded to save metadata and enqueue server assembly
  */
 export async function PUT(req: NextRequest) {
   try {
@@ -125,92 +134,116 @@ export async function PUT(req: NextRequest) {
     console.log(`[Bunny Finalize] Saving video metadata with upload_id for later assembly by VPS`)
     console.log(`[Bunny Finalize] Video will be assembled by VPS: uploadId=${uploadId}, filename=${filename}, totalChunks=${totalChunks}`)
 
-    // Save video metadata to database with status 'uploading'
-    // The actual assembly will be done by the VPS where it has unlimited resources
     const sanitizedTitle = sanitizeString(title || filename)
-    
-    console.log("[Bunny Finalize] Inserting video record with fields:", {
-      user_id: user.id,
-      title: sanitizedTitle,
-      filename,
-      file_size: fileSize,
-      storage_path: `bunny://temp-uploads/${uploadId}`,
-      status: "uploading",
-      category_id: categoryId,
-    })
+    const temporaryStoragePath = `bunny://temp-uploads/${uploadId}`
 
-    const { data, error } = await supabase
+    const { data: existingVideo, error: lookupError } = await supabase
       .from("videos")
-      .insert({
-        user_id: user.id,
-        title: sanitizedTitle,
-        filename,
-        file_size: fileSize,
-        storage_path: `bunny://temp-uploads/${uploadId}`,
-        status: "uploading",
-        category_id: categoryId,
-      })
-      .select()
-      .single()
+      .select("id,status")
+      .eq("user_id", user.id)
+      .eq("storage_path", temporaryStoragePath)
+      .limit(1)
+      .maybeSingle()
 
-    if (error) {
-      console.error("[Bunny Finalize] Supabase insert error:", {
-        code: error.code,
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-      })
-      const status = error.code === "42501" ? 403 : error.code === "23503" ? 400 : 500
-      const errorMsg =
-        status === 403
-          ? "Only editors and admins can manage categories"
-          : status === 400
-            ? "Invalid category"
-            : "Could not save video metadata"
-      console.error("[Bunny Finalize] Returning error response:", errorMsg)
-      return NextResponse.json({ error: errorMsg }, { status })
+    if (lookupError) {
+      console.error("[Bunny Finalize] Could not check for an existing upload:", lookupError)
+      return NextResponse.json({ error: "Could not save video metadata" }, { status: 500 })
     }
 
-    console.log(`[Bunny Finalize] Video saved with ID: ${data.id}`)
+    let video = existingVideo
+    if (video?.status === "ready") {
+      return NextResponse.json({ success: true, state: "ready", video, uploadId, totalChunks })
+    }
+    if (video?.status === "processing") {
+      return NextResponse.json({ success: true, state: "processing", video, uploadId, totalChunks }, { status: 202 })
+    }
+    if (video?.status === "error") {
+      const { data: resetVideo, error: resetError } = await supabase
+        .from("videos")
+        .update({ status: "uploading", updated_at: new Date().toISOString() })
+        .eq("id", video.id)
+        .select("id,status")
+        .single()
 
-    // Trigger VPS webhook to assemble chunks
+      if (resetError) {
+        console.error("[Bunny Finalize] Could not re-queue the failed upload:", resetError)
+        return NextResponse.json({ error: "Could not re-queue video assembly", videoId: video.id }, { status: 500 })
+      }
+      video = resetVideo
+    }
+
+    if (!video) {
+      const { data: insertedVideo, error } = await supabase
+        .from("videos")
+        .insert({
+          user_id: user.id,
+          title: sanitizedTitle,
+          filename,
+          file_size: fileSize,
+          storage_path: temporaryStoragePath,
+          status: "uploading",
+          category_id: categoryId,
+        })
+        .select("id,status")
+        .single()
+
+      if (error) {
+        console.error("[Bunny Finalize] Supabase insert failed:", error.code, error.message)
+        const status = error.code === "42501" ? 403 : error.code === "23503" ? 400 : 500
+        const errorMsg =
+          status === 403
+            ? "Only editors and admins can manage categories"
+            : status === 400
+              ? "Invalid category"
+              : "Could not save video metadata"
+        return NextResponse.json({ error: errorMsg }, { status })
+      }
+      video = insertedVideo
+    }
+
     const vpsWebhookSecret = process.env.VPS_WEBHOOK_SECRET
     const vpsAssemblerUrl = process.env.VPS_ASSEMBLER_URL
-
-    if (vpsWebhookSecret && vpsAssemblerUrl) {
-      try {
-        console.log("[v0] Triggering VPS webhook for video:", data.id)
-        const webhookResponse = await fetch(vpsAssemblerUrl, {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${vpsWebhookSecret}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ videoId: data.id, uploadId }),
-        })
-
-        if (!webhookResponse.ok) {
-          const responseText = await webhookResponse.text()
-          console.error("[v0] Webhook failed:", webhookResponse.status, responseText)
-        } else {
-          console.log("[v0] Webhook triggered successfully")
-        }
-      } catch (webhookError) {
-        console.error("[v0] Webhook error:", webhookError)
-      }
-    } else {
-      console.warn("[v0] VPS_WEBHOOK_SECRET or VPS_ASSEMBLER_URL not configured")
+    if (!vpsWebhookSecret || !vpsAssemblerUrl) {
+      console.error("[Bunny Finalize] Assembly service configuration is missing")
+      return NextResponse.json(
+        { error: "Video is saved, but the assembly service is unavailable. It remains queued for recovery.", videoId: video.id, state: "queued" },
+        { status: 503 },
+      )
     }
 
-    console.log(`[Bunny Finalize] VPS webhook trigger sent for upload_id=${uploadId} and video_id=${data.id}`)
+    try {
+      const webhookResponse = await fetch(vpsAssemblerUrl, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${vpsWebhookSecret}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ videoId: video.id, uploadId, totalChunks }),
+        signal: AbortSignal.timeout(15_000),
+      })
+
+      if (!webhookResponse.ok) {
+        console.error("[Bunny Finalize] Assembly service rejected the job:", webhookResponse.status)
+        return NextResponse.json(
+          { error: "Video is saved, but the assembly service rejected the job. It remains queued for recovery.", videoId: video.id, state: "queued" },
+          { status: 502 },
+        )
+      }
+    } catch (webhookError) {
+      console.error("[Bunny Finalize] Could not reach the assembly service:", webhookError)
+      return NextResponse.json(
+        { error: "Video is saved, but the assembly service could not be reached. It remains queued for recovery.", videoId: video.id, state: "queued" },
+        { status: 502 },
+      )
+    }
 
     return NextResponse.json({
       success: true,
-      video: data,
-      message: "Video metadata saved. Chunks uploaded to Bunny. Waiting for VPS to assemble.",
+      state: "processing",
+      video,
       uploadId,
       totalChunks,
-    })
+    }, { status: 202 })
   } catch (error) {
     console.error("[Bunny Finalize] Catch block error:", error)
     if (error instanceof Error) {

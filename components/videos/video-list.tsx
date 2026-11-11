@@ -40,14 +40,17 @@ type VideoCategoriesResponse = {
 
 const statusConfig: Record<string, { label: string; className: string; icon: typeof CheckCircle2 }> = {
   ready: { label: "Ready", className: "bg-primary/10 text-primary border-primary/20", icon: CheckCircle2 },
-  uploading: { label: "Uploading", className: "bg-warning/10 text-warning border-warning/20", icon: Loader2 },
+  uploading: { label: "Queued for assembly", className: "bg-warning/10 text-warning border-warning/20", icon: Loader2 },
   processing: { label: "Processing", className: "bg-chart-2/10 text-chart-2 border-chart-2/20", icon: Loader2 },
   error: { label: "Error", className: "bg-destructive/10 text-destructive border-destructive/20", icon: AlertCircle },
 }
 
 export function VideoList() {
   const { locale, t } = useLanguage()
-  const { data: videos, error, mutate } = useSWR<Video[]>("/api/videos", fetcher)
+  const { data: videos, error, mutate } = useSWR<Video[]>("/api/videos", fetcher, {
+    refreshInterval: (latestVideos) =>
+      latestVideos?.some((video) => video.status === "uploading" || video.status === "processing") ? 15_000 : 0,
+  })
   const {
     data: categoryResponse,
     error: categoriesError,

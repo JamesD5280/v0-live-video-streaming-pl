@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import useSWR from "swr"
 import { Upload, Film, X, CheckCircle2, AlertCircle } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
 import { fetcher } from "@/lib/fetcher"
-import { type VideoCategory } from "@/lib/store"
+import { type Video, type VideoCategory } from "@/lib/store"
 import { useLanguage } from "@/components/language-provider"
 
 type VideoCategoriesResponse = {
@@ -31,7 +31,8 @@ interface UploadFile {
   size: string
   sizeBytes: number
   progress: number
-  status: "uploading" | "saving" | "complete" | "error"
+  status: "uploading" | "saving" | "processing" | "complete" | "error"
+  videoId?: string
   errorMessage?: string
   abortController?: AbortController
 }
@@ -43,6 +44,33 @@ export function VideoUpload({ onUploadComplete }: { onUploadComplete?: () => voi
   const [uploads, setUploads] = useState<UploadFile[]>([])
   const [selectedCategory, setSelectedCategory] = useState("uncategorized")
   const categories = categoryResponse?.categories ?? []
+  const hasPendingAssembly = uploads.some((upload) => upload.status === "processing" && upload.videoId)
+  const { data: videos } = useSWR<Video[]>(hasPendingAssembly ? "/api/videos" : null, fetcher, {
+    refreshInterval: 10_000,
+    revalidateOnFocus: true,
+  })
+
+  useEffect(() => {
+    if (!videos) return
+
+    setUploads((current) => {
+      let changed = false
+      const next = current.map((upload) => {
+        if (upload.status !== "processing" || !upload.videoId) return upload
+        const video = videos.find((item) => item.id === upload.videoId)
+        if (video?.status === "ready") {
+          changed = true
+          return { ...upload, status: "complete" as const }
+        }
+        if (video?.status === "error") {
+          changed = true
+          return { ...upload, status: "error" as const, errorMessage: t("Video processing failed") }
+        }
+        return upload
+      })
+      return changed ? next : current
+    })
+  }, [videos, t])
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -134,22 +162,26 @@ export function VideoUpload({ onUploadComplete }: { onUploadComplete?: () => voi
         }),
       })
 
+      const finalizeResult = await finalRes.json().catch(() => null)
       if (!finalRes.ok) {
-        let errMsg = "Failed to finalize upload"
-        try {
-          const errBody = await finalRes.text()
-          console.log("[v0] Finalize error response:", errBody)
-          const err = JSON.parse(errBody)
-          errMsg = err.error || errMsg
-        } catch (parseErr) {
-          console.log("[v0] Failed to parse error response:", parseErr)
+        if (typeof finalizeResult?.videoId === "string") {
+          setUploads((prev) => prev.map((upload) =>
+            upload.id === id ? { ...upload, videoId: finalizeResult.videoId } : upload
+          ))
+          onUploadComplete?.()
         }
-        throw new Error(errMsg)
+        throw new Error(finalizeResult?.error || "Failed to finalize upload")
       }
 
-      setUploads((prev) =>
-        prev.map((f) => (f.id === id ? { ...f, status: "complete" } : f))
-      )
+      const videoId = finalizeResult?.video?.id
+      if (typeof videoId !== "string") {
+        throw new Error("The server did not return the saved video status")
+      }
+
+      setUploads((prev) => prev.map((upload) => upload.id === id
+        ? { ...upload, videoId, status: finalizeResult.video.status === "ready" ? "complete" : "processing" }
+        : upload
+      ))
       onUploadComplete?.()
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : "Upload failed"
@@ -282,7 +314,11 @@ export function VideoUpload({ onUploadComplete }: { onUploadComplete?: () => voi
                         <span className="text-xs text-destructive">{file.errorMessage || t("Failed")}</span>
                       ) : (
                         <span className="text-xs text-muted-foreground">
-                          {file.status === "saving" ? t("Saving...") : `${file.progress}%`}
+                          {file.status === "saving"
+                            ? t("Saving...")
+                            : file.status === "processing"
+                              ? t("Assembling on server...")
+                              : `${file.progress}%`}
                         </span>
                       )}
                       <Button
@@ -307,7 +343,7 @@ export function VideoUpload({ onUploadComplete }: { onUploadComplete?: () => voi
                   {file.status === "uploading" && (
                     <Progress value={file.progress} className="mt-2 h-1" />
                   )}
-                  {file.status === "saving" && (
+                  {(file.status === "saving" || file.status === "processing") && (
                     <Progress value={100} className="mt-2 h-1 animate-pulse" />
                   )}
                 </div>
