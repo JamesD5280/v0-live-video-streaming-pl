@@ -11,13 +11,10 @@
  *   3. Run: npm install dotenv (or just set environment variables directly)
  *   4. Run: node vps-chunk-assembler.js
  * 
- * Environment variables required (put in .env file):
- *   BUNNY_STORAGE_ZONE=2mstreamsn
- *   BUNNY_STORAGE_API_KEY=your-bunny-storage-api-key
- *   BUNNY_CDN_HOSTNAME=2mstreamsn.b-cdn.net
- *   SUPABASE_URL=https://ouobhgelqzxhxbiwuhlu.supabase.co
- *   SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
- *   APP_URL=https://2mstream.com
+ * Environment variables required on the VPS:
+ *   BUNNY_STORAGE_ZONE, BUNNY_STORAGE_PASSWORD (or BUNNY_STORAGE_API_KEY), BUNNY_STORAGE_REGION
+ *   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, APP_URL
+ *   VPS_WEBHOOK_SECRET (used for the app callback; direct DB update is the fallback)
  */
 
 // Load .env file if it exists (install dotenv: npm install dotenv)
@@ -32,15 +29,28 @@ const https = require('https');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const { Readable } = require('stream');
+const { pipeline } = require('stream/promises');
 const { createClient } = require('@supabase/supabase-js');
 
-// Configuration - set these environment variables on your VPS
 const BUNNY_STORAGE_ZONE = process.env.BUNNY_STORAGE_ZONE || '2mstreamsn';
-const BUNNY_STORAGE_API_KEY = process.env.BUNNY_STORAGE_API_KEY;
-const BUNNY_CDN_HOSTNAME = process.env.BUNNY_CDN_HOSTNAME || '2mstreamsn.b-cdn.net';
+const BUNNY_STORAGE_API_KEY = (process.env.BUNNY_STORAGE_PASSWORD || process.env.BUNNY_STORAGE_API_KEY || '').trim();
+const REGION_MAP = {
+  'new york': 'ny', newyork: 'ny', ny: 'ny',
+  'los angeles': 'la', losangeles: 'la', la: 'la',
+  singapore: 'sg', sg: 'sg', sydney: 'syd', syd: 'syd',
+  johannesburg: 'jh', jh: 'jh', frankfurt: 'de', de: 'de',
+  london: 'uk', uk: 'uk', stockholm: 'se', se: 'se',
+};
+const RAW_STORAGE_REGION = (process.env.BUNNY_STORAGE_REGION || 'ny').toLowerCase();
+const BUNNY_STORAGE_REGION = REGION_MAP[RAW_STORAGE_REGION] || 'ny';
+const BUNNY_STORAGE_HOSTNAME = `${BUNNY_STORAGE_REGION}.storage.bunnycdn.com`;
+const BUNNY_CDN_HOSTNAME = (process.env.BUNNY_CDN_HOSTNAME || `${BUNNY_STORAGE_ZONE}.b-cdn.net`)
+  .replace(/^https?:\/\//, '')
+  .replace(/\/.*$/, '');
 const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const VPS_WEBHOOK_SECRET = process.env.VPS_WEBHOOK_SECRET;
 const APP_URL = process.env.APP_URL || 'https://2mstream.com';
 
 // Temp directory for assembling files
@@ -64,7 +74,9 @@ function makeRequest(options, postData = null, retries = 3) {
         if (res.statusCode >= 200 && res.statusCode < 300) {
           resolve({ status: res.statusCode, body });
         } else {
-          reject(new Error(`HTTP ${res.statusCode}: ${body.toString()}`));
+          const error = new Error(`HTTP ${res.statusCode}: ${body.toString()}`);
+          error.statusCode = res.statusCode;
+          reject(error);
         }
       });
     });
@@ -92,13 +104,6 @@ function makeRequest(options, postData = null, retries = 3) {
     req.end();
   });
 }
-      });
-    });
-    req.on('error', reject);
-    if (postData) req.write(postData);
-    req.end();
-  });
-}
 
 // Get videos with status 'uploading' from Supabase
 async function getUploadingVideos() {
@@ -106,8 +111,9 @@ async function getUploadingVideos() {
   
   const { data, error } = await supabase
     .from('videos')
-    .select('*')
-    .eq('status', 'uploading');
+    .select('id,title,filename,file_size,storage_path,status')
+    .eq('status', 'uploading')
+    .order('created_at', { ascending: true });
   
   if (error) {
     throw new Error(`Failed to fetch videos: ${error.message}`);
@@ -116,10 +122,40 @@ async function getUploadingVideos() {
   return data || [];
 }
 
+async function reclaimStaleProcessingVideos() {
+  const cutoff = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  const { data, error } = await supabase
+    .from('videos')
+    .update({ status: 'uploading', updated_at: new Date().toISOString() })
+    .eq('status', 'processing')
+    .lt('updated_at', cutoff)
+    .select('id');
+
+  if (error) throw new Error(`Failed to reclaim stale processing videos: ${error.message}`);
+  if (data && data.length > 0) {
+    console.log(`Re-queued ${data.length} stale processing video(s).`);
+  }
+}
+
+async function claimVideo(videoId) {
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  const { data, error } = await supabase
+    .from('videos')
+    .update({ status: 'processing', updated_at: new Date().toISOString() })
+    .eq('id', videoId)
+    .eq('status', 'uploading')
+    .select('id')
+    .maybeSingle();
+
+  if (error) throw new Error(`Failed to claim video ${videoId}: ${error.message}`);
+  return Boolean(data);
+}
+
 // List files in Bunny temp-uploads folder
 async function listBunnyTempFiles() {
   const options = {
-    hostname: 'storage.bunnycdn.com',
+    hostname: BUNNY_STORAGE_HOSTNAME,
     path: `/${BUNNY_STORAGE_ZONE}/temp-uploads/`,
     method: 'GET',
     headers: {
@@ -135,8 +171,8 @@ async function listBunnyTempFiles() {
 // Download a chunk from Bunny
 async function downloadChunk(chunkFilename) {
   const options = {
-    hostname: BUNNY_CDN_HOSTNAME,
-    path: `/temp-uploads/${encodeURIComponent(chunkFilename)}`,
+    hostname: BUNNY_STORAGE_HOSTNAME,
+    path: `/${BUNNY_STORAGE_ZONE}/temp-uploads/${encodeURIComponent(chunkFilename)}`,
     method: 'GET',
     headers: {
       'AccessKey': BUNNY_STORAGE_API_KEY,
@@ -147,32 +183,47 @@ async function downloadChunk(chunkFilename) {
   return body;
 }
 
-// Upload assembled video to Bunny
-async function uploadToBunny(filename, buffer) {
+// Upload the assembled file as a stream so large videos do not need to fit in memory.
+async function uploadToBunny(filename, localFilePath) {
+  const fileSize = fs.statSync(localFilePath).size;
+  const requestPath = `/${BUNNY_STORAGE_ZONE}/videos/${encodeURIComponent(filename)}`;
   const options = {
-    hostname: 'storage.bunnycdn.com',
-    path: `/${BUNNY_STORAGE_ZONE}/videos/${encodeURIComponent(filename)}`,
+    hostname: BUNNY_STORAGE_HOSTNAME,
+    path: requestPath,
     method: 'PUT',
     headers: {
       'AccessKey': BUNNY_STORAGE_API_KEY,
       'Content-Type': 'application/octet-stream',
-      'Content-Length': buffer.length,
+      'Content-Length': fileSize,
     }
   };
-  
-  console.log(`    [DEBUG] Uploading via storage API: storage.bunnycdn.com${options.path}`);
-  
-  await makeRequest(options, buffer);
-  
-  // Return the CDN URL
+
+  console.log(`    Uploading ${fileSize} bytes to Bunny Storage...`);
+  await new Promise((resolve, reject) => {
+    const request = https.request(options, (response) => {
+      const responseChunks = [];
+      response.on('data', (chunk) => responseChunks.push(chunk));
+      response.on('end', () => {
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          resolve();
+        } else {
+          reject(new Error(`Bunny upload failed with HTTP ${response.statusCode}: ${Buffer.concat(responseChunks).toString()}`));
+        }
+      });
+    });
+    request.setTimeout(300000, () => request.destroy(new Error('Bunny upload timeout')));
+    request.on('error', reject);
+    fs.createReadStream(localFilePath).on('error', reject).pipe(request);
+  });
+
   return `https://${BUNNY_CDN_HOSTNAME}/videos/${encodeURIComponent(filename)}`;
 }
 
 // Delete chunk from Bunny
 async function deleteChunk(chunkFilename) {
   const options = {
-    hostname: BUNNY_CDN_HOSTNAME,
-    path: `/temp-uploads/${encodeURIComponent(chunkFilename)}`,
+    hostname: BUNNY_STORAGE_HOSTNAME,
+    path: `/${BUNNY_STORAGE_ZONE}/temp-uploads/${encodeURIComponent(chunkFilename)}`,
     method: 'DELETE',
     headers: {
       'AccessKey': BUNNY_STORAGE_API_KEY,
@@ -196,6 +247,7 @@ async function finalizeAssembly(videoId, cdnUrl) {
     path: appUrl.pathname,
     method: 'POST',
     headers: {
+      'Authorization': `Bearer ${VPS_WEBHOOK_SECRET || ''}`,
       'Content-Type': 'application/json',
       'Content-Length': Buffer.byteLength(postData),
     }
@@ -222,9 +274,9 @@ async function updateVideoStatus(videoId, status, storagePath) {
   
   const { data, error } = await supabase
     .from('videos')
-    .update({ status, storage_path: storagePath })
+    .update({ status, storage_path: storagePath, updated_at: new Date().toISOString() })
     .eq('id', videoId)
-    .select()
+    .select('id,status,storage_path')
     .single();
   
   if (error) {
@@ -241,91 +293,87 @@ function extractUploadId(storagePath) {
   return match ? match[1] : null;
 }
 
-// Main assembly function for a single video
+// Assemble one video without holding the complete file in memory.
 async function assembleVideo(video) {
   const uploadId = extractUploadId(video.storage_path);
-  
   if (!uploadId) {
     console.log(`  Skipping video ${video.id}: No valid upload ID in storage_path`);
     return false;
   }
-  
-  console.log(`  Processing video: ${video.title}`);
-  console.log(`    Upload ID: ${uploadId}`);
-  console.log(`    Filename: ${video.filename}`);
-  
-  // We'll try to download chunks starting from 0 and count up until we get a 404
-  // This avoids needing to list the bucket
-  const chunks = [];
-  let chunkIndex = 0;
-  let totalSize = 0;
-  
-  console.log(`    Discovering and downloading chunks...`);
-  
-  // Try downloading chunks until we get a 404 or error
-  while (true) {
-    const chunkName = `${uploadId}-chunk-${chunkIndex}`;
-    try {
-      process.stdout.write(`\r    Downloading chunk ${chunkIndex}...`);
-      const data = await downloadChunk(chunkName);
-      chunks.push(data);
-      totalSize += data.length;
-      chunkIndex++;
-    } catch (err) {
-      // If chunk doesn't exist, we've reached the end
-      if (err.message.includes('404') || err.message.includes('404')) {
-        console.log(`\n    Found ${chunkIndex} chunks`);
-        break;
-      }
-      // For other errors, still try to continue
-      if (chunkIndex === 0) {
-        console.log(`\n    ERROR: Could not download first chunk: ${err.message}`);
-        return false;
-      }
-      console.log(`\n    Stopped at chunk ${chunkIndex}: ${err.message}`);
-      break;
-    }
-  }
-  
-  if (chunks.length === 0) {
-    console.log(`    ERROR: No chunks found for upload ID ${uploadId}`);
-    return false;
-  }
-  
-  console.log(`    Downloaded ${totalSize} bytes total from ${chunks.length} chunks`);
-  
-  // Combine all chunks
-  console.log(`    Combining chunks...`);
-  const completeFile = Buffer.concat(chunks);
-  console.log(`    Combined file size: ${completeFile.length} bytes`);
-  
-  // Upload to videos folder
-  console.log(`    Uploading to Bunny videos folder...`);
-  const cdnUrl = await uploadToBunny(video.filename, completeFile);
-  console.log(`    Uploaded: ${cdnUrl}`);
-  
-  // Update video status in database
-  console.log(`    Updating database status to 'ready'...`);
+
+  const localFilePath = path.join(TEMP_DIR, `${video.id}.assembled`);
+  let claimed = false;
+  let chunkCount = 0;
+
   try {
-    await updateVideoStatus(video.id, 'ready', cdnUrl);
-    console.log(`    Database updated successfully`);
-  } catch (err) {
-    console.error(`    ERROR updating database: ${err.message}`);
-    throw err;
-  }
-  
-  // Clean up temp chunks (best effort)
-  console.log(`    Cleaning up ${chunks.length} temp chunks...`);
-  for (let i = 0; i < chunks.length; i++) {
-    try {
-      await deleteChunk(`${uploadId}-chunk-${i}`);
-    } catch (err) {
-      console.log(`    Note: Could not delete chunk ${i}: ${err.message}`);
+    claimed = await claimVideo(video.id);
+    if (!claimed) {
+      console.log(`  Skipping video ${video.id}: another worker already claimed it`);
+      return false;
     }
+
+    console.log(`  Processing video: ${video.title}`);
+    console.log(`    Upload ID: ${uploadId}`);
+    console.log(`    Filename: ${video.filename}`);
+
+    const chunkStream = (async function* () {
+      for (let chunkIndex = 0; ; chunkIndex++) {
+        const chunkName = `${uploadId}-chunk-${chunkIndex}`;
+        try {
+          const data = await downloadChunk(chunkName);
+          chunkCount++;
+          process.stdout.write(`\r    Downloaded chunk ${chunkIndex} (${data.length} bytes)`);
+          yield data;
+        } catch (error) {
+          if (error.statusCode === 404) {
+            if (chunkCount === 0) {
+              throw new Error(`No chunks found for upload ID ${uploadId}`);
+            }
+            console.log(`\n    Found ${chunkCount} chunks`);
+            return;
+          }
+          throw error;
+        }
+      }
+    })();
+
+    fs.rmSync(localFilePath, { force: true });
+    await pipeline(Readable.from(chunkStream), fs.createWriteStream(localFilePath));
+
+    const assembledSize = fs.statSync(localFilePath).size;
+    const expectedSize = Number(video.file_size);
+    if (expectedSize > 0 && assembledSize !== expectedSize) {
+      throw new Error(`Chunk size mismatch: expected ${expectedSize} bytes, assembled ${assembledSize}`);
+    }
+
+    console.log(`    Assembled ${assembledSize} bytes from ${chunkCount} chunks`);
+    const cdnUrl = await uploadToBunny(video.filename, localFilePath);
+    console.log(`    Uploaded: ${cdnUrl}`);
+
+    await finalizeAssembly(video.id, cdnUrl);
+    console.log(`    Video ${video.id} is ready`);
+
+    for (let index = 0; index < chunkCount; index++) {
+      await deleteChunk(`${uploadId}-chunk-${index}`);
+    }
+
+    return true;
+  } catch (error) {
+    console.error(`  ERROR processing video ${video.id}:`, error.message);
+    if (claimed) {
+      const isPermanentDataError =
+        error.message.startsWith('No chunks found') ||
+        error.message.startsWith('Chunk size mismatch');
+      try {
+        await updateVideoStatus(video.id, isPermanentDataError ? 'error' : 'uploading', video.storage_path);
+      } catch (statusError) {
+        console.error(`  Could not release video ${video.id}:`, statusError.message);
+      }
+    }
+    return false;
+  } finally {
+    fs.rmSync(localFilePath, { force: true });
   }
-  
-  console.log(`    Done!`);
-  return true;
 }
 
 // Main function
@@ -335,7 +383,7 @@ async function main() {
   
   // Validate environment
   if (!BUNNY_STORAGE_API_KEY) {
-    console.error('ERROR: BUNNY_STORAGE_API_KEY not set');
+    console.error('ERROR: BUNNY_STORAGE_PASSWORD or BUNNY_STORAGE_API_KEY not set');
     process.exit(1);
   }
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
@@ -344,6 +392,8 @@ async function main() {
   }
   
   try {
+    await reclaimStaleProcessingVideos();
+
     // Get videos with status 'uploading'
     console.log('\nFetching videos with status "uploading"...');
     const videos = await getUploadingVideos();
