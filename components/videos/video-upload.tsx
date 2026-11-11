@@ -1,12 +1,28 @@
 "use client"
 
 import { useState, useCallback } from "react"
+import useSWR from "swr"
 import { Upload, Film, X, CheckCircle2, AlertCircle } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { cn } from "@/lib/utils"
+import { fetcher } from "@/lib/fetcher"
+import { type VideoCategory } from "@/lib/store"
 import { useLanguage } from "@/components/language-provider"
+
+type VideoCategoriesResponse = {
+  categories: VideoCategory[]
+  canManage: boolean
+}
 
 interface UploadFile {
   id: string
@@ -22,8 +38,11 @@ interface UploadFile {
 
 export function VideoUpload({ onUploadComplete }: { onUploadComplete?: () => void }) {
   const { t } = useLanguage()
+  const { data: categoryResponse } = useSWR<VideoCategoriesResponse>("/api/video-categories", fetcher)
   const [isDragging, setIsDragging] = useState(false)
   const [uploads, setUploads] = useState<UploadFile[]>([])
+  const [selectedCategory, setSelectedCategory] = useState("uncategorized")
+  const categories = categoryResponse?.categories ?? []
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -35,7 +54,7 @@ export function VideoUpload({ onUploadComplete }: { onUploadComplete?: () => voi
     setIsDragging(false)
   }, [])
 
-  const processFile = useCallback(async (file: File) => {
+  const processFile = useCallback(async (file: File, categoryId: string | null) => {
     const id = crypto.randomUUID()
     const abortController = new AbortController()
 
@@ -111,6 +130,7 @@ export function VideoUpload({ onUploadComplete }: { onUploadComplete?: () => voi
           file_size: file.size,
           format,
           totalChunks, // Required for chunk assembly
+          category_id: categoryId,
         }),
       })
 
@@ -150,9 +170,10 @@ export function VideoUpload({ onUploadComplete }: { onUploadComplete?: () => voi
       e.preventDefault()
       setIsDragging(false)
       const files = Array.from(e.dataTransfer.files)
-      files.forEach(processFile)
+      const categoryId = selectedCategory === "uncategorized" ? null : selectedCategory
+      files.forEach((file) => processFile(file, categoryId))
     },
-    [processFile]
+    [processFile, selectedCategory]
   )
 
   const handleFileSelect = useCallback(() => {
@@ -162,10 +183,11 @@ export function VideoUpload({ onUploadComplete }: { onUploadComplete?: () => voi
     input.multiple = true
     input.onchange = (e) => {
       const files = Array.from((e.target as HTMLInputElement).files || [])
-      files.forEach(processFile)
+      const categoryId = selectedCategory === "uncategorized" ? null : selectedCategory
+      files.forEach((file) => processFile(file, categoryId))
     }
     input.click()
-  }, [processFile])
+  }, [processFile, selectedCategory])
 
   const cancelUpload = useCallback((id: string) => {
     setUploads((prev) => {
@@ -183,6 +205,28 @@ export function VideoUpload({ onUploadComplete }: { onUploadComplete?: () => voi
 
   return (
     <div className="space-y-4">
+      {categoryResponse?.canManage && (
+        <div className="flex max-w-md flex-col gap-2">
+          <label htmlFor="upload-video-category" className="text-sm font-medium text-foreground">
+            {t("Upload to category")}
+          </label>
+          <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+            <SelectTrigger id="upload-video-category">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectItem value="uncategorized">{t("Uncategorized")}</SelectItem>
+                {categories.map((category) => (
+                  <SelectItem key={category.id} value={category.id}>
+                    {category.name}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
       <div
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}

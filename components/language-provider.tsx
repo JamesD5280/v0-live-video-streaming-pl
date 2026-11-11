@@ -166,6 +166,7 @@ const french: Record<string, string> = {
   "Could not update video category": "Impossible de modifier la catégorie de la vidéo",
   "No videos in this category": "Aucune vidéo dans cette catégorie",
   "Move to category": "Déplacer vers une catégorie",
+  "Upload to category": "Importer dans une catégorie",
   "Video actions": "Actions vidéo",
   Preview: "Aperçu",
   "Stream Now": "Diffuser maintenant",

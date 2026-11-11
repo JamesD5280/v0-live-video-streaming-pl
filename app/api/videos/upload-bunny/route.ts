@@ -9,6 +9,8 @@ function sanitizeString(str: string): string {
   return str.replace(/[^\w\s\-\.]/gu, "").trim()
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
 /**
  * POST /api/videos/upload-bunny
  * Handles chunked uploads directly to Bunny CDN Storage
@@ -73,12 +75,52 @@ export async function PUT(req: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-    const body = await req.json()
-    const { uploadId, filename, title, duration_seconds, resolution, format, file_size, totalChunks } = body
-
-    if (!uploadId || !filename || !totalChunks) {
+    const body = (await req.json().catch(() => null)) as Record<string, unknown> | null
+    if (!body) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
     }
+
+    const uploadId = body.uploadId
+    const filename = body.filename
+    const totalChunks = body.totalChunks
+    if (
+      typeof uploadId !== "string" ||
+      !uploadId ||
+      typeof filename !== "string" ||
+      !filename ||
+      typeof totalChunks !== "number" ||
+      !Number.isSafeInteger(totalChunks) ||
+      totalChunks < 1
+    ) {
+      return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
+    }
+
+    const categoryId = body.category_id === undefined ? null : body.category_id
+    if (categoryId !== null && (typeof categoryId !== "string" || !UUID_PATTERN.test(categoryId))) {
+      return NextResponse.json({ error: "Invalid category" }, { status: 400 })
+    }
+
+    if (categoryId !== null) {
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle()
+
+      if (profileError) {
+        console.error("Bunny upload category permission check failed:", profileError)
+        return NextResponse.json({ error: "Could not verify category permissions" }, { status: 500 })
+      }
+      if (profile?.role !== "admin" && profile?.role !== "editor") {
+        return NextResponse.json({ error: "Only editors and admins can manage categories" }, { status: 403 })
+      }
+    }
+
+    const title = typeof body.title === "string" ? body.title : filename
+    const fileSize =
+      typeof body.file_size === "number" && Number.isSafeInteger(body.file_size) && body.file_size >= 0
+        ? body.file_size
+        : 0
 
     console.log(`[Bunny Finalize] Saving video metadata with upload_id for later assembly by VPS`)
     console.log(`[Bunny Finalize] Video will be assembled by VPS: uploadId=${uploadId}, filename=${filename}, totalChunks=${totalChunks}`)
@@ -91,9 +133,10 @@ export async function PUT(req: NextRequest) {
       user_id: user.id,
       title: sanitizedTitle,
       filename,
-      file_size: file_size || 0,
+      file_size: fileSize,
       storage_path: `bunny://temp-uploads/${uploadId}`,
       status: "uploading",
+      category_id: categoryId,
     })
 
     const { data, error } = await supabase
@@ -102,9 +145,10 @@ export async function PUT(req: NextRequest) {
         user_id: user.id,
         title: sanitizedTitle,
         filename,
-        file_size: file_size || 0,
+        file_size: fileSize,
         storage_path: `bunny://temp-uploads/${uploadId}`,
         status: "uploading",
+        category_id: categoryId,
       })
       .select()
       .single()
@@ -116,9 +160,15 @@ export async function PUT(req: NextRequest) {
         details: error.details,
         hint: error.hint,
       })
-      const errorMsg = `Database error: ${error.message}`
+      const status = error.code === "42501" ? 403 : error.code === "23503" ? 400 : 500
+      const errorMsg =
+        status === 403
+          ? "Only editors and admins can manage categories"
+          : status === 400
+            ? "Invalid category"
+            : "Could not save video metadata"
       console.error("[Bunny Finalize] Returning error response:", errorMsg)
-      return NextResponse.json({ error: errorMsg }, { status: 400 })
+      return NextResponse.json({ error: errorMsg }, { status })
     }
 
     console.log(`[Bunny Finalize] Video saved with ID: ${data.id}`)
