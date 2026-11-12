@@ -45,6 +45,20 @@ const VIDEO_DIR = process.env.VIDEO_DIR || './videos'
 // Active FFmpeg processes: streamId -> { processes, destinations[], tempFiles[], playlistState? }
 const activeStreams = new Map()
 
+function normalizePlaylistPosition(position, sourceCount) {
+  if (!position || !Number.isInteger(sourceCount) || sourceCount < 1) return null
+
+  const fileIndex = Number(position.fileIndex)
+  const seekTime = Number(position.seekTime)
+  if (!Number.isInteger(fileIndex) || fileIndex < 0 || fileIndex >= sourceCount) return null
+  if (!Number.isFinite(seekTime) || seekTime < 0) return null
+
+  return {
+    fileIndex,
+    seekTime: Math.floor(seekTime),
+  }
+}
+
 function isProcessRunning(proc) {
   return Boolean(
     proc &&
@@ -969,15 +983,17 @@ function buildFFmpegArgs(inputArgs, overlayResult, rtmpTarget) {
  */
 function startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop, tempFiles, resumePosition = null, timeZone) {
   const rtmpTarget = `${dest.rtmpUrl}/${dest.streamKey}`
-  // Resume from saved position if available
-  let currentIndex = resumePosition?.fileIndex || 0
-  let currentSeekTime = resumePosition?.seekTime || 0
+  const normalizedResume = normalizePlaylistPosition(resumePosition, videoSources.length)
+  // Resume from the last known item and timestamp when the stream is rebuilt.
+  let currentIndex = normalizedResume?.fileIndex ?? 0
+  let currentSeekTime = normalizedResume?.seekTime ?? 0
   let stopped = false
   let currentProc = null
   let restartCount = 0
   let playbackStartTime = null  // Track when current file started playing
+  let positionTimer = null
   
-  if (resumePosition) {
+  if (normalizedResume) {
     console.log(`[2MStream] Resuming from file ${currentIndex + 1}, position ${currentSeekTime}s`)
   }
 
@@ -1117,6 +1133,10 @@ function startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop,
 
   function stop() {
     stopped = true
+    if (positionTimer) {
+      clearInterval(positionTimer)
+      positionTimer = null
+    }
     if (currentProc && !currentProc.killed) {
       currentProc.kill('SIGTERM')
       setTimeout(() => {
@@ -1126,16 +1146,22 @@ function startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop,
   }
 
   function getPosition() {
-    // Calculate current position: seek time + elapsed time since playback started
-    if (playbackStartTime) {
-      const elapsedSeconds = (Date.now() - playbackStartTime) / 1000
-      return {
-        fileIndex: currentIndex,
-        seekTime: currentSeekTime + elapsedSeconds
-      }
+    // Calculate current position: seek time + elapsed time since playback started.
+    const position = playbackStartTime
+      ? {
+          fileIndex: currentIndex,
+          seekTime: currentSeekTime + (Date.now() - playbackStartTime) / 1000,
+        }
+      : { fileIndex: currentIndex, seekTime: currentSeekTime }
+    const entry = activeStreams.get(streamId)
+    if (entry) {
+      entry.playlistState = normalizePlaylistPosition(position, videoSources.length)
     }
-    return { fileIndex: currentIndex, seekTime: currentSeekTime }
+    return position
   }
+
+  // Keep a checkpoint available even if a restart arrives between explicit status calls.
+  positionTimer = setInterval(getPosition, 1000)
 
   // Start playing the first file (delay to allow activeStreams.set() to complete first)
   setTimeout(playCurrentFile, 100)
@@ -1559,14 +1585,21 @@ app.post('/restart', async (req, res) => {
 
   console.log(`[2MStream] Restarting stream ${streamId} with ${overlays?.length || 0} overlay(s)`)
 
-  // Save current playback position before stopping
-  let resumePosition = null
+  // Snapshot the active playlist before stopping FFmpeg. The checkpoint fallback
+  // covers the small window between controller creation and the first callback.
+  let resumePosition = existing.playlistState || null
   if (existing.playlistControllers && existing.playlistControllers.length > 0) {
     const controller = existing.playlistControllers[0]
     if (controller.getPosition) {
       resumePosition = controller.getPosition()
-      console.log(`[2MStream] Saving position: file ${resumePosition.fileIndex + 1}, time ${Math.floor(resumePosition.seekTime)}s`)
     }
+  }
+  const resumeSourceCount = existing.config.videoSources?.length || (
+    existing.config.videoUrl || existing.config.videoPath ? 1 : 0
+  )
+  resumePosition = normalizePlaylistPosition(resumePosition, resumeSourceCount)
+  if (resumePosition) {
+    console.log(`[2MStream] Saving position: file ${resumePosition.fileIndex + 1}, time ${resumePosition.seekTime}s`)
   }
 
   // Build updated config with new overlays
