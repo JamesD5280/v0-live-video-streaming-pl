@@ -20,7 +20,7 @@
 import express from 'express'
 import cors from 'cors'
 import { spawn, execFile } from 'child_process'
-import { existsSync, writeFileSync, unlinkSync, mkdirSync, readdirSync, statSync, lstatSync, createWriteStream, createReadStream, rmdirSync, copyFileSync, mkdtempSync, rmSync, openSync, readSync, closeSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync, readdirSync, statSync, lstatSync, createWriteStream, createReadStream, rmdirSync, copyFileSync, mkdtempSync, rmSync, openSync, readSync, closeSync } from 'fs'
 import { join, basename, dirname, extname } from 'path'
 import { fileURLToPath } from 'url'
 import { tmpdir } from 'os'
@@ -56,6 +56,54 @@ function normalizePlaylistPosition(position, sourceCount) {
   return {
     fileIndex,
     seekTime: Math.floor(seekTime),
+  }
+}
+
+const CHECKPOINT_DIR = join(VIDEO_DIR, '.playlist-state')
+
+function checkpointPath(streamId) {
+  const safeStreamId = String(streamId).replace(/[^a-zA-Z0-9_-]/g, '_')
+  return join(CHECKPOINT_DIR, `${safeStreamId}.json`)
+}
+
+function sourceKey(source) {
+  return String(source?.url || source?.path || '')
+}
+
+function savePlaylistCheckpoint(streamId, position, videoSources) {
+  const normalized = normalizePlaylistPosition(position, videoSources.length)
+  if (!normalized) return
+
+  try {
+    mkdirSync(CHECKPOINT_DIR, { recursive: true })
+    writeFileSync(checkpointPath(streamId), JSON.stringify({
+      ...normalized,
+      sourceKey: sourceKey(videoSources[normalized.fileIndex]),
+      savedAt: Date.now(),
+    }))
+  } catch (error) {
+    console.error(`[2MStream] Failed to save playlist checkpoint: ${error.message}`)
+  }
+}
+
+function loadPlaylistCheckpoint(streamId, videoSources) {
+  if (!videoSources.length) return null
+
+  try {
+    const saved = JSON.parse(readFileSync(checkpointPath(streamId), 'utf8'))
+    const normalized = normalizePlaylistPosition(saved, videoSources.length)
+    if (!normalized) return null
+
+    if (!saved.sourceKey || saved.sourceKey === sourceKey(videoSources[normalized.fileIndex])) {
+      return normalized
+    }
+
+    const matchingIndex = videoSources.findIndex((source) => sourceKey(source) === saved.sourceKey)
+    return matchingIndex < 0
+      ? null
+      : { fileIndex: matchingIndex, seekTime: normalized.seekTime }
+  } catch {
+    return null
   }
 }
 
@@ -95,8 +143,10 @@ app.get('/health', (req, res) => {
       hasOverlays: (info.overlayCount || 0) > 0,
     })
   }
-  res.json({ 
-    status: 'ok', 
+  res.json({
+    status: 'ok',
+    engineVersion: 'playlist-resume-v2',
+    playlistResume: true,
     activeStreams: activeStreams.size,
     streams,
     uptime: process.uptime(),
@@ -251,7 +301,7 @@ function formatFfmpegColor(value, opacity = 100, fallback = 'white') {
   return `${color}@${alpha.toFixed(3)}`
 }
 
-function buildOverlayFilters(overlays) {
+function buildOverlayFilters(overlays, scrollTimeOffset = 0) {
   console.log(`[2MStream] buildOverlayFilters called with ${overlays?.length || 0} overlays`)
   if (!overlays || overlays.length === 0) return null
 
@@ -345,8 +395,9 @@ function buildOverlayFilters(overlays) {
         (overlay.textContent || '').length * fontSize * 0.55 + tickerGap.length * fontSize * 0.55,
       )
       const loopCopyCount = Math.max(3, Math.min(300, Math.ceil((scrollZoneWidth + 100) / estimatedChunkWidth) + 2))
-      const loopText = `${escapedText}${tickerGap}`.repeat(loopCopyCount)
-      const scrollFormula = `'w-mod(t*${speed}\\,text_w/${loopCopyCount})'`
+  const loopText = `${escapedText}${tickerGap}`.repeat(loopCopyCount)
+  const safeScrollTimeOffset = Math.max(0, Number(scrollTimeOffset) || 0)
+  const scrollFormula = `'w-mod((t+${safeScrollTimeOffset.toFixed(3)})*${speed}\\,text_w/${loopCopyCount})'`
       
       console.log(`[2MStream] Scrolling text: centerY=${scrollCenterY}px, top=${scrollTop}px, zone X=${scrollStartX}-${scrollEndX}px (width=${scrollZoneWidth}), speed=${speed}, copies=${loopCopyCount}`)
       
@@ -992,6 +1043,7 @@ function startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop,
   let restartCount = 0
   let playbackStartTime = null  // Track when current file started playing
   let positionTimer = null
+  let lastCheckpointKey = ''
   
   if (normalizedResume) {
     console.log(`[2MStream] Resuming from file ${currentIndex + 1}, position ${currentSeekTime}s`)
@@ -1132,6 +1184,8 @@ function startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop,
   }
 
   function stop() {
+    const finalPosition = getPosition()
+    savePlaylistCheckpoint(streamId, finalPosition, videoSources)
     stopped = true
     if (positionTimer) {
       clearInterval(positionTimer)
@@ -1153,9 +1207,17 @@ function startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop,
           seekTime: currentSeekTime + (Date.now() - playbackStartTime) / 1000,
         }
       : { fileIndex: currentIndex, seekTime: currentSeekTime }
+    const normalized = normalizePlaylistPosition(position, videoSources.length)
     const entry = activeStreams.get(streamId)
     if (entry) {
-      entry.playlistState = normalizePlaylistPosition(position, videoSources.length)
+      entry.playlistState = normalized
+    }
+    if (normalized) {
+      const checkpointKey = `${normalized.fileIndex}:${normalized.seekTime}`
+      if (checkpointKey !== lastCheckpointKey) {
+        lastCheckpointKey = checkpointKey
+        savePlaylistCheckpoint(streamId, normalized, videoSources)
+      }
     }
     return position
   }
@@ -1208,9 +1270,25 @@ app.post('/start', async (req, res) => {
 
   console.log(`[2MStream] /start called: streamId=${streamId}, overlays=${overlays?.length || 0}, isPlaylist=${isPlaylist}`)
 
-  // Stop existing stream if running
-  if (activeStreams.has(streamId)) {
+  const checkpointSources = videoSources?.length
+    ? videoSources
+    : [{ url: videoUrl, path: videoPath }]
+  const shouldResumePlaylist = Boolean(isPlaylist || (loop && !isRtmpPull))
+  let resumePosition = shouldResumePlaylist ? loadPlaylistCheckpoint(streamId, checkpointSources) : null
+  const existingStream = activeStreams.get(streamId)
+
+  if (existingStream?.playlistControllers?.length) {
+    const currentPosition = existingStream.playlistControllers[0].getPosition?.()
+    resumePosition = normalizePlaylistPosition(currentPosition, checkpointSources.length) || resumePosition
+  }
+
+  // Stop existing stream if running, after capturing its current position.
+  if (existingStream) {
     stopStream(streamId)
+  }
+
+  if (resumePosition) {
+    console.log(`[2MStream] /start restoring file ${resumePosition.fileIndex + 1}, time ${resumePosition.seekTime}s`)
   }
 
   const tempFiles = []
@@ -1239,9 +1317,10 @@ app.post('/start', async (req, res) => {
     }
   }
 
-  // Build overlay filters
+  // Build overlay filters. The ticker uses the restored media time so a restart
+  // does not make scrolling text jump back to its first frame.
   const timeZone = getOverlayTimeZone(overlays || [])
-  const overlayResult = buildOverlayFilters(overlays)
+  const overlayResult = buildOverlayFilters(overlays, resumePosition?.seekTime || 0)
 
   const processes = []
   const errors = []
@@ -1264,7 +1343,7 @@ app.post('/start', async (req, res) => {
       const procEntry = { proc: dummyProc, destId: dest.id, killed: false, restartCount: 0 }
       processes.push(procEntry)
 
-      const controller = startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop, tempFiles, null, timeZone)
+      const controller = startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop, tempFiles, resumePosition, timeZone)
       playlistControllers.push(controller)
 
     } else if (isRtmpPull && rtmpPullUrl) {
@@ -1316,7 +1395,7 @@ app.post('/start', async (req, res) => {
         processes.push(procEntry)
 
         const singleSource = [source || { url: videoUrl, path: videoPath }]
-        const controller = startPlaylistForDest(streamId, dest, singleSource, overlayResult, true, tempFiles, null, timeZone)
+        const controller = startPlaylistForDest(streamId, dest, singleSource, overlayResult, true, tempFiles, resumePosition, timeZone)
         playlistControllers.push(controller)
       } else {
         const inputArgs = ['-re', '-i', inputSource]
@@ -1349,6 +1428,7 @@ app.post('/start', async (req, res) => {
     isRtmpPull,
     overlayCount: overlays?.length || 0,
     playlistControllers,
+    playlistState: resumePosition || null,
     config: {
       streamId,
       videoSources,
@@ -1635,7 +1715,7 @@ app.post('/restart', async (req, res) => {
   }
 
   const timeZone = getOverlayTimeZone(updatedConfig.overlays || [])
-  const overlayResult = buildOverlayFilters(updatedConfig.overlays)
+  const overlayResult = buildOverlayFilters(updatedConfig.overlays, resumePosition?.seekTime || 0)
   const processes = []
   const playlistControllers = []
 
@@ -1692,6 +1772,7 @@ app.post('/restart', async (req, res) => {
     isRtmpPull: updatedConfig.isRtmpPull,
     overlayCount: updatedConfig.overlays?.length || 0,
     playlistControllers,
+    playlistState: resumePosition || null,
     config: updatedConfig,
   })
 
