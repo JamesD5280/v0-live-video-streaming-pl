@@ -325,9 +325,13 @@ function buildOverlayFilters(overlays) {
       const scrollStartX = Math.round(1920 * startPercent / 100)
       const scrollEndX = Math.round(1920 * endPercent / 100)
       const scrollZoneWidth = Math.max(96, scrollEndX - scrollStartX)
-      const estimatedChunkWidth = Math.max(1, (overlay.textContent || '').length * fontSize * 0.55 + fontSize * 3)
+      const tickerGap = '  '
+      const estimatedChunkWidth = Math.max(
+        1,
+        (overlay.textContent || '').length * fontSize * 0.55 + tickerGap.length * fontSize * 0.55,
+      )
       const loopCopyCount = Math.max(3, Math.min(300, Math.ceil((scrollZoneWidth + 100) / estimatedChunkWidth) + 2))
-      const loopText = `${escapedText}          `.repeat(loopCopyCount)
+      const loopText = `${escapedText}${tickerGap}`.repeat(loopCopyCount)
       const scrollFormula = `'w-mod(t*${speed}\\,text_w/${loopCopyCount})'`
       
       console.log(`[2MStream] Scrolling text: centerY=${scrollCenterY}px, top=${scrollTop}px, zone X=${scrollStartX}-${scrollEndX}px (width=${scrollZoneWidth}), speed=${speed}, copies=${loopCopyCount}`)
