@@ -356,7 +356,8 @@ function buildOverlayFilters(overlays, scrollTimeOffset = 0) {
       : legacyImagePosMap[overlay.position] || legacyImagePosMap['top-left']
 
     if (overlay.type === 'scrolling_text') {
-      const escapedText = (overlay.textContent || '').replace(/'/g, "'\\''").replace(/:/g, '\\:')
+      const tickerText = String(overlay.textContent || '').replace(/\s+/g, ' ').trim()
+      const escapedText = tickerText.replace(/'/g, "'\\''").replace(/:/g, '\\:')
       const fontSize = Math.max(12, Math.min(120, Number(overlay.fontSize) || 24))
       const fontColor = formatFfmpegColor(overlay.fontColor || 'white', overlay.opacity ?? 100, 'white')
       const bgColorValue = overlay.bgColor || 'black'
@@ -389,13 +390,18 @@ function buildOverlayFilters(overlays, scrollTimeOffset = 0) {
       const scrollStartX = Math.round(1920 * startPercent / 100)
       const scrollEndX = Math.round(1920 * endPercent / 100)
       const scrollZoneWidth = Math.max(96, scrollEndX - scrollStartX)
-      const tickerGap = '  '
+      // Keep one compact separator between copies and render extra copies so the
+      // next message is already visible when the current one exits the zone.
+      const tickerGap = ' '
       const estimatedChunkWidth = Math.max(
         1,
-        (overlay.textContent || '').length * fontSize * 0.55 + tickerGap.length * fontSize * 0.55,
+        tickerText.length * fontSize * 0.55 + tickerGap.length * fontSize * 0.55,
       )
-      const loopCopyCount = Math.max(3, Math.min(300, Math.ceil((scrollZoneWidth + 100) / estimatedChunkWidth) + 2))
-  const loopText = `${escapedText}${tickerGap}`.repeat(loopCopyCount)
+      const loopCopyCount = Math.max(
+        6,
+        Math.min(300, Math.ceil((scrollZoneWidth + estimatedChunkWidth * 2) / estimatedChunkWidth) + 4),
+      )
+      const loopText = `${escapedText}${tickerGap}`.repeat(loopCopyCount)
   const safeScrollTimeOffset = Math.max(0, Number(scrollTimeOffset) || 0)
   const scrollFormula = `'w-mod((t+${safeScrollTimeOffset.toFixed(3)})*${speed}\\,text_w/${loopCopyCount})'`
       
