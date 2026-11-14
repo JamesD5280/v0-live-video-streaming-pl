@@ -390,13 +390,10 @@ function buildOverlayFilters(overlays, scrollTimeOffset = 0) {
       const scrollStartX = Math.round(1920 * startPercent / 100)
       const scrollEndX = Math.round(1920 * endPercent / 100)
       const scrollZoneWidth = Math.max(96, scrollEndX - scrollStartX)
-      // Keep one compact separator between copies and render extra copies so the
-      // next message is already visible when the current one exits the zone.
-      const tickerGap = ' '
-      const estimatedChunkWidth = Math.max(
-        1,
-        tickerText.length * fontSize * 0.55 + tickerGap.length * fontSize * 0.55,
-      )
+      // Keep copies touching and render extra copies so the next message is
+      // already visible when the current one exits the zone.
+      const tickerGap = ''
+      const estimatedChunkWidth = Math.max(1, tickerText.length * fontSize * 0.55)
       const loopCopyCount = Math.max(
         6,
         Math.min(300, Math.ceil((scrollZoneWidth + estimatedChunkWidth * 2) / estimatedChunkWidth) + 4),

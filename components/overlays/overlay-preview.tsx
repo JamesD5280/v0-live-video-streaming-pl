@@ -652,7 +652,7 @@ export function OverlayPreview({
           const tickerSpeed = Math.max(1, overlay.scroll_speed ?? 20)
           const fontSize = clamp(overlay.font_size || 24, 12, 120)
           const estimatedTextWidth = (overlay.text_content?.length || 0) * fontSize * 0.58
-          const tickerGapEm = 1.1
+          const tickerGapEm = 0
           const tickerChunkWidth = estimatedTextWidth + fontSize * tickerGapEm
           const tickerCopies = Math.max(3, Math.min(300, Math.ceil((1920 * tickerWidth / 100 + 100) / Math.max(1, tickerChunkWidth)) + 2))
           const tickerDuration = tickerChunkWidth / tickerSpeed
