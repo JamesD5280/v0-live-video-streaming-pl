@@ -402,8 +402,10 @@ function buildOverlayFilters(overlays, scrollTimeOffset = 0) {
         Math.min(300, Math.ceil((scrollZoneWidth + estimatedChunkWidth * 2) / estimatedChunkWidth) + 4),
       )
       const loopText = `${escapedText}${tickerGap}`.repeat(loopCopyCount)
-  const safeScrollTimeOffset = Math.max(0, Number(scrollTimeOffset) || 0)
-  const scrollFormula = `'w-mod((t+${safeScrollTimeOffset.toFixed(3)})*${speed}\\,text_w/${loopCopyCount})'`
+      const safeScrollTimeOffset = Math.max(0, Number(scrollTimeOffset) || 0)
+      // The text is already repeated across the track, so move that track from
+      // zero with a negative modulo. Starting at `w` creates a blank handoff.
+      const scrollFormula = `'-mod((t+${safeScrollTimeOffset.toFixed(3)})*${speed}\\,text_w/${loopCopyCount})'`
       
       console.log(`[2MStream] Scrolling text: centerY=${scrollCenterY}px, top=${scrollTop}px, zone X=${scrollStartX}-${scrollEndX}px (width=${scrollZoneWidth}), speed=${speed}, copies=${loopCopyCount}`)
       
