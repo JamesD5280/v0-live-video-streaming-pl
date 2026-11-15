@@ -390,20 +390,19 @@ function buildOverlayFilters(overlays, scrollTimeOffset = 0) {
       const scrollStartX = Math.round(1920 * startPercent / 100)
       const scrollEndX = Math.round(1920 * endPercent / 100)
       const scrollZoneWidth = Math.max(96, scrollEndX - scrollStartX)
-      // Keep one compact separator between copies and render extra copies so the
-      // next message is already visible when the current one exits the zone.
-      const tickerGap = ' '
-      const estimatedChunkWidth = Math.max(
-        1,
-        tickerText.length * fontSize * 0.55 + tickerGap.length * fontSize * 0.55,
-      )
+      // Keep copies touching and render extra copies so the next message is
+      // already visible when the current one exits the zone.
+      const tickerGap = ''
+      const estimatedChunkWidth = Math.max(1, tickerText.length * fontSize * 0.55)
       const loopCopyCount = Math.max(
         6,
         Math.min(300, Math.ceil((scrollZoneWidth + estimatedChunkWidth * 2) / estimatedChunkWidth) + 4),
       )
       const loopText = `${escapedText}${tickerGap}`.repeat(loopCopyCount)
-  const safeScrollTimeOffset = Math.max(0, Number(scrollTimeOffset) || 0)
-  const scrollFormula = `'w-mod((t+${safeScrollTimeOffset.toFixed(3)})*${speed}\\,text_w/${loopCopyCount})'`
+      const safeScrollTimeOffset = Math.max(0, Number(scrollTimeOffset) || 0)
+      // The text is already repeated across the track, so move that track from
+      // zero with a negative modulo. Starting at `w` creates a blank handoff.
+      const scrollFormula = `'-mod((t+${safeScrollTimeOffset.toFixed(3)})*${speed}\\,text_w/${loopCopyCount})'`
       
       console.log(`[2MStream] Scrolling text: centerY=${scrollCenterY}px, top=${scrollTop}px, zone X=${scrollStartX}-${scrollEndX}px (width=${scrollZoneWidth}), speed=${speed}, copies=${loopCopyCount}`)
       
