@@ -164,10 +164,17 @@ export async function POST(req: NextRequest) {
         loop = false // RTMP pull is live, no looping
       } else if (stream.playlist) {
         // Playlist mode: multiple videos in order
-        const items = (stream.playlist.playlist_items || [])
+        const items = [...(stream.playlist.playlist_items || [])]
           .sort((a: { position: number }, b: { position: number }) => a.position - b.position)
+        const playbackItems = stream.playlist.playback_mode === "shuffle"
+          ? items
+          : items.sort((a: { position: number; video?: { created_at?: string | null } | null }, b: { position: number; video?: { created_at?: string | null } | null }) => {
+              const aUploadedAt = a.video?.created_at ? Date.parse(a.video.created_at) : Number.MAX_SAFE_INTEGER
+              const bUploadedAt = b.video?.created_at ? Date.parse(b.video.created_at) : Number.MAX_SAFE_INTEGER
+              return aUploadedAt - bUploadedAt || a.position - b.position
+            })
 
-        videoSources = items
+        videoSources = playbackItems
           .filter((item: { video: unknown }) => item.video)
           .map((item: { video: { storage_path?: string; filename?: string; title?: string } }) => ({
             url: getVideoUrl(item.video),

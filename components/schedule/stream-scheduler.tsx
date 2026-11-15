@@ -336,7 +336,7 @@ export function StreamScheduler() {
                 <p className="text-xs leading-relaxed text-muted-foreground">
                   {playlists && readyPlaylists.length === 0
                     ? t("Create a playlist with at least one ready video before scheduling it.")
-                    : t("Plays the playlist in order and follows its loop setting. Every video must be ready.")}
+                    : t("Plays the playlist in upload order or shuffled, and follows its repeat setting. Every video must be ready.")}
                 </p>
               </div>
             ) : (

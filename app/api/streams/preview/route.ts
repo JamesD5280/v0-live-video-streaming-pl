@@ -138,7 +138,7 @@ export async function POST(req: NextRequest) {
     } else if (body.playlistId) {
       const { data: playlist } = await supabase
         .from("playlists")
-        .select("*, playlist_items(position, video:videos(filename, storage_path))")
+        .select("*, playlist_items(position, video:videos(filename, storage_path, created_at))")
         .eq("id", body.playlistId)
         .single()
       if (!playlist?.playlist_items?.length) {
@@ -147,7 +147,11 @@ export async function POST(req: NextRequest) {
 
       isPlaylist = true
       const orderedItems = playlist.playlist_items.sort(
-        (a: { position: number }, b: { position: number }) => a.position - b.position
+        (a: { position: number; video?: { created_at?: string | null } | null }, b: { position: number; video?: { created_at?: string | null } | null }) => {
+          const aUploadedAt = a.video?.created_at ? Date.parse(a.video.created_at) : Number.MAX_SAFE_INTEGER
+          const bUploadedAt = b.video?.created_at ? Date.parse(b.video.created_at) : Number.MAX_SAFE_INTEGER
+          return aUploadedAt - bUploadedAt || a.position - b.position
+        }
       )
       for (const item of orderedItems) {
         if (!item.video) continue
