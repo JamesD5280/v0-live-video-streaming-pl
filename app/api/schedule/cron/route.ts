@@ -124,6 +124,7 @@ export async function GET(req: NextRequest) {
 
       let videoSources: { url?: string; path?: string; title?: string }[] = []
       let loop = true
+      let playbackMode: "sequential" | "shuffle" = "sequential"
       const isRtmpPull = event.source_type === "rtmp_pull"
       const isPlaylist = event.source_type === "playlist"
 
@@ -144,6 +145,7 @@ export async function GET(req: NextRequest) {
       } else if (isPlaylist) {
         const playlist = event.playlist as {
           loop?: boolean
+          playback_mode?: "sequential" | "shuffle"
           playlist_items?: Array<{
             position: number
             video?: { status?: string; storage_path?: string | null; filename?: string; title?: string } | { status?: string; storage_path?: string | null; filename?: string; title?: string }[] | null
@@ -170,6 +172,7 @@ export async function GET(req: NextRequest) {
           title: video!.title,
         }))
         loop = playlist.loop !== false
+        playbackMode = playlist.playback_mode === "shuffle" ? "shuffle" : "sequential"
       } else if (event.video) {
         videoSources = [{
           url: getVideoUrl(event.video),
@@ -265,6 +268,7 @@ export async function GET(req: NextRequest) {
         destinations,
         overlays,
         loop,
+        playbackMode,
         isPlaylist,
         isRtmpPull,
         rtmpPullUrl: isRtmpPull ? event.rtmp_pull_url : null,

@@ -36,6 +36,10 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     const body = await req.json()
+    if (body.playback_mode !== undefined && !["sequential", "shuffle"].includes(body.playback_mode)) {
+      return NextResponse.json({ error: "Invalid playback mode" }, { status: 400 })
+    }
+
     const { data, error } = await supabase
       .from("playlists")
       .insert({
@@ -43,6 +47,7 @@ export async function POST(req: NextRequest) {
         name: body.name,
         description: body.description || null,
         loop: body.loop !== false,
+        playback_mode: body.playback_mode || "sequential",
       })
       .select()
       .single()
@@ -77,6 +82,9 @@ export async function PATCH(req: NextRequest) {
     const { id, video_ids, ...updates } = body
 
     if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 })
+    if (updates.playback_mode !== undefined && !["sequential", "shuffle"].includes(updates.playback_mode)) {
+      return NextResponse.json({ error: "Invalid playback mode" }, { status: 400 })
+    }
 
     // Update playlist metadata
     if (Object.keys(updates).length > 0) {

@@ -70,6 +70,26 @@ function sourceKey(source) {
   return String(source?.url || source?.path || '')
 }
 
+function shuffleSources(sources) {
+  const shuffled = [...sources]
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1))
+    ;[shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]]
+  }
+  return shuffled
+}
+
+function remapPlaylistPosition(position, fromSources, toSources) {
+  const normalized = normalizePlaylistPosition(position, fromSources.length)
+  if (!normalized) return null
+
+  const currentSourceKey = sourceKey(fromSources[normalized.fileIndex])
+  const targetIndex = toSources.findIndex((source) => sourceKey(source) === currentSourceKey)
+  return targetIndex < 0
+    ? null
+    : { fileIndex: targetIndex, seekTime: normalized.seekTime }
+}
+
 function savePlaylistCheckpoint(streamId, position, videoSources) {
   const normalized = normalizePlaylistPosition(position, videoSources.length)
   if (!normalized) return
@@ -1261,7 +1281,8 @@ app.post('/start', async (req, res) => {
     videoPath, 
     destinations, 
     overlays, 
-    loop = true, 
+    loop = true,
+    playbackMode = 'sequential',
     isPlaylist = false,
     isRtmpPull = false,
     rtmpPullUrl = null,
@@ -1275,16 +1296,21 @@ app.post('/start', async (req, res) => {
 
   console.log(`[2MStream] /start called: streamId=${streamId}, overlays=${overlays?.length || 0}, isPlaylist=${isPlaylist}`)
 
-  const checkpointSources = videoSources?.length
+  const requestedSources = videoSources?.length
     ? videoSources
     : [{ url: videoUrl, path: videoPath }]
+  const playbackSources = isPlaylist && playbackMode === 'shuffle'
+    ? shuffleSources(requestedSources)
+    : requestedSources
   const shouldResumePlaylist = Boolean(isPlaylist || (loop && !isRtmpPull))
-  let resumePosition = shouldResumePlaylist ? loadPlaylistCheckpoint(streamId, checkpointSources) : null
+  let resumePosition = shouldResumePlaylist ? loadPlaylistCheckpoint(streamId, playbackSources) : null
   const existingStream = activeStreams.get(streamId)
 
   if (existingStream?.playlistControllers?.length) {
     const currentPosition = existingStream.playlistControllers[0].getPosition?.()
-    resumePosition = normalizePlaylistPosition(currentPosition, checkpointSources.length) || resumePosition
+    const existingSources = existingStream.config?.videoSources || requestedSources
+    const currentResume = remapPlaylistPosition(currentPosition, existingSources, playbackSources)
+    resumePosition = currentResume || resumePosition
   }
 
   // Stop existing stream if running, after capturing its current position.
@@ -1332,7 +1358,7 @@ app.post('/start', async (req, res) => {
   const playlistControllers = []
 
   // Determine if this is a playlist with multiple files
-  const isMultiFilePlaylist = isPlaylist && videoSources && videoSources.length >= 1
+  const isMultiFilePlaylist = isPlaylist && playbackSources && playbackSources.length >= 1
 
   for (const dest of destinations) {
     const rtmpTarget = `${dest.rtmpUrl}/${dest.streamKey}`
@@ -1340,15 +1366,15 @@ app.post('/start', async (req, res) => {
     if (isMultiFilePlaylist) {
       // SEQUENTIAL PLAYLIST MODE: play one file at a time
       // Each file gets a clean FFmpeg process. No concat demuxer. No H264 boundary errors.
-      console.log(`[2MStream] Starting sequential playlist for ${streamId} -> ${dest.name || rtmpTarget}`)
-      console.log(`[2MStream]   ${videoSources.length} videos, loop=${loop}`)
+      console.log(`[2MStream] Starting ${playbackMode} playlist for ${streamId} -> ${dest.name || rtmpTarget}`)
+      console.log(`[2MStream]   ${playbackSources.length} videos, loop=${loop}`)
 
       // Create a dummy proc entry for status tracking (will be updated by playlist controller)
       const dummyProc = { killed: false, kill: () => {}, pid: null }
       const procEntry = { proc: dummyProc, destId: dest.id, killed: false, restartCount: 0 }
       processes.push(procEntry)
 
-      const controller = startPlaylistForDest(streamId, dest, videoSources, overlayResult, loop, tempFiles, resumePosition, timeZone)
+      const controller = startPlaylistForDest(streamId, dest, playbackSources, overlayResult, loop, tempFiles, resumePosition, timeZone)
       playlistControllers.push(controller)
 
     } else if (isRtmpPull && rtmpPullUrl) {
@@ -1380,7 +1406,7 @@ app.post('/start', async (req, res) => {
 
     } else {
       // SINGLE VIDEO MODE
-      const source = videoSources?.[0]
+      const source = playbackSources?.[0]
       const inputSource = source?.url || videoUrl || join(VIDEO_DIR, source?.path || videoPath || '')
 
       if (!source?.url && !videoUrl) {
@@ -1436,12 +1462,13 @@ app.post('/start', async (req, res) => {
     playlistState: resumePosition || null,
     config: {
       streamId,
-      videoSources,
+      videoSources: playbackSources,
       videoUrl,
       videoPath,
       destinations,
       overlays,
       loop,
+      playbackMode,
       isPlaylist,
       isRtmpPull,
       rtmpPullUrl,

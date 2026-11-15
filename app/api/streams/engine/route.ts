@@ -132,6 +132,7 @@ export async function POST(req: NextRequest) {
       const supabaseStorageBase = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public`
       let videoSources: { url?: string; path?: string; title?: string }[] = []
       let loop = true
+      let playbackMode: "sequential" | "shuffle" = "sequential"
       const isRtmpPull = !!stream.rtmp_pull_url
 
       // Helper to get the correct video URL (Bunny CDN or Supabase or local)
@@ -175,6 +176,7 @@ export async function POST(req: NextRequest) {
           }))
 
         loop = stream.playlist.loop !== false
+        playbackMode = stream.playlist.playback_mode === "shuffle" ? "shuffle" : "sequential"
       } else if (stream.video) {
         // Single video mode
         videoSources = [{
@@ -201,6 +203,7 @@ export async function POST(req: NextRequest) {
           destinations,
           overlays,
           loop,
+          playbackMode,
           isPlaylist: !!stream.playlist,
           isRtmpPull,
           rtmpPullUrl: stream.rtmp_pull_url || null,
