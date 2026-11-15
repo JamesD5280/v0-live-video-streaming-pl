@@ -148,11 +148,20 @@ export async function GET(req: NextRequest) {
           playback_mode?: "sequential" | "shuffle"
           playlist_items?: Array<{
             position: number
-            video?: { status?: string; storage_path?: string | null; filename?: string; title?: string } | { status?: string; storage_path?: string | null; filename?: string; title?: string }[] | null
+            video?: { status?: string; created_at?: string; storage_path?: string | null; filename?: string; title?: string } | { status?: string; created_at?: string; storage_path?: string | null; filename?: string; title?: string }[] | null
           }>
         } | null
         const playlistItems = [...(playlist?.playlist_items || [])].sort((a, b) => a.position - b.position)
-        const playlistVideos = playlistItems.map((item) => Array.isArray(item.video) ? item.video[0] : item.video)
+        const playbackItems = playlist?.playback_mode === "shuffle"
+          ? playlistItems
+          : playlistItems.sort((a, b) => {
+              const aVideo = Array.isArray(a.video) ? a.video[0] : a.video
+              const bVideo = Array.isArray(b.video) ? b.video[0] : b.video
+              const aUploadedAt = aVideo?.created_at ? Date.parse(aVideo.created_at) : Number.MAX_SAFE_INTEGER
+              const bUploadedAt = bVideo?.created_at ? Date.parse(bVideo.created_at) : Number.MAX_SAFE_INTEGER
+              return aUploadedAt - bUploadedAt || a.position - b.position
+            })
+        const playlistVideos = playbackItems.map((item) => Array.isArray(item.video) ? item.video[0] : item.video)
 
         if (!playlist || playlistItems.length === 0 || playlistVideos.some((video) => video?.status !== "ready")) {
           await supabase.from("scheduled_events").update({ status: "error" }).eq("id", event.id)

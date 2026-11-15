@@ -17,7 +17,6 @@ import {
 import {
   Plus,
   Trash2,
-  GripVertical,
   ListMusic,
   Music,
   Repeat,
@@ -58,6 +57,17 @@ export function PlaylistManager() {
   const [selectedVideos, setSelectedVideos] = useState<string[]>([])
 
   const readyVideos = videos?.filter((v) => v.status === "ready") || []
+  const uploadOrderedVideos = [...readyVideos].sort((a, b) => {
+    const createdAtDifference = Date.parse(a.created_at) - Date.parse(b.created_at)
+    return createdAtDifference || a.id.localeCompare(b.id)
+  })
+
+  const sortVideoIdsByUploadOrder = (videoIds: string[]) => {
+    const uploadOrder = new Map(uploadOrderedVideos.map((video, index) => [video.id, index]))
+    return [...videoIds].sort(
+      (a, b) => (uploadOrder.get(a) ?? Number.MAX_SAFE_INTEGER) - (uploadOrder.get(b) ?? Number.MAX_SAFE_INTEGER)
+    )
+  }
 
   const resetForm = () => {
     setName("")
@@ -80,9 +90,7 @@ export function PlaylistManager() {
     setLoop(playlist.loop)
     setPlaybackMode(playlist.playback_mode || "sequential")
     setSelectedVideos(
-      (playlist.playlist_items || [])
-        .sort((a, b) => a.position - b.position)
-        .map((item) => item.video_id)
+      sortVideoIdsByUploadOrder((playlist.playlist_items || []).map((item) => item.video_id))
     )
     setDialogOpen(true)
   }
@@ -94,13 +102,13 @@ export function PlaylistManager() {
         await fetch("/api/playlists", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: editingId, name, description, loop, playback_mode: playbackMode, video_ids: selectedVideos }),
+          body: JSON.stringify({ id: editingId, name, description, loop, playback_mode: playbackMode, video_ids: sortVideoIdsByUploadOrder(selectedVideos) }),
         })
       } else {
         await fetch("/api/playlists", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, description, loop, playback_mode: playbackMode, video_ids: selectedVideos }),
+          body: JSON.stringify({ name, description, loop, playback_mode: playbackMode, video_ids: sortVideoIdsByUploadOrder(selectedVideos) }),
         })
       }
       setDialogOpen(false)
@@ -118,19 +126,12 @@ export function PlaylistManager() {
   }
 
   const toggleVideo = (videoId: string) => {
-    setSelectedVideos((prev) =>
-      prev.includes(videoId)
+    setSelectedVideos((prev) => {
+      const nextVideos = prev.includes(videoId)
         ? prev.filter((v) => v !== videoId)
         : [...prev, videoId]
-    )
-  }
-
-  const moveVideo = (index: number, direction: "up" | "down") => {
-    const newList = [...selectedVideos]
-    const swapIndex = direction === "up" ? index - 1 : index + 1
-    if (swapIndex < 0 || swapIndex >= newList.length) return
-    ;[newList[index], newList[swapIndex]] = [newList[swapIndex], newList[index]]
-    setSelectedVideos(newList)
+      return sortVideoIdsByUploadOrder(nextVideos)
+    })
   }
 
   const getTotalDuration = (playlist: Playlist) => {
@@ -165,9 +166,10 @@ export function PlaylistManager() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-base font-semibold text-foreground">{t("Your Playlists")}</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t("Create playlists to stream multiple videos in sequence or loop.")}
+            <p className="mt-1 text-sm text-muted-foreground">
+            {t("Create playlists to stream videos in upload order or shuffle them.")}
           </p>
+
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
@@ -203,15 +205,15 @@ export function PlaylistManager() {
                 <div className="flex items-center gap-2">
                   <Repeat className="h-4 w-4 text-muted-foreground" />
                   <div>
-                    <p className="text-sm font-medium text-foreground">{t("Loop Playlist")}</p>
-                    <p className="text-xs text-muted-foreground">{t("Restart from beginning when all videos finish")}</p>
+                    <p className="text-sm font-medium text-foreground">{t("Repeat Playlist")}</p>
+                    <p className="text-xs text-muted-foreground">{t("Start over after the last video finishes")}</p>
                   </div>
                 </div>
                 <Switch checked={loop} onCheckedChange={setLoop} />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="playlist-playback-mode">{t("Playback Mode")}</Label>
+                <Label htmlFor="playlist-playback-mode">{t("Playback Order")}</Label>
                 <Select
                   value={playbackMode}
                   onValueChange={(value) => setPlaybackMode(value as PlaylistPlaybackMode)}
@@ -223,10 +225,11 @@ export function PlaylistManager() {
                     <SelectItem value="sequential">
                       <span className="flex items-center gap-2">
                         <ListMusic className="h-4 w-4" />
-                        <span>
-                          <span className="block">{t("Sequential")}</span>
-                          <span className="block text-xs text-muted-foreground">{t("Play videos in the saved order")}</span>
-                        </span>
+                          <span>
+                            <span className="block">{t("Uploaded order")}</span>
+                            <span className="block text-xs text-muted-foreground">{t("Play videos from oldest upload to newest")}</span>
+                          </span>
+
                       </span>
                     </SelectItem>
                     <SelectItem value="shuffle">
@@ -251,7 +254,7 @@ export function PlaylistManager() {
                   </div>
                 ) : (
                   <div className="max-h-72 space-y-1 overflow-y-auto rounded-lg border border-border p-2">
-                    {readyVideos.map((video) => {
+                    {uploadOrderedVideos.map((video) => {
                       const isSelected = selectedVideos.includes(video.id)
                       return (
                         <button
@@ -278,7 +281,10 @@ export function PlaylistManager() {
 
               {selectedVideos.length > 0 && (
                 <div className="space-y-2">
-                  <Label>{t("Playback Order (drag to reorder)")}</Label>
+                  <Label>{t("Playlist Videos (uploaded order)")}</Label>
+                  <p className="text-xs text-muted-foreground">
+                    {t("Uploaded order plays from oldest upload to newest. Shuffle ignores this order when playback starts.")}
+                  </p>
                   <div className="space-y-1 rounded-lg border border-border p-2">
                     {selectedVideos.map((vid, index) => {
                       const video = readyVideos.find((v) => v.id === vid)
@@ -288,41 +294,21 @@ export function PlaylistManager() {
                           key={vid}
                           className="flex items-center gap-2 rounded-md bg-secondary px-3 py-2"
                         >
-                          <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground" />
                           <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-muted text-xs font-medium text-muted-foreground">
                             {index + 1}
                           </span>
                           <span className="flex-1 truncate text-sm text-foreground">
                             {video.title}
                           </span>
-                          <div className="flex items-center gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6"
-                              onClick={() => moveVideo(index, "up")}
-                              disabled={index === 0}
-                            >
-                              <ChevronUp className="h-3 w-3" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6"
-                              onClick={() => moveVideo(index, "down")}
-                              disabled={index === selectedVideos.length - 1}
-                            >
-                              <ChevronDown className="h-3 w-3" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6 text-destructive"
-                              onClick={() => toggleVideo(vid)}
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
-                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 text-destructive"
+                            onClick={() => toggleVideo(vid)}
+                            aria-label={`${t("Remove")} ${video.title}`}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
                         </div>
                       )
                     })}
@@ -350,7 +336,7 @@ export function PlaylistManager() {
               <ListMusic className="h-6 w-6 text-muted-foreground" />
             </div>
             <p className="mt-3 text-sm font-medium text-foreground">{t("No playlists yet")}</p>
-            <p className="mt-1 text-xs text-muted-foreground">{t("Create a playlist to stream multiple videos in sequence")}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{t("Create a playlist to stream videos in upload order or shuffle them")}</p>
             <Button size="sm" className="mt-4 gap-1.5" onClick={openCreateDialog}>
               <Plus className="h-3.5 w-3.5" />
               {t("Create Playlist")}
@@ -360,7 +346,11 @@ export function PlaylistManager() {
       ) : (
         <div className="space-y-3">
           {playlists.map((playlist) => {
-            const items = playlist.playlist_items || []
+            const items = [...(playlist.playlist_items || [])].sort((a, b) => {
+              const aUploadedAt = a.video?.created_at ? Date.parse(a.video.created_at) : Number.MAX_SAFE_INTEGER
+              const bUploadedAt = b.video?.created_at ? Date.parse(b.video.created_at) : Number.MAX_SAFE_INTEGER
+              return aUploadedAt - bUploadedAt || a.position - b.position
+            })
             const isExpanded = expandedId === playlist.id
             return (
               <Card key={playlist.id} className="border-border bg-card">
@@ -380,7 +370,7 @@ export function PlaylistManager() {
                           {playlist.loop && (
                             <span className="flex items-center gap-1">
                               <Repeat className="h-3 w-3" />
-                              {t("Loop")}
+                              {t("Repeat")}
                             </span>
                           )}
                           <span className="flex items-center gap-1">
@@ -389,7 +379,7 @@ export function PlaylistManager() {
                             ) : (
                               <ListMusic className="h-3 w-3" />
                             )}
-                            {t(playlist.playback_mode === "shuffle" ? "Shuffle" : "Sequential")}
+                            {t(playlist.playback_mode === "shuffle" ? "Shuffle" : "Uploaded order")}
                           </span>
                         </div>
                       </div>
