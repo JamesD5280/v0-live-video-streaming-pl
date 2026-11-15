@@ -21,13 +21,21 @@ import {
   ListMusic,
   Music,
   Repeat,
+  Shuffle,
   AlertCircle,
   Loader2,
   ChevronDown,
   ChevronUp,
   Film,
 } from "lucide-react"
-import type { Playlist, Video } from "@/lib/store"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import type { Playlist, PlaylistPlaybackMode, Video } from "@/lib/store"
 import { formatDuration, formatFileSize } from "@/lib/store"
 import { useLanguage } from "@/components/language-provider"
 
@@ -46,6 +54,7 @@ export function PlaylistManager() {
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
   const [loop, setLoop] = useState(true)
+  const [playbackMode, setPlaybackMode] = useState<PlaylistPlaybackMode>("sequential")
   const [selectedVideos, setSelectedVideos] = useState<string[]>([])
 
   const readyVideos = videos?.filter((v) => v.status === "ready") || []
@@ -54,6 +63,7 @@ export function PlaylistManager() {
     setName("")
     setDescription("")
     setLoop(true)
+    setPlaybackMode("sequential")
     setSelectedVideos([])
     setEditingId(null)
   }
@@ -68,6 +78,7 @@ export function PlaylistManager() {
     setName(playlist.name)
     setDescription(playlist.description || "")
     setLoop(playlist.loop)
+    setPlaybackMode(playlist.playback_mode || "sequential")
     setSelectedVideos(
       (playlist.playlist_items || [])
         .sort((a, b) => a.position - b.position)
@@ -83,13 +94,13 @@ export function PlaylistManager() {
         await fetch("/api/playlists", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: editingId, name, description, loop, video_ids: selectedVideos }),
+          body: JSON.stringify({ id: editingId, name, description, loop, playback_mode: playbackMode, video_ids: selectedVideos }),
         })
       } else {
         await fetch("/api/playlists", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, description, loop, video_ids: selectedVideos }),
+          body: JSON.stringify({ name, description, loop, playback_mode: playbackMode, video_ids: selectedVideos }),
         })
       }
       setDialogOpen(false)
@@ -197,6 +208,38 @@ export function PlaylistManager() {
                   </div>
                 </div>
                 <Switch checked={loop} onCheckedChange={setLoop} />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="playlist-playback-mode">{t("Playback Mode")}</Label>
+                <Select
+                  value={playbackMode}
+                  onValueChange={(value) => setPlaybackMode(value as PlaylistPlaybackMode)}
+                >
+                  <SelectTrigger id="playlist-playback-mode">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="sequential">
+                      <span className="flex items-center gap-2">
+                        <ListMusic className="h-4 w-4" />
+                        <span>
+                          <span className="block">{t("Sequential")}</span>
+                          <span className="block text-xs text-muted-foreground">{t("Play videos in the saved order")}</span>
+                        </span>
+                      </span>
+                    </SelectItem>
+                    <SelectItem value="shuffle">
+                      <span className="flex items-center gap-2">
+                        <Shuffle className="h-4 w-4" />
+                        <span>
+                          <span className="block">{t("Shuffle")}</span>
+                          <span className="block text-xs text-muted-foreground">{t("Randomize the order when playback starts")}</span>
+                        </span>
+                      </span>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="space-y-2">
@@ -340,6 +383,14 @@ export function PlaylistManager() {
                               {t("Loop")}
                             </span>
                           )}
+                          <span className="flex items-center gap-1">
+                            {playlist.playback_mode === "shuffle" ? (
+                              <Shuffle className="h-3 w-3" />
+                            ) : (
+                              <ListMusic className="h-3 w-3" />
+                            )}
+                            {t(playlist.playback_mode === "shuffle" ? "Shuffle" : "Sequential")}
+                          </span>
                         </div>
                       </div>
                     </div>
